@@ -3,6 +3,7 @@ import { SCHEMA } from './schema';
 import { SEED } from './seed';
 import { SEED_GASTOS } from './seed_gastos';
 import { SEED_INGRESOS } from './seed_ingresos';
+import { SEED_MACRO } from './seed_macro';
 
 let db: any = null;
 
@@ -13,26 +14,25 @@ async function init() {
 	db.exec(SCHEMA);
 
 	// Si la base es vieja y no tiene la columna 'periodo' en ingreso, se la agregamos.
-	const cols = db.exec({
-		sql: 'PRAGMA table_info(ingreso)',
-		rowMode: 'object',
-		returnValue: 'resultRows'
-	});
+	const cols = db.exec({ sql: 'PRAGMA table_info(ingreso)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cols.some((c: any) => c.name === 'periodo')) {
 		db.exec('ALTER TABLE ingreso ADD COLUMN periodo TEXT');
 	}
 
-	// Datos base + gastos (una sola vez).
 	const r = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
 	if (r[0].n === 0) {
 		db.exec(SEED);
 		db.exec(SEED_GASTOS);
 	}
 
-	// Ingresos históricos (una sola vez, si la tabla está vacía).
 	const ri = db.exec({ sql: 'SELECT COUNT(*) AS n FROM ingreso', rowMode: 'object', returnValue: 'resultRows' });
 	if (ri[0].n === 0) {
 		db.exec(SEED_INGRESOS);
+	}
+
+	const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
+	if (rm[0].n === 0) {
+		db.exec(SEED_MACRO);
 	}
 }
 

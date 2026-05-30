@@ -8,6 +8,7 @@
 	<a href="/presupuesto">Presupuesto</a>
 	<a href="/subscripciones">Suscripciones</a>
 	<a href="/ingresos">Ingresos</a>
+	<a href="/salario">Salario</a>
 </nav>
 
 {@render children()}
