@@ -6,6 +6,7 @@
 	<a href="/">Cargar gasto</a>
 	<a href="/credito">Crédito</a>
 	<a href="/presupuesto">Presupuesto</a>
+	<a href="/subscripciones">Suscripciones</a>
 </nav>
 
 {@render children()}
