@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS ingreso (
   categoria   TEXT NOT NULL CHECK (categoria IN ('Salario','Otros')),
   tipo        TEXT CHECK (tipo IN ('Sueldo','Aciclico')),
   detalle     TEXT,
+  periodo     TEXT,
   CHECK (
     (categoria = 'Salario' AND tipo IS NOT NULL)
     OR
