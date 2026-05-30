@@ -147,4 +147,14 @@ CREATE TABLE IF NOT EXISTS cotizacion_dolar (
   valor       REAL NOT NULL CHECK (valor > 0),
   UNIQUE (perfil_id, fecha)
 );
+
+CREATE TABLE IF NOT EXISTS presupuesto (
+  id              INTEGER PRIMARY KEY,
+  perfil_id       INTEGER NOT NULL REFERENCES perfil(id),
+  subcategoria_id INTEGER NOT NULL REFERENCES subcategoria(id),
+  periodo         TEXT NOT NULL DEFAULT 'default',
+  monto           REAL NOT NULL CHECK (monto >= 0),
+  UNIQUE (perfil_id, subcategoria_id, periodo)
+);
+
 `;

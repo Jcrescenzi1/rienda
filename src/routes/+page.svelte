@@ -137,6 +137,7 @@
 </script>
 
 <h1>Rienda — Cargar gasto</h1>
+<button onclick={async () => { await query('DELETE FROM gasto WHERE perfil_id=1 AND id > 2059'); await cargarBase(); }}>🧹 Borrar gastos de prueba</button>
 
 <div class="form">
 	<label>Fecha<input type="date" bind:value={fecha} /></label>
