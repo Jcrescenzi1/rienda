@@ -9,6 +9,7 @@
 	<a href="/subscripciones">Suscripciones</a>
 	<a href="/ingresos">Ingresos</a>
 	<a href="/salario">Salario</a>
+	<a href="/inversiones">Inversiones</a>
 </nav>
 
 {@render children()}

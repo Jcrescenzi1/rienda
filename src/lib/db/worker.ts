@@ -4,6 +4,7 @@ import { SEED } from './seed';
 import { SEED_GASTOS } from './seed_gastos';
 import { SEED_INGRESOS } from './seed_ingresos';
 import { SEED_MACRO } from './seed_macro';
+import { SEED_INVERSIONES } from './seed_inversiones';
 
 let db: any = null;
 
@@ -13,7 +14,6 @@ async function init() {
 	db = new poolUtil.OpfsSAHPoolDb('/rienda.sqlite3');
 	db.exec(SCHEMA);
 
-	// Si la base es vieja y no tiene la columna 'periodo' en ingreso, se la agregamos.
 	const cols = db.exec({ sql: 'PRAGMA table_info(ingreso)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cols.some((c: any) => c.name === 'periodo')) {
 		db.exec('ALTER TABLE ingreso ADD COLUMN periodo TEXT');
@@ -33,6 +33,11 @@ async function init() {
 	const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
 	if (rm[0].n === 0) {
 		db.exec(SEED_MACRO);
+	}
+
+	const rt = db.exec({ sql: 'SELECT COUNT(*) AS n FROM transaccion', rowMode: 'object', returnValue: 'resultRows' });
+	if (rt[0].n === 0) {
+		db.exec(SEED_INVERSIONES);
 	}
 }
 
