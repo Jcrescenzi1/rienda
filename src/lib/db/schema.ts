@@ -169,4 +169,13 @@ CREATE TABLE IF NOT EXISTS snapshot (
   UNIQUE(perfil_id, fecha)
 );
 
+CREATE TABLE IF NOT EXISTS liquidez (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  perfil_id INTEGER NOT NULL REFERENCES perfil(id),
+  moneda TEXT NOT NULL CHECK(moneda IN ('ARS','USD')),
+  saldo REAL NOT NULL DEFAULT 0,
+  actualizado_en TEXT,
+  UNIQUE(perfil_id, moneda)
+);
+
 `;
