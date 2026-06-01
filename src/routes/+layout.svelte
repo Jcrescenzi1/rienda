@@ -10,6 +10,7 @@
 	<a href="/ingresos">Ingresos</a>
 	<a href="/salario">Salario</a>
 	<a href="/inversiones">Inversiones</a>
+	<a href="/evolucion">Evolución</a>
 </nav>
 
 {@render children()}

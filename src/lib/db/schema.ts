@@ -158,4 +158,15 @@ CREATE TABLE IF NOT EXISTS presupuesto (
   UNIQUE (perfil_id, subcategoria_id, periodo)
 );
 
+CREATE TABLE IF NOT EXISTS snapshot (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  perfil_id INTEGER NOT NULL REFERENCES perfil(id),
+  fecha TEXT NOT NULL,
+  valor_usd REAL NOT NULL,
+  flujo_usd REAL NOT NULL DEFAULT 0,
+  dolar REAL,
+  valor_ars REAL,
+  UNIQUE(perfil_id, fecha)
+);
+
 `;

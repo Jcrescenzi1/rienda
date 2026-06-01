@@ -5,6 +5,7 @@ import { SEED_GASTOS } from './seed_gastos';
 import { SEED_INGRESOS } from './seed_ingresos';
 import { SEED_MACRO } from './seed_macro';
 import { SEED_INVERSIONES } from './seed_inversiones';
+import { SEED_SNAPSHOTS } from './seed_snapshots';
 
 let db: any = null;
 
@@ -39,6 +40,9 @@ async function init() {
 	if (rt[0].n === 0) {
 		db.exec(SEED_INVERSIONES);
 	}
+
+	const nSnap = db.exec("SELECT COUNT(*) AS n FROM snapshot")[0]?.values[0][0] ?? 0;
+	if (nSnap === 0) db.exec(SEED_SNAPSHOTS);
 }
 
 const ready = init();
