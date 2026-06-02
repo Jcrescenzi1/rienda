@@ -6,24 +6,91 @@
 	let snaps = $state<any[]>([]);
 	let modo = $state<'twr' | 'valor'>('twr');
 
-	onMount(async () => {
-		const rows = (await query(
-			'SELECT fecha, valor_usd, flujo_usd, valor_ars, dolar FROM snapshot WHERE perfil_id=1 ORDER BY fecha'
-		)) as any[];
-		// índice TWR base 100 y retorno por período
-		let idx = 100;
-		let prev: number | null = null;
+	// Guardar foto
+	let showFoto = $state(false);
+	let fFlujo = $state<number>(0);
+	let fValorUSD = $state<number>(0);
+	let fValorARS = $state<number>(0);
+	let fDolar = $state<number>(1);
+	let fFecha = $state(new Date().toISOString().slice(0, 10));
+	let fMsg = $state('');
+	let calculando = $state(false);
+
+	async function cargar() {
+		const rows = (await query('SELECT fecha, valor_usd, flujo_usd, valor_ars, dolar FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
+		let idx = 100; let prev: number | null = null;
 		snaps = rows.map((s) => {
 			let r = 0;
-			if (prev !== null && prev > 0) {
-				r = (s.valor_usd - s.flujo_usd) / prev - 1;
-				idx *= 1 + r;
-			}
+			if (prev !== null && prev > 0) { r = (s.valor_usd - s.flujo_usd) / prev - 1; idx *= 1 + r; }
 			prev = s.valor_usd;
 			return { ...s, ret: r, idx };
 		});
 		cargando = false;
-	});
+	}
+	onMount(cargar);
+
+	// Calcula valor actual de cartera (posiciones + liquidez) y flujo desde última foto
+	async function prepararFoto() {
+		calculando = true; fMsg = '';
+		try {
+			const dq = (await query('SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
+			const dolar = dq[0]?.valor ?? 1;
+			fDolar = dolar;
+
+			// Posiciones (mismo cálculo que en inversiones)
+			const activos = (await query('SELECT id, moneda, precio_actual FROM activo WHERE perfil_id=1')) as any[];
+			const aMap: Record<number, any> = {};
+			for (const a of activos) aMap[a.id] = a;
+			const txs = (await query("SELECT activo_id, operacion, unidades, precio FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id")) as any[];
+			const net: Record<number, { u: number }> = {};
+			for (const t of txs) {
+				net[t.activo_id] ??= { u: 0 };
+				net[t.activo_id].u += (t.operacion === 'Compra' ? 1 : -1) * t.unidades;
+			}
+			let valUSD = 0;
+			for (const [aid, h] of Object.entries(net)) {
+				if (h.u < 1e-6) continue;
+				const a = aMap[Number(aid)];
+				const mercado = h.u * (a.precio_actual ?? 0);
+				valUSD += a.moneda === 'USD' ? mercado : mercado / dolar;
+			}
+			// Liquidez (ancla + mov_caja + pagos de trades)
+			const anchor = (await query('SELECT moneda, saldo FROM liquidez WHERE perfil_id=1')) as any[];
+			const movc = (await query('SELECT moneda, COALESCE(SUM(monto),0) s FROM mov_caja WHERE perfil_id=1 GROUP BY moneda')) as any[];
+			const tcash = (await query("SELECT moneda_pago m, COALESCE(SUM(CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END),0) s FROM transaccion WHERE perfil_id=1 AND monto_pago IS NOT NULL GROUP BY moneda_pago")) as any[];
+			const bal: Record<string, number> = { ARS: 0, USD: 0 };
+			for (const a of anchor) bal[a.moneda] = (bal[a.moneda] ?? 0) + a.saldo;
+			for (const r of movc) bal[r.moneda] = (bal[r.moneda] ?? 0) + r.s;
+			for (const r of tcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
+			valUSD += (bal.USD ?? 0) + (bal.ARS ?? 0) / dolar;
+
+			fValorUSD = valUSD;
+			fValorARS = valUSD * dolar;
+
+			// Flujo automático: Ingresos/Retiros desde la última foto
+			const ult = snaps.length ? snaps[snaps.length - 1].fecha : '2000-01-01';
+			const fl = (await query(
+				"SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ?",
+				[dolar, ult]
+			)) as any[];
+			fFlujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
+
+			showFoto = true;
+		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
+		calculando = false;
+	}
+
+	async function guardarFoto() {
+		try {
+			await query(
+				'INSERT INTO snapshot (perfil_id,fecha,valor_usd,flujo_usd,dolar,valor_ars) VALUES (1,?,?,?,?,?) ' +
+					'ON CONFLICT(perfil_id,fecha) DO UPDATE SET valor_usd=excluded.valor_usd, flujo_usd=excluded.flujo_usd, dolar=excluded.dolar, valor_ars=excluded.valor_ars',
+				[fFecha, fValorUSD, fFlujo, fDolar, fValorARS]
+			);
+			showFoto = false; fMsg = '';
+			await cargar();
+		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
+	}
 
 	const usd = (n: number, d = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
 	const ars = (n: number) => '$' + Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 });
@@ -33,7 +100,6 @@
 		return ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+m] + " '" + y.slice(2);
 	};
 
-	// Métricas
 	let actual = $derived(snaps.length ? snaps[snaps.length - 1] : null);
 	let twrInicio = $derived(actual ? actual.idx / 100 - 1 : 0);
 	let twrMes = $derived(snaps.length > 1 ? snaps[snaps.length - 1].ret : 0);
@@ -41,15 +107,11 @@
 	let twrYTD = $derived.by(() => {
 		if (!actual) return 0;
 		const anioAct = actual.fecha.slice(0, 4);
-		// base = índice del último snapshot del año anterior
 		let base = 100;
-		for (const s of snaps) {
-			if (s.fecha.slice(0, 4) < anioAct) base = s.idx;
-		}
+		for (const s of snaps) if (s.fecha.slice(0, 4) < anioAct) base = s.idx;
 		return actual.idx / base - 1;
 	});
 
-	// Gráfico SVG
 	const W = 720, H = 300, P = { l: 52, r: 16, t: 16, b: 28 };
 	let chart = $derived.by(() => {
 		if (snaps.length < 2) return null;
@@ -57,19 +119,16 @@
 		const xs = snaps.map((s) => new Date(s.fecha).getTime());
 		const minX = xs[0], maxX = xs[xs.length - 1];
 		let minY = Math.min(...vals), maxY = Math.max(...vals);
-		const padY = (maxY - minY) * 0.1 || 1;
-		minY -= padY; maxY += padY;
+		const padY = (maxY - minY) * 0.1 || 1; minY -= padY; maxY += padY;
 		const px = (x: number) => P.l + ((x - minX) / (maxX - minX)) * (W - P.l - P.r);
 		const py = (y: number) => H - P.b - ((y - minY) / (maxY - minY)) * (H - P.t - P.b);
 		const pts = snaps.map((s, i) => ({ x: px(xs[i]), y: py(vals[i]) }));
 		const line = pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
 		const area = line + ` L${pts[pts.length - 1].x.toFixed(1)},${H - P.b} L${pts[0].x.toFixed(1)},${H - P.b} Z`;
-		// ticks Y (4)
 		const yticks = Array.from({ length: 4 }, (_, i) => {
 			const v = minY + ((maxY - minY) * i) / 3;
 			return { y: py(v), label: modo === 'twr' ? v.toFixed(0) : Math.round(v / 1000) + 'k' };
 		});
-		// ticks X (~6)
 		const step = Math.max(1, Math.floor(snaps.length / 6));
 		const xticks = snaps.filter((_, i) => i % step === 0).map((s) => ({ x: px(new Date(s.fecha).getTime()), label: mesCorto(s.fecha) }));
 		return { line, area, pts, yticks, xticks };
@@ -77,6 +136,25 @@
 </script>
 
 <h1>Evolución de cartera</h1>
+
+<button class="foto" onclick={prepararFoto} disabled={calculando}>{calculando ? 'Calculando…' : '📸 Guardar foto'}</button>
+
+{#if showFoto}
+	<div class="fotoform">
+		<h3>Nueva foto — {fFecha}</h3>
+		<label>Fecha<input type="date" bind:value={fFecha} /></label>
+		<p class="calc">Valor calculado: <strong>{usd(fValorUSD)}</strong> ({ars(fValorARS)} · dólar {fDolar})</p>
+		<label>Flujo neto desde la última foto (aportes − retiros, USD)
+			<input type="number" step="any" bind:value={fFlujo} />
+		</label>
+		<p class="hint">Se calculó automático de tus Ingresos/Retiros. Editalo si hace falta.</p>
+		<div class="botones">
+			<button class="guardar" onclick={guardarFoto}>Guardar foto</button>
+			<button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button>
+		</div>
+		{#if fMsg}<p class="msg">{fMsg}</p>{/if}
+	</div>
+{/if}
 
 {#if cargando}
 	<p>Cargando…</p>
@@ -102,9 +180,7 @@
 				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
 				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
 			{/each}
-			{#each chart.xticks as t}
-				<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>
-			{/each}
+			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
 			<path d={chart.area} class="area" />
 			<path d={chart.line} class="line" />
 			{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot" />{/each}
@@ -127,12 +203,24 @@
 			{/each}
 		</tbody>
 	</table>
-	<p class="nota">TWR (time-weighted return): rendimiento de la estrategia neutralizando aportes y retiros. Valores en USD al dólar de cada foto.</p>
+	<p class="nota">TWR: rendimiento de la estrategia neutralizando aportes y retiros. Valores en USD al dólar de cada foto.</p>
 {/if}
 
 <style>
 	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
+	h3 { margin: 0 0 4px; font-size: 1rem; }
+	.foto { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.95rem; margin-bottom: 10px; }
+	.foto:disabled { opacity: 0.6; }
+	.fotoform { border: 1px solid #cdddff; background: #f7faff; border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; max-width: 420px; }
+	.calc { margin: 0; font-size: 0.9rem; }
+	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
+	input { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
+	.hint { font-size: 0.78rem; color: #777; margin: 0; }
+	.botones { display: flex; gap: 8px; }
+	.guardar { padding: 8px 14px; background: #137333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+	.cancelar { padding: 8px 14px; background: #eee; border: none; border-radius: 6px; cursor: pointer; }
+	.msg { font-weight: 600; margin: 0; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }
 	.card span { font-size: 0.72rem; color: #777; }
@@ -150,7 +238,6 @@
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; }
 	td.num, th.num { text-align: right; }
-	.pos { color: #137333; }
-	.neg { color: #c5221f; }
+	.pos { color: #137333; } .neg { color: #c5221f; }
 	.nota { font-size: 0.8rem; color: #777; margin-top: 12px; }
 </style>
