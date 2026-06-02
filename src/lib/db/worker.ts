@@ -16,9 +16,19 @@ async function init() {
 	db = new poolUtil.OpfsSAHPoolDb('/rienda.sqlite3');
 	db.exec(SCHEMA);
 
+	// Columna periodo en ingreso (agregada después del schema original)
 	const cols = db.exec({ sql: 'PRAGMA table_info(ingreso)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cols.some((c: any) => c.name === 'periodo')) {
 		db.exec('ALTER TABLE ingreso ADD COLUMN periodo TEXT');
+	}
+
+	// Columnas de pago en transaccion (para mover liquidez en la moneda de pago)
+	const tcols = db.exec({ sql: 'PRAGMA table_info(transaccion)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!tcols.some((c: any) => c.name === 'moneda_pago')) {
+		db.exec('ALTER TABLE transaccion ADD COLUMN moneda_pago TEXT');
+	}
+	if (!tcols.some((c: any) => c.name === 'monto_pago')) {
+		db.exec('ALTER TABLE transaccion ADD COLUMN monto_pago REAL');
 	}
 
 	const r = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
@@ -42,11 +52,15 @@ async function init() {
 		db.exec(SEED_INVERSIONES);
 	}
 
-	const nSnap = db.exec("SELECT COUNT(*) AS n FROM snapshot")[0]?.values[0][0] ?? 0;
-	if (nSnap === 0) db.exec(SEED_SNAPSHOTS);
+	const rs = db.exec({ sql: 'SELECT COUNT(*) AS n FROM snapshot', rowMode: 'object', returnValue: 'resultRows' });
+	if (rs[0].n === 0) {
+		db.exec(SEED_SNAPSHOTS);
+	}
 
-	const nLiq = db.exec("SELECT COUNT(*) AS n FROM liquidez")[0]?.values[0][0] ?? 0;
-	if (nLiq === 0) db.exec(SEED_LIQUIDEZ);
+	const rl = db.exec({ sql: 'SELECT COUNT(*) AS n FROM liquidez', rowMode: 'object', returnValue: 'resultRows' });
+	if (rl[0].n === 0) {
+		db.exec(SEED_LIQUIDEZ);
+	}
 }
 
 const ready = init();

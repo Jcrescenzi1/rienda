@@ -178,4 +178,14 @@ CREATE TABLE IF NOT EXISTS liquidez (
   UNIQUE(perfil_id, moneda)
 );
 
+CREATE TABLE IF NOT EXISTS mov_caja (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  perfil_id INTEGER NOT NULL REFERENCES perfil(id),
+  fecha TEXT NOT NULL,
+  accion TEXT NOT NULL,
+  moneda TEXT NOT NULL CHECK(moneda IN ('ARS','USD')),
+  monto REAL NOT NULL,
+  grupo TEXT,
+  nota TEXT
+);
 `;
