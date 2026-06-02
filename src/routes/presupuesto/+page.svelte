@@ -5,7 +5,9 @@
 	const hoy = new Date();
 	let periodo = $state(hoy.toISOString().slice(0, 7));
 	let grupos = $state<any[]>([]);
+	let consolidado = $state<any[]>([]);
 	let totales = $state<any>({ n2: 0, n1: 0, presup: 0, real: 0 });
+	let rango = $state('');
 	let cargando = $state(true);
 
 	function addMonths(ym: string, delta: number): string {
@@ -13,7 +15,6 @@
 		const d = new Date(y, m - 1 + delta, 1);
 		return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 	}
-
 	function desvio(real: number, presup: number): string {
 		if (!presup) return '—';
 		if (real <= presup) return 'En margen';
@@ -21,65 +22,86 @@
 		return 'Muy superado';
 	}
 
+	// Mapa fecha_gasto -> periodo de sueldo. Se arma con las fechas de los sueldos.
+	let cortes: { fecha: string; periodo: string }[] = [];
+
+	function periodoDeFecha(fecha: string): string | null {
+		let elegido: string | null = null;
+		for (const c of cortes) {
+			if (c.fecha <= fecha) elegido = c.periodo;
+			else break;
+		}
+		return elegido;
+	}
+
 	async function cargar() {
 		cargando = true;
+
+		// 1) Cortes = fechas de los sueldos (categoria Salario, tipo Sueldo) con su periodo
+		const sueldos = (await query(
+			"SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Salario' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha"
+		)) as any[];
+		cortes = sueldos.map((s) => ({ fecha: s.fecha, periodo: s.periodo }));
+
 		const n = periodo;
 		const n1 = addMonths(periodo, -1);
 		const n2 = addMonths(periodo, -2);
+		const objetivo = new Set([n, n1, n2]);
 
-		// Reales por subcategoria (efectiva) para los 3 meses
-		const reales = (await query(
-			`SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid,
-			        strftime('%Y-%m', g.fecha) AS mes, SUM(g.monto) AS total
+		// rango de fechas del período visible (del sueldo que lo abre al día antes del siguiente)
+		const idx = cortes.findIndex((c) => c.periodo === n);
+		if (idx >= 0) {
+			const ini = cortes[idx].fecha;
+			const fin = idx + 1 < cortes.length ? cortes[idx + 1].fecha : 'hoy';
+			rango = `${ini} al ${fin === 'hoy' ? 'hoy' : fin}`;
+		} else rango = '(sin sueldo cargado para este período)';
+
+		// 2) Traigo TODOS los gastos con subcategoria efectiva y los asigno a período en JS
+		const gastos = (await query(
+			`SELECT g.fecha, g.monto, g.categoria_id,
+			        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
 			 FROM gasto g
 			 LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-			 WHERE g.perfil_id = 1 AND strftime('%Y-%m', g.fecha) IN (?,?,?)
-			 GROUP BY scid, mes`,
-			[n, n1, n2]
+			 WHERE g.perfil_id = 1`
 		)) as any[];
 
-		// Categoria habitual de cada subcategoria (la mas frecuente en todo el historial)
+		// categoría habitual por subcategoría
 		const hab = (await query(
 			`SELECT scid, categoria_id, COUNT(*) AS c FROM (
 			   SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
-			   FROM gasto g
-			   LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-			   WHERE g.perfil_id = 1
+			   FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
+			   WHERE g.perfil_id=1
 			 ) GROUP BY scid, categoria_id`
 		)) as any[];
 		const homeCat: Record<string, number | null> = {};
 		const bestC: Record<string, number> = {};
 		for (const h of hab) {
 			const k = h.scid == null ? 'null' : String(h.scid);
-			if (bestC[k] === undefined || h.c > bestC[k]) {
-				bestC[k] = h.c;
-				homeCat[k] = h.categoria_id;
-			}
+			if (bestC[k] === undefined || h.c > bestC[k]) { bestC[k] = h.c; homeCat[k] = h.categoria_id; }
 		}
 
 		const subs = (await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1')) as any[];
 		const nombreSub: Record<number, string> = {};
 		for (const s of subs) nombreSub[s.id] = s.nombre;
-
 		const cats = (await query('SELECT id, nombre FROM categoria WHERE perfil_id=1')) as any[];
 		const nombreCat: Record<number, string> = {};
 		for (const c of cats) nombreCat[c.id] = c.nombre;
 
-		const presup = (await query(
-			"SELECT subcategoria_id, monto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"
-		)) as any[];
+		const presup = (await query("SELECT subcategoria_id, monto FROM presupuesto WHERE perfil_id=1 AND periodo='default'")) as any[];
 		const presupMap: Record<number, number> = {};
 		for (const p of presup) presupMap[p.subcategoria_id] = p.monto;
 
-		// Acumular por subcategoria
-		const acc: Record<string, any> = {};
+		// 3) Acumular por subcategoría, solo para los 3 períodos objetivo
 		const key = (id: any) => (id == null ? 'null' : String(id));
-		for (const r of reales) {
-			const k = key(r.scid);
-			acc[k] ??= { scid: r.scid, n2: 0, n1: 0, real: 0 };
-			if (r.mes === n2) acc[k].n2 = r.total;
-			else if (r.mes === n1) acc[k].n1 = r.total;
-			else if (r.mes === n) acc[k].real = r.total;
+		const acc: Record<string, any> = {};
+		for (const g of gastos) {
+			const per = periodoDeFecha(g.fecha);
+			if (!per || !objetivo.has(per)) continue;
+			const k = key(g.scid);
+			acc[k] ??= { scid: g.scid, n2: 0, n1: 0, real: 0 };
+			if (per === n2) acc[k].n2 += g.monto;
+			else if (per === n1) acc[k].n1 += g.monto;
+			else if (per === n) acc[k].real += g.monto;
 		}
 		for (const p of presup) {
 			const k = key(p.subcategoria_id);
@@ -98,57 +120,63 @@
 			};
 		});
 
-		// Agrupar por categoria
 		const map: Record<string, any[]> = {};
 		for (const f of filas) (map[f.catNombre] ??= []).push(f);
-		const gr = Object.keys(map)
-			.sort((a, b) => a.localeCompare(b, 'es'))
-			.map((cat) => {
-				const rows = map[cat].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
-				const sub = rows.reduce(
-					(t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }),
-					{ n2: 0, n1: 0, presup: 0, real: 0 }
-				);
-				return { cat, rows, sub };
-			});
-
+		const gr = Object.keys(map).sort((a, b) => a.localeCompare(b, 'es')).map((cat) => {
+			const rows = map[cat].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+			const sub = rows.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
+			return { cat, rows, sub };
+		});
 		grupos = gr;
-		totales = filas.reduce(
-			(t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }),
-			{ n2: 0, n1: 0, presup: 0, real: 0 }
-		);
+		consolidado = gr.map((g) => ({ cat: g.cat, ...g.sub, estado: desvio(g.sub.real, g.sub.presup) }));
+		totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
 		cargando = false;
 	}
 
 	async function guardarPresup(scid: number, valor: string) {
 		const monto = Number(valor);
 		if (scid == null || isNaN(monto) || monto < 0) return;
-		await query(
-			"INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto) VALUES (1, ?, 'default', ?) " +
-				'ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto = excluded.monto',
-			[scid, monto]
-		);
+		await query("INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto) VALUES (1, ?, 'default', ?) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto = excluded.monto", [scid, monto]);
 		await cargar();
 	}
 
 	onMount(cargar);
 
 	const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
-	const claseEstado = (e: string) =>
-		e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
+	const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 </script>
 
 <h1>Presupuesto</h1>
 
-<label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+<label class="sel">Período de sueldo: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+<p class="rango">Gastos del <strong>{rango}</strong> (el período lo abre la fecha real de tu sueldo).</p>
 
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
+	<h2>Consolidado por categoría</h2>
 	<table>
-		<thead>
-			<tr><th>Subcategoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr>
-		</thead>
+		<thead><tr><th>Categoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
+		<tbody>
+			{#each consolidado as c (c.cat)}
+				<tr>
+					<td><strong>{c.cat}</strong></td>
+					<td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
+					<td class="num">{peso(c.presup)}</td><td class="num">{peso(c.real)}</td>
+					<td class={claseEstado(c.estado)}>{c.estado}</td>
+				</tr>
+			{/each}
+		</tbody>
+		<tfoot>
+			<tr><td><strong>Total general</strong></td>
+				<td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
+				<td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
+		</tfoot>
+	</table>
+
+	<h2>Detalle por subcategoría</h2>
+	<table>
+		<thead><tr><th>Subcategoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
 		<tbody>
 			{#each grupos as g (g.cat)}
 				<tr class="cat"><td colspan="6">{g.cat}</td></tr>
@@ -167,31 +195,26 @@
 						<td class={claseEstado(f.estado)}>{f.estado}</td>
 					</tr>
 				{/each}
-				
 			{/each}
 		</tbody>
 		<tfoot>
-			<tr>
-				<td><strong>Total general</strong></td>
-				<td class="num">{peso(totales.n2)}</td>
-				<td class="num">{peso(totales.n1)}</td>
-				<td class="num">{peso(totales.presup)}</td>
-				<td class="num">{peso(totales.real)}</td>
-				<td></td>
-			</tr>
+			<tr><td><strong>Total general</strong></td>
+				<td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
+				<td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
 		</tfoot>
 	</table>
 {/if}
 
 <style>
 	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+	.rango { font-size: 0.82rem; color: #777; margin: 0 0 12px; }
+	h2 { font-size: 1.05rem; margin-top: 20px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; }
 	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
 	td.num, th:nth-child(n + 2) { text-align: right; }
 	td.ind { padding-left: 20px; }
 	tr.cat td { background: #eef2f7; font-weight: 700; }
-	tr.subt td { background: #fafafa; font-style: italic; color: #555; border-top: 1px solid #bbb; }
 	input.presup { width: 90px; text-align: right; padding: 3px 5px; border: 1px solid #bbb; border-radius: 4px; }
 	td.ok { color: #137333; }
 	td.warn { color: #b06000; font-weight: 600; }
