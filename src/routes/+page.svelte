@@ -8,7 +8,6 @@
 	let detallesExistentes = $state<string[]>([]);
 	let ultimos = $state<any[]>([]);
 
-	// Formulario
 	let fecha = $state(new Date().toISOString().slice(0, 10));
 	let monto = $state<number | null>(null);
 	let moneda = $state('ARS');
@@ -19,13 +18,13 @@
 	let cuotas = $state(1);
 	let mesInicio = $state(new Date().toISOString().slice(0, 7));
 
-	// Subcategoría / aprendizaje
 	let subcatDerivada = $state<string | null>(null);
 	let detalleNuevo = $state(false);
 	let modoSubcat = $state<'existente' | 'nueva'>('existente');
 	let subcatSelId = $state<number | null>(null);
 	let subcatNuevaNombre = $state('');
 
+	let editandoId = $state<number | null>(null);
 	let mensaje = $state('');
 
 	async function cargarBase() {
@@ -39,8 +38,9 @@
 
 	async function cargarUltimos() {
 		ultimos = await query(`
-			SELECT g.id, g.fecha, g.monto, g.moneda, c.nombre AS categoria, g.detalle, g.medio,
-			       COALESCE(s.nombre, sm.nombre) AS subcategoria, t.nombre AS tarjeta, g.cuotas
+			SELECT g.id, g.fecha, g.monto, g.moneda, g.categoria_id, c.nombre AS categoria, g.detalle, g.medio,
+			       g.subcategoria_id, COALESCE(s.nombre, sm.nombre) AS subcategoria,
+			       g.tarjeta_id, t.nombre AS tarjeta, g.cuotas, g.mes_inicio_pago
 			FROM gasto g
 			JOIN categoria c ON c.id = g.categoria_id
 			LEFT JOIN subcategoria s ON s.id = g.subcategoria_id
@@ -48,33 +48,52 @@
 			LEFT JOIN subcategoria sm ON sm.id = md.subcategoria_id
 			LEFT JOIN tarjeta t ON t.id = g.tarjeta_id
 			WHERE g.perfil_id = 1
-			ORDER BY g.id DESC LIMIT 12
+			ORDER BY g.fecha DESC, g.id DESC LIMIT 30
 		`);
 	}
 
 	onMount(cargarBase);
 
-	// Detecta en vivo si el detalle ya tiene subcategoría o es nuevo
 	$effect(() => {
 		const d = detalle.trim();
-		if (!d) {
-			subcatDerivada = null;
-			detalleNuevo = false;
-			return;
-		}
-		query(
-			'SELECT s.nombre FROM mapeo_detalle m JOIN subcategoria s ON s.id=m.subcategoria_id WHERE m.perfil_id=1 AND m.detalle=?',
-			[d]
-		).then((r: any) => {
-			if (r.length) {
-				subcatDerivada = r[0].nombre;
-				detalleNuevo = false;
-			} else {
-				subcatDerivada = null;
-				detalleNuevo = true;
-			}
-		});
+		if (!d) { subcatDerivada = null; detalleNuevo = false; return; }
+		query('SELECT s.nombre FROM mapeo_detalle m JOIN subcategoria s ON s.id=m.subcategoria_id WHERE m.perfil_id=1 AND m.detalle=?', [d])
+			.then((r: any) => {
+				if (r.length) { subcatDerivada = r[0].nombre; detalleNuevo = false; }
+				else { subcatDerivada = null; detalleNuevo = true; }
+			});
 	});
+
+	function resetForm() {
+		editandoId = null;
+		monto = null; detalle = ''; subcatSelId = null; subcatNuevaNombre = ''; modoSubcat = 'existente';
+		medio = 'debito'; tarjetaId = null; cuotas = 1;
+		fecha = new Date().toISOString().slice(0, 10);
+		mesInicio = new Date().toISOString().slice(0, 7);
+		moneda = 'ARS'; categoriaId = null;
+	}
+
+	function editar(g: any) {
+		editandoId = g.id;
+		fecha = g.fecha;
+		monto = g.monto;
+		moneda = g.moneda;
+		categoriaId = g.categoria_id;
+		detalle = g.detalle;
+		medio = g.medio;
+		tarjetaId = g.tarjeta_id;
+		cuotas = g.cuotas ?? 1;
+		mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : new Date().toISOString().slice(0, 7);
+		mensaje = '';
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
+	async function eliminar(id: number) {
+		if (!confirm('¿Eliminar este gasto? No se puede deshacer.')) return;
+		await query('DELETE FROM gasto WHERE id=? AND perfil_id=1', [id]);
+		if (editandoId === id) resetForm();
+		await cargarUltimos();
+	}
 
 	async function guardar() {
 		mensaje = '';
@@ -88,11 +107,8 @@
 			if (!cuotas || cuotas < 1) return (mensaje = 'Cuotas inválidas');
 			if (!mesInicio) return (mensaje = 'Falta el mes de inicio de pago');
 		}
-
 		const dTrim = detalle.trim();
-
 		try {
-			// Si el detalle es nuevo y el usuario asignó subcategoría, la recordamos
 			if (detalleNuevo) {
 				let subId: number | null = null;
 				if (modoSubcat === 'nueva' && subcatNuevaNombre.trim()) {
@@ -103,31 +119,32 @@
 				} else if (modoSubcat === 'existente' && subcatSelId) {
 					subId = subcatSelId;
 				}
-				if (subId) {
-					await query('INSERT OR IGNORE INTO mapeo_detalle (perfil_id, detalle, subcategoria_id) VALUES (1, ?, ?)', [dTrim, subId]);
+				if (subId) await query('INSERT OR IGNORE INTO mapeo_detalle (perfil_id, detalle, subcategoria_id) VALUES (1, ?, ?)', [dTrim, subId]);
+			}
+
+			if (editandoId) {
+				// UPDATE
+				if (medio === 'debito') {
+					await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=NULL, cuotas=1, mes_inicio_pago=NULL WHERE id=? AND perfil_id=1',
+						[fecha, m, moneda, categoriaId, dTrim, 'debito', editandoId]);
+				} else {
+					await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=?, cuotas=?, mes_inicio_pago=? WHERE id=? AND perfil_id=1',
+						[fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01', editandoId]);
 				}
-			}
-
-			// Inserta el gasto
-			if (medio === 'debito') {
-				await query(
-					'INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,?,1)',
-					[fecha, m, moneda, categoriaId, dTrim, 'debito']
-				);
+				mensaje = 'Gasto actualizado ✅';
 			} else {
-				await query(
-					'INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,tarjeta_id,cuotas,mes_inicio_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
-					[fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01']
-				);
+				// INSERT
+				if (medio === 'debito') {
+					await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,?,1)',
+						[fecha, m, moneda, categoriaId, dTrim, 'debito']);
+				} else {
+					await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,tarjeta_id,cuotas,mes_inicio_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
+						[fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01']);
+				}
+				mensaje = 'Gasto guardado ✅';
 			}
-
-			mensaje = 'Gasto guardado ✅';
-			monto = null;
-			detalle = '';
-			subcatSelId = null;
-			subcatNuevaNombre = '';
-			modoSubcat = 'existente';
-			await cargarBase(); // refresca detalles/subcategorías nuevos
+			resetForm();
+			await cargarBase();
 		} catch (e: any) {
 			mensaje = 'Error: ' + (e?.message ?? String(e));
 		}
@@ -136,32 +153,24 @@
 	const fmt = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Number(n).toLocaleString('es-AR');
 </script>
 
-<h1>Rienda — Cargar gasto</h1>
-<button onclick={async () => { await query('DELETE FROM gasto WHERE perfil_id=1 AND id > 2059'); await cargarBase(); }}>🧹 Borrar gastos de prueba</button>
+<h1>Rienda — {editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
 
 <div class="form">
+	{#if editandoId}<p class="editando">✏️ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} /></label>
 	<label>Monto<input type="number" step="0.01" min="0" bind:value={monto} placeholder="0" /></label>
-
 	<label>Moneda
-		<select bind:value={moneda}>
-			<option value="ARS">ARS</option>
-			<option value="USD">USD</option>
-		</select>
+		<select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
 	</label>
-
 	<label>Categoría
 		<select bind:value={categoriaId}>
 			<option value={null} disabled>Elegir…</option>
 			{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
 		</select>
 	</label>
-
 	<label>Detalle
 		<input list="detalles" bind:value={detalle} placeholder="Ej: Pizza, Auto, Kiosco…" />
-		<datalist id="detalles">
-			{#each detallesExistentes as d (d)}<option value={d}></option>{/each}
-		</datalist>
+		<datalist id="detalles">{#each detallesExistentes as d (d)}<option value={d}></option>{/each}</datalist>
 	</label>
 
 	{#if detalle.trim()}
@@ -202,22 +211,26 @@
 		<label>Mes inicio de pago<input type="month" bind:value={mesInicio} /></label>
 	{/if}
 
-	<button class="guardar" onclick={guardar}>Guardar gasto</button>
+	<button class="guardar" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
 	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
 
 <h2>Últimos gastos</h2>
 <table>
-	<thead><tr><th>Fecha</th><th>Detalle</th><th>Subcat.</th><th>Categoría</th><th>Medio</th><th>Monto</th></tr></thead>
+	<thead><tr><th>Fecha</th><th>Detalle</th><th>Subcat.</th><th>Categoría</th><th>Medio</th><th class="num">Monto</th><th></th></tr></thead>
 	<tbody>
 		{#each ultimos as g (g.id)}
-			<tr>
+			<tr class:editrow={editandoId === g.id}>
 				<td>{g.fecha}</td>
 				<td>{g.detalle}</td>
 				<td>{g.subcategoria ?? '—'}</td>
 				<td>{g.categoria}</td>
 				<td>{g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</td>
 				<td class="num">{fmt(g.monto, g.moneda)}</td>
+				<td class="acc">
+					<button class="lapiz" onclick={() => editar(g)} title="Editar">✏️</button>
+					<button class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
+				</td>
 			</tr>
 		{/each}
 	</tbody>
@@ -235,7 +248,14 @@
 	.nuevo { border: 1px dashed #c8a000; background: #fffceb; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
 	.hint { font-size: 0.85rem; color: #555; margin: 0; }
 	.msg { font-weight: 600; }
+	.editando { font-size: 0.85rem; color: #8a4b00; background: #fff3e0; padding: 6px 10px; border-radius: 6px; margin: 0; }
+	.link { background: none; border: none; color: #1a73e8; cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 	table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.9rem; }
 	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
-	td.num { text-align: right; white-space: nowrap; }
+	td.num, th.num { text-align: right; white-space: nowrap; }
+	tr.editrow { background: #fff8e1; }
+	td.acc { white-space: nowrap; }
+	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
+	.lapiz:hover { opacity: 1; }
+	.del { background: #fce8e6; color: #c5221f; border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
 </style>
