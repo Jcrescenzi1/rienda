@@ -147,31 +147,31 @@
 {/if}
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
-	.card span { font-size: 0.72rem; color: #777; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
+	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
-	.card.ok { background: #eafaf0; border-color: #b6e6c8; }
-	.card.bad { background: #fdeceb; border-color: #f3c2bf; }
+	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
+	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-	.vistas button { padding: 5px 12px; border: 1px solid #bbb; background: #fff; border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.vistas button.activo { background: #111; color: #fff; border-color: #111; }
-	.vistas select { padding: 5px 8px; border: 1px solid #bbb; border-radius: 6px; }
-	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: #555; margin: 6px 0; }
+	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
+	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.vistas select { padding: 5px 8px; }
+	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
-	.sw-sal { background: #1a73e8; }
-	.sw-inf { background: #e8710a; }
-	.aclara { color: #888; }
-	.chart { width: 100%; height: auto; border: 1px solid #eee; border-radius: 8px; background: #fafbff; }
-	.grid { stroke: #e8e8e8; stroke-width: 1; }
-	.ylbl { font-size: 10px; fill: #999; text-anchor: end; }
-	.xlbl { font-size: 10px; fill: #999; text-anchor: middle; }
-	.line-sal { fill: none; stroke: #1a73e8; stroke-width: 2.5; }
-	.line-inf { fill: none; stroke: #e8710a; stroke-width: 2.5; }
-	.dot-sal { fill: #1a73e8; } .dot-inf { fill: #e8710a; }
+	.sw-sal { background: var(--accent); }
+	.sw-inf { background: #e8975b; }
+	.aclara { color: var(--text-dim); }
+	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+	.grid { stroke: var(--border); stroke-width: 1; }
+	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
+	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
+	.line-sal { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+	.line-inf { fill: none; stroke: #e8975b; stroke-width: 2.5; }
+	.dot-sal { fill: var(--accent); } .dot-inf { fill: #e8975b; }
 	.endlbl { font-size: 11px; font-weight: 700; }
-	.endlbl.sal { fill: #1a73e8; } .endlbl.inf { fill: #e8710a; }
-	.nota { font-size: 0.8rem; color: #777; margin-top: 12px; }
+	.endlbl.sal { fill: var(--accent); } .endlbl.inf { fill: #e8975b; }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 </style>

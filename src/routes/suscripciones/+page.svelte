@@ -174,31 +174,31 @@
 </div>
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
-	.apps { font-size: 0.9rem; color: #444; }
+	.apps { font-size: 0.9rem; color: var(--text-dim); }
 	h2 { font-size: 1.1rem; margin-top: 22px; }
 	h3 { font-size: 1rem; margin: 0 0 8px; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
+	th, td { padding: 5px 8px; text-align: left; }
 	td.num, th.num { text-align: right; white-space: nowrap; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
-	input, select { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
+	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
+	input, select { padding: 6px; font-size: 0.95rem; }
 	input.mini { width: 110px; padding: 3px 5px; display: inline-block; }
-	button { padding: 5px 10px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	button.sec { background: #eee; color: #333; }
+	button { padding: 5px 10px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+	button.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 	button.guardar { padding: 9px; margin-top: 4px; }
 	.draft { display: inline-flex; gap: 5px; align-items: center; flex-wrap: wrap; }
-	.ok { color: #137333; font-weight: 600; }
-	.vacio, .msg { color: #666; }
+	.ok { color: var(--pos); font-weight: 600; }
+	.vacio, .msg { color: var(--text-dim); }
 	.msg { font-weight: 600; }
 	tr.inactiva { opacity: 0.45; }
-	tr.editrow { background: #fff8e1; }
+	tr.editrow { background: rgba(91, 157, 255, 0.08); }
 	td.acc { white-space: nowrap; }
 	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; padding: 2px 4px; }
 	.lapiz:hover { opacity: 1; }
-	.del { background: #fce8e6; color: #c5221f; padding: 3px 8px; margin-left: 2px; }
-	.editbox { border: 1px solid #cdddff; background: #f7faff; border-radius: 8px; padding: 14px; margin: 12px 0; max-width: 380px; }
+	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); padding: 3px 8px; margin-left: 2px; }
+	.editbox { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; max-width: 380px; }
 	.botones { display: flex; gap: 8px; }
 </style>

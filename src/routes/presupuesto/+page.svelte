@@ -206,19 +206,19 @@
 {/if}
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-	.rango { font-size: 0.82rem; color: #777; margin: 0 0 12px; }
+	.rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
+	th, td { padding: 5px 8px; text-align: left; }
 	td.num, th:nth-child(n + 2) { text-align: right; }
 	td.ind { padding-left: 20px; }
-	tr.cat td { background: #eef2f7; font-weight: 700; }
-	input.presup { width: 90px; text-align: right; padding: 3px 5px; border: 1px solid #bbb; border-radius: 4px; }
-	td.ok { color: #137333; }
-	td.warn { color: #b06000; font-weight: 600; }
-	td.bad { color: #c5221f; font-weight: 700; }
-	td.none { color: #999; }
-	tfoot td { border-top: 2px solid #999; font-weight: 600; }
+	tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); }
+	input.presup { width: 90px; text-align: right; padding: 3px 5px; }
+	td.ok { color: var(--pos); }
+	td.warn { color: var(--warn); font-weight: 600; }
+	td.bad { color: var(--neg); font-weight: 700; }
+	td.none { color: var(--text-dim); }
+	tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
 </style>

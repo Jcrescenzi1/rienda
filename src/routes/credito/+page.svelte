@@ -87,14 +87,15 @@
 {/if}
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sub { font-size: 0.85rem; color: #666; }
-	table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.9rem; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
-	td.num { text-align: right; white-space: nowrap; }
-	td.total { font-weight: 700; }
-	tr.mes { cursor: pointer; }
-	tr.mes:hover { background: #f5f8ff; }
-	tr.detalle ul { margin: 4px 0; padding-left: 18px; }
-	tr.detalle li { font-size: 0.85rem; color: #444; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
+	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
+	h2 { font-size: 1.1rem; margin-top: 22px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+	th, td { padding: 5px 8px; text-align: left; }
+	td.num, th.num { text-align: right; white-space: nowrap; }
+	thead tr { background: var(--surface-2); }
+	tr.total td, tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
+	.msg { font-weight: 600; color: var(--text); }
+	.vacio { color: var(--text-dim); font-style: italic; text-align: center; }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 </style>

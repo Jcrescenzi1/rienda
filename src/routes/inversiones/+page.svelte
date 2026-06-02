@@ -385,48 +385,47 @@
 {/if}
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 980px; margin: 0 auto; padding: 16px; }
+:global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
 	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
-	.nueva { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.guardarcart { background: #137333; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.form { border: 1px solid #cdddff; background: #f7faff; border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
+	.nueva { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.guardarcart { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.form { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
 	.acciones { display: flex; gap: 5px; flex-wrap: wrap; }
-	.acciones button { flex: 1; min-width: 70px; padding: 7px 4px; border: 1px solid #bbb; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
-	.acciones button.activo { background: #1a73e8; color: #fff; border-color: #1a73e8; }
-	.nuevo { border: 1px dashed #aaa; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
-	input, select { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
+	.acciones button { flex: 1; min-width: 70px; padding: 7px 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
+	.acciones button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.nuevo { border: 1px dashed var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
+	input, select { padding: 6px; font-size: 0.95rem; }
 	.botones { display: flex; gap: 8px; }
-	.guardar { padding: 9px; background: #137333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	.cancelar { padding: 9px 14px; background: #eee; border: none; border-radius: 6px; cursor: pointer; }
-	.hint { font-size: 0.82rem; color: #1a73e8; margin: 0; }
+	.guardar { padding: 9px; background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
+	.cancelar { padding: 9px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 175px; }
-	.card span { font-size: 0.72rem; color: #777; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 175px; }
+	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-	th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; }
+	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
 	td.pctcol { text-align: center; }
 	th.num { text-align: center; }
-	th.hl, td.hl { background: #f1f6ff; }
-	tr.liqrow { background: #f4fbf4; font-style: italic; }
-	.vacio { text-align: center; color: #999; font-style: italic; }
-	.pos { color: #137333; } .neg { color: #c5221f; }
+	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
+	tr.liqrow { background: rgba(74, 222, 128, 0.06); font-style: italic; }
+	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.lapiz { background: none; border: none; cursor: pointer; font-size: 0.8rem; opacity: 0.5; }
 	.lapiz:hover { opacity: 1; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
-	.okp { background: #137333; color: #fff; border: none; border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
-	.cancp { background: #eee; border: none; border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
+	.okp { background: var(--pos); color: #06281a; border: none; border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
+	.cancp { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
 	.bars { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; max-width: 640px; }
 	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
-	.lbl { width: 70px; color: #555; }
-	.track { flex: 1; background: #f0f0f0; border-radius: 4px; height: 16px; overflow: hidden; }
+	.lbl { width: 70px; color: var(--text-dim); }
+	.track { flex: 1; background: var(--surface-2); border-radius: 4px; height: 16px; overflow: hidden; }
 	.bar { height: 100%; }
-	.val { width: 170px; text-align: right; color: #333; }
-	.del { background: #fce8e6; color: #c5221f; border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
-	.nota { font-size: 0.8rem; color: #777; margin-top: 12px; }
+	.val { width: 170px; text-align: right; color: var(--text); }
+	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 </style>

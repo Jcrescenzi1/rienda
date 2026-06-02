@@ -237,25 +237,25 @@
 </table>
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 0 auto; }
-	label { display: flex; flex-direction: column; font-size: 0.85rem; color: #444; gap: 3px; }
-	input, select { padding: 7px; font-size: 1rem; border: 1px solid #bbb; border-radius: 6px; }
+	label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
+	input, select { padding: 7px; font-size: 1rem; }
 	.medio { display: flex; gap: 8px; }
-	.medio button { flex: 1; padding: 8px; border: 1px solid #bbb; background: #f5f5f5; border-radius: 6px; cursor: pointer; }
-	.medio button.activo { background: #1a73e8; color: #fff; border-color: #1a73e8; }
-	.guardar { padding: 10px; font-size: 1rem; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-top: 4px; }
-	.nuevo { border: 1px dashed #c8a000; background: #fffceb; padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
-	.hint { font-size: 0.85rem; color: #555; margin: 0; }
-	.msg { font-weight: 600; }
-	.editando { font-size: 0.85rem; color: #8a4b00; background: #fff3e0; padding: 6px 10px; border-radius: 6px; margin: 0; }
-	.link { background: none; border: none; color: #1a73e8; cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
+	.medio button { flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; }
+	.medio button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.guardar { padding: 10px; font-size: 1rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-top: 4px; }
+	.nuevo { border: 1px dashed var(--warn); background: rgba(251, 191, 36, 0.08); padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+	.hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+	.msg { font-weight: 600; color: var(--text); }
+	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
+	.link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 	table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.9rem; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
+	th, td { padding: 5px 8px; text-align: left; }
 	td.num, th.num { text-align: right; white-space: nowrap; }
-	tr.editrow { background: #fff8e1; }
+	tr.editrow { background: rgba(91, 157, 255, 0.08); }
 	td.acc { white-space: nowrap; }
 	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
 	.lapiz:hover { opacity: 1; }
-	.del { background: #fce8e6; color: #c5221f; border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
+	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
 </style>

@@ -222,42 +222,41 @@
 {/if}
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
-	.foto { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.95rem; margin-bottom: 10px; }
+	.foto { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.95rem; margin-bottom: 10px; }
 	.foto:disabled { opacity: 0.6; }
-	.fotoform { border: 1px solid #cdddff; background: #f7faff; border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; max-width: 420px; }
+	.fotoform { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; max-width: 420px; }
 	.calc { margin: 0; font-size: 0.9rem; }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
-	input { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
-	.hint { font-size: 0.78rem; color: #777; margin: 0; }
+	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
+	input { padding: 6px; font-size: 0.95rem; }
+	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
 	.botones { display: flex; gap: 8px; }
-	.guardar { padding: 8px 14px; background: #137333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	.cancelar { padding: 8px 14px; background: #eee; border: none; border-radius: 6px; cursor: pointer; }
+	.guardar { padding: 8px 14px; background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
+	.cancelar { padding: 8px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 	.msg { font-weight: 600; margin: 0; }
 	.periodos { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
-	.periodos button { padding: 5px 12px; border: 1px solid #bbb; background: #fff; border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.periodos button.activo { background: #111; color: #fff; border-color: #111; }
+	.periodos button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
+	.periodos button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }
 	.card.big strong { font-size: 1.5rem; }
-	.card span { font-size: 0.72rem; color: #777; }
+	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
 	.toggle { display: flex; gap: 6px; margin: 8px 0; }
-	.toggle button { padding: 5px 12px; border: 1px solid #bbb; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-	.toggle button.activo { background: #1a73e8; color: #fff; border-color: #1a73e8; }
-	.chart { width: 100%; height: auto; border: 1px solid #eee; border-radius: 8px; background: #fafbff; }
-	.grid { stroke: #e8e8e8; stroke-width: 1; }
-	.ylbl { font-size: 10px; fill: #999; text-anchor: end; }
-	.xlbl { font-size: 10px; fill: #999; text-anchor: middle; }
-	.area { fill: rgba(26, 115, 232, 0.08); stroke: none; }
-	.line { fill: none; stroke: #1a73e8; stroke-width: 2; }
-	.dot { fill: #1a73e8; }
+	.toggle button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+	.toggle button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+	.grid { stroke: var(--border); stroke-width: 1; }
+	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
+	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
+	.area { fill: rgba(91, 157, 255, 0.10); stroke: none; }
+	.line { fill: none; stroke: var(--accent); stroke-width: 2; }
+	.dot { fill: var(--accent); }
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-	table.chica { width: auto; min-width: 240px; }
-	th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; }
+	th, td { padding: 5px 7px; text-align: left; }
 	td.num, th.num { text-align: right; }
-	.pos { color: #137333; } .neg { color: #c5221f; }
-	.nota { font-size: 0.8rem; color: #777; margin-top: 12px; }
+	table.chica { width: auto; min-width: 240px; }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 </style>

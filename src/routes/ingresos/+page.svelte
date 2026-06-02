@@ -129,26 +129,23 @@
 </table>
 
 <style>
-	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
 	h2 { font-size: 1.1rem; margin-top: 22px; }
-	.cards { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
-	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 110px; }
-	.card span { font-size: 0.75rem; color: #777; }
-	.card strong { font-size: 1.1rem; }
-	.card.tot { background: #f5f8ff; border-color: #cdddff; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
-	input, select { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
-	.medio { display: flex; gap: 8px; }
-	.medio button { flex: 1; padding: 7px; border: 1px solid #bbb; background: #f5f5f5; border-radius: 6px; cursor: pointer; }
-	.medio button.activo { background: #1a73e8; color: #fff; border-color: #1a73e8; }
-	.guardar { padding: 9px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-top: 8px; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
-	td.num { text-align: right; white-space: nowrap; }
-	tr.foco { background: #fffdf2; }
-	button.sec { background: #eee; color: #900; border: none; border-radius: 6px; padding: 3px 8px; cursor: pointer; }
-	.vacio { color: #666; }
-	.msg { font-weight: 600; }
+	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
+	input, select { padding: 6px; font-size: 0.95rem; }
+	button { padding: 6px 12px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+	button.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+	.guardar { padding: 9px; margin-top: 4px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+	th, td { padding: 5px 8px; text-align: left; }
+	td.num, th.num { text-align: right; white-space: nowrap; }
+	.msg { font-weight: 600; color: var(--text); }
+	.vacio { color: var(--text-dim); font-style: italic; text-align: center; }
+	tr.editrow { background: rgba(91, 157, 255, 0.08); }
+	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
+	.lapiz:hover { opacity: 1; }
+	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 </style>
