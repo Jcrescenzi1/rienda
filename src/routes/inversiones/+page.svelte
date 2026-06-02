@@ -4,8 +4,8 @@
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
-	let anuales = $state<any[]>([]);
-	let activoNoRealizadoUSD = $state(0);
+	let realizadoAnioActual = $state(0);
+	let noRealizadoTotal = $state(0);
 	let buckets = $state<any[]>([]);
 	let ledger = $state<any[]>([]);
 	let cajaLedger = $state<any[]>([]);
@@ -34,7 +34,14 @@
 	let editLiq = $state<string | null>(null);
 	let editSaldo = $state<number | null>(null);
 
+	// Guardar Cartera (foto)
+	let showFoto = $state(false);
+	let fFlujo = $state(0); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
+	let fotoFecha = $state(new Date().toISOString().slice(0, 10));
+	let fotoMsg = $state('');
+
 	const toUSD = (m: number, mon: string, vd: number | null) => (mon === 'USD' ? m : vd ? m / vd : 0);
+	const anioActual = new Date().getFullYear().toString();
 
 	async function cargarTodo() {
 		const dq = (await query('SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
@@ -50,23 +57,24 @@
 
 		const txs = (await query('SELECT activo_id, operacion, unidades, precio, fecha, valor_dolar FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id')) as any[];
 		const lotes: Record<number, { u: number; pNat: number; pUSD: number }[]> = {};
-		const realizAnioUSD: Record<string, number> = {};
+		let realAnio = 0;
 		for (const t of txs) {
 			const a = aMap[t.activo_id];
 			lotes[t.activo_id] ??= [];
 			if (t.operacion === 'Compra') {
 				lotes[t.activo_id].push({ u: t.unidades, pNat: t.precio, pUSD: toUSD(t.precio, a.moneda, t.valor_dolar) });
 			} else {
-				let rem = t.unidades; const pvUSD = toUSD(t.precio, a.moneda, t.valor_dolar); const anio = t.fecha.slice(0, 4);
+				let rem = t.unidades; const pvUSD = toUSD(t.precio, a.moneda, t.valor_dolar);
 				const q = lotes[t.activo_id];
 				while (rem > 1e-9 && q.length) {
 					const lote = q[0]; const take = Math.min(rem, lote.u);
-					realizAnioUSD[anio] = (realizAnioUSD[anio] ?? 0) + take * (pvUSD - lote.pUSD);
+					if (t.fecha.slice(0, 4) === anioActual) realAnio += take * (pvUSD - lote.pUSD);
 					lote.u -= take; rem -= take;
 					if (lote.u < 1e-9) q.shift();
 				}
 			}
 		}
+		realizadoAnioActual = realAnio;
 
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
@@ -85,8 +93,8 @@
 				monto: costo, unidades: u, ppc, ppv: pa, precioActual: pa, mercado,
 				resultado: mercado - costo, pctRes: costo ? (mercado - costo) / costo : 0, mercadoUSD });
 		}
+		noRealizadoTotal = noRealUSD;
 
-		// Liquidez calculada = ancla + mov_caja + efecto de trades nuevos (con monto_pago)
 		const anchor = (await query('SELECT moneda, saldo FROM liquidez WHERE perfil_id=1')) as any[];
 		const movc = (await query('SELECT moneda, COALESCE(SUM(monto),0) s FROM mov_caja WHERE perfil_id=1 GROUP BY moneda')) as any[];
 		const tcash = (await query("SELECT moneda_pago m, COALESCE(SUM(CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END),0) s FROM transaccion WHERE perfil_id=1 AND monto_pago IS NOT NULL GROUP BY moneda_pago")) as any[];
@@ -105,8 +113,7 @@
 
 		for (const h of hold) h.peso = tUSD ? h.mercadoUSD / tUSD : 0;
 		hold.sort((x, y) => y.mercadoUSD - x.mercadoUSD);
-		cartera = hold; totalUSD = tUSD; activoNoRealizadoUSD = noRealUSD;
-		anuales = Object.keys(realizAnioUSD).sort().map((y) => ({ anio: y, valor: realizAnioUSD[y] }));
+		cartera = hold; totalUSD = tUSD;
 		buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
 
 		ledger = (await query(`SELECT t.id, t.fecha, a.nombre, a.tipo, a.moneda, t.operacion, t.unidades, t.precio
@@ -154,7 +161,6 @@
 					if (neto[0].n + 1e-9 < u) return (fMsg = `No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
 				}
 				const precio = monto / u;
-				// monto_pago en la moneda de pago
 				let montoPago = monto;
 				if (fPago !== monA) montoPago = monA === 'USD' && fPago === 'ARS' ? monto * Number(fValorDolar) : monto / Number(fValorDolar);
 				await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
@@ -205,6 +211,27 @@
 		editLiq = null; editSaldo = null; await cargarTodo();
 	}
 
+	// Guardar Cartera (snapshot)
+	async function prepararFoto() {
+		fotoMsg = '';
+		fotoDolar = dolar;
+		fotoValorUSD = totalUSD;
+		fotoValorARS = totalUSD * dolar;
+		const ult = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
+		const ultFecha = ult[0]?.fecha ?? '2000-01-01';
+		const fl = (await query("SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ?", [dolar, ultFecha])) as any[];
+		fFlujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
+		showFoto = true;
+	}
+	async function guardarFoto() {
+		try {
+			await query('INSERT INTO snapshot (perfil_id,fecha,valor_usd,flujo_usd,dolar,valor_ars) VALUES (1,?,?,?,?,?) ON CONFLICT(perfil_id,fecha) DO UPDATE SET valor_usd=excluded.valor_usd, flujo_usd=excluded.flujo_usd, dolar=excluded.dolar, valor_ars=excluded.valor_ars',
+				[fotoFecha, fotoValorUSD, fFlujo, fotoDolar, fotoValorARS]);
+			showFoto = false; fotoMsg = '📸 Cartera guardada en Evolución ✅';
+			setTimeout(() => (fotoMsg = ''), 3000);
+		} catch (e: any) { fotoMsg = 'Error: ' + (e?.message ?? String(e)); }
+	}
+
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const pct = (n: number) => (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + '%';
@@ -217,7 +244,21 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<button class="nueva" onclick={() => (showForm = !showForm)}>{showForm ? '✕ Cerrar' : '➕ Nuevo movimiento'}</button>
+	<div class="topbar">
+		<button class="nueva" onclick={() => (showForm = !showForm)}>{showForm ? '✕ Cerrar' : '➕ Nuevo movimiento'}</button>
+		<button class="guardarcart" onclick={prepararFoto}>📸 Guardar Cartera</button>
+	</div>
+	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
+
+	{#if showFoto}
+		<div class="form">
+			<h3>Guardar foto de cartera — {fotoFecha}</h3>
+			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
+			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {fotoDolar})</p>
+			<label>Flujo neto desde la última foto (USD)<input type="number" step="any" bind:value={fFlujo} /></label>
+			<div class="botones"><button class="guardar" onclick={guardarFoto}>Guardar</button><button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button></div>
+		</div>
+	{/if}
 
 	{#if showForm}
 		<div class="form">
@@ -227,19 +268,16 @@
 				{/each}
 			</div>
 			<label>Fecha<input type="date" bind:value={fFecha} /></label>
-
 			{#if esTrade}
 				<label>Cuenta
 					<select bind:value={fCuenta}><option value="" disabled>Elegir…</option>
 						{#each cuentas as c (c.id)}<option value={String(c.id)}>{c.nombre}</option>{/each}
-						<option value="nueva">+ Cuenta nueva…</option></select>
-				</label>
+						<option value="nueva">+ Cuenta nueva…</option></select></label>
 				{#if fCuenta === 'nueva'}<label>Nombre cuenta<input bind:value={fCuentaNueva} /></label>{/if}
 				<label>Activo
 					<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
 						{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}
-						<option value="nuevo">+ Activo nuevo…</option></select>
-				</label>
+						<option value="nuevo">+ Activo nuevo…</option></select></label>
 				{#if fActivo === 'nuevo'}
 					<div class="nuevo">
 						<label>Ticker<input bind:value={naTicker} /></label>
@@ -263,7 +301,6 @@
 				<label>Valor dólar<input type="number" step="any" bind:value={fValorDolar} /></label>
 				{#if fMonto && fValorDolar}<p class="hint">Entran {money(fMoneda === 'ARS' ? fMonto / fValorDolar : fMonto * fValorDolar, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 			{/if}
-
 			<button class="guardar" onclick={guardar}>Guardar</button>
 			{#if fMsg}<p class="msg">{fMsg}</p>{/if}
 		</div>
@@ -271,24 +308,8 @@
 
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong>{usd(totalUSD)}</strong></div>
-		<div class="card"><span>Líquido ARS</span><strong>{money(liqSaldos.ARS, 'ARS')}</strong></div>
-		<div class="card"><span>Líquido USD</span><strong>{money(liqSaldos.USD, 'USD')}</strong></div>
-		<div class="card"><span>Activo no realizado (≈USD)</span><strong class={activoNoRealizadoUSD >= 0 ? 'pos' : 'neg'}>{usd(activoNoRealizadoUSD, 2)}</strong></div>
-	</div>
-
-	<h2>Resultado realizado por año de cierre (USD)</h2>
-	<table class="chica">
-		<thead><tr><th>Año cierre</th><th class="num">Realizado</th></tr></thead>
-		<tbody>{#each anuales as a (a.anio)}<tr><td>{a.anio}</td><td class="num {a.valor >= 0 ? 'pos' : 'neg'}">{usd(a.valor, 2)}</td></tr>{/each}</tbody>
-	</table>
-
-	<h2>Estructura de renta (≈USD)</h2>
-	<div class="bars">
-		{#each buckets as b (b.renta)}
-			<div class="barrow"><span class="lbl">{b.renta}</span>
-				<div class="track"><div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}"></div></div>
-				<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
-		{/each}
+		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}>{usd(realizadoAnioActual, 2)}</strong></div>
+		<div class="card"><span>Ganancia no realizada (USD)</span><strong class={noRealizadoTotal >= 0 ? 'pos' : 'neg'}>{usd(noRealizadoTotal, 2)}</strong></div>
 	</div>
 
 	<h2>Cartera actual</h2>
@@ -324,19 +345,14 @@
 		</tbody>
 	</table>
 
-	<h2>Movimientos de caja</h2>
-	<table>
-		<thead><tr><th>Fecha</th><th>Acción</th><th>Moneda</th><th class="num">Monto</th><th></th></tr></thead>
-		<tbody>
-			{#each cajaLedger as m (m.id)}
-				<tr><td>{m.fecha}</td><td>{m.accion}</td><td>{m.moneda}</td>
-					<td class="num {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</td>
-					<td><button class="del" onclick={() => borrarCaja(m)}>✕</button></td></tr>
-			{:else}
-				<tr><td colspan="5" class="vacio">Sin movimientos todavía</td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<h2>Estructura de renta (≈USD)</h2>
+	<div class="bars">
+		{#each buckets as b (b.renta)}
+			<div class="barrow"><span class="lbl">{b.renta}</span>
+				<div class="track"><div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}"></div></div>
+				<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
+		{/each}
+	</div>
 
 	<h2>Libro diario (últimas 40)</h2>
 	<table>
@@ -351,13 +367,30 @@
 			{/each}
 		</tbody>
 	</table>
-	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). La liquidez se calcula como saldo inicial + movimientos. Compra/Venta mueven Líquido en la moneda de pago; el lapicito registra un ajuste (rendimiento del fondo).</p>
+
+	<h2>Movimientos de caja</h2>
+	<table>
+		<thead><tr><th>Fecha</th><th>Acción</th><th>Moneda</th><th class="num">Monto</th><th></th></tr></thead>
+		<tbody>
+			{#each cajaLedger as m (m.id)}
+				<tr><td>{m.fecha}</td><td>{m.accion}</td><td>{m.moneda}</td>
+					<td class="num {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</td>
+					<td><button class="del" onclick={() => borrarCaja(m)}>✕</button></td></tr>
+			{:else}
+				<tr><td colspan="5" class="vacio">Sin movimientos todavía</td></tr>
+			{/each}
+		</tbody>
+	</table>
+	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). "Guardar Cartera" toma una foto del valor actual para la pantalla de Evolución.</p>
 {/if}
 
 <style>
 	:global(body) { font-family: system-ui, sans-serif; max-width: 980px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
+	h3 { margin: 0 0 4px; font-size: 1rem; }
+	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
 	.nueva { background: #1a73e8; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.guardarcart { background: #137333; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 	.form { border: 1px solid #cdddff; background: #f7faff; border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
 	.acciones { display: flex; gap: 5px; flex-wrap: wrap; }
 	.acciones button { flex: 1; min-width: 70px; padding: 7px 4px; border: 1px solid #bbb; background: #fff; border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
@@ -365,15 +398,16 @@
 	.nuevo { border: 1px dashed #aaa; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: #555; gap: 3px; }
 	input, select { padding: 6px; border: 1px solid #bbb; border-radius: 6px; font-size: 0.95rem; }
+	.botones { display: flex; gap: 8px; }
 	.guardar { padding: 9px; background: #137333; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+	.cancelar { padding: 9px 14px; background: #eee; border: none; border-radius: 6px; cursor: pointer; }
 	.hint { font-size: 0.82rem; color: #1a73e8; margin: 0; }
-	.msg { font-weight: 600; margin: 0; }
+	.msg { font-weight: 600; margin: 6px 0; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
+	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 175px; }
 	.card span { font-size: 0.72rem; color: #777; }
 	.card strong { font-size: 1.05rem; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
-	table.chica { width: auto; min-width: 240px; }
 	th, td { border: 1px solid #ddd; padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
 	td.pctcol { text-align: center; }
