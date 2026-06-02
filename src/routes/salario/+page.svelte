@@ -5,48 +5,12 @@
 	let sueldos: Record<string, number> = {};
 	let infl: Record<string, number> = {};
 	let dolar: Record<string, number> = {};
-	let anios = $state<string[]>([]);
+	let periodosTodos: string[] = [];
+
+	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
-	let filas = $state<any[]>([]);
-	let resumen = $state<any>({});
-	let resumenAnios = $state<any[]>([]);
+	let anios = $state<string[]>([]);
 	let cargando = $state(true);
-
-	function calcularAnio(y: string) {
-		const periodos = Object.keys(sueldos)
-			.filter((p) => p.startsWith(y))
-			.sort();
-		if (periodos.length === 0) return { filas: [], resumen: {} };
-		const base = sueldos[periodos[0]];
-		let acum = 1;
-		const rows = periodos.map((p, i) => {
-			if (i > 0) acum *= 1 + (infl[p] ?? 0);
-			const teorico = base * acum;
-			const rep = sueldos[p];
-			const d = dolar[p];
-			return {
-				periodo: p,
-				infl: infl[p] ?? null,
-				acum,
-				reportado: rep,
-				teorico,
-				poder: (rep / teorico) * 100,
-				usd: d ? rep / d : null
-			};
-		});
-		const inflAcum = acum - 1;
-		const varNominal = sueldos[periodos[periodos.length - 1]] / sueldos[periodos[0]] - 1;
-		return {
-			filas: rows,
-			resumen: { inflAcum, varNominal, gano: varNominal >= inflAcum, desde: periodos[0], hasta: periodos[periodos.length - 1] }
-		};
-	}
-
-	function recomputar() {
-		const r = calcularAnio(anio);
-		filas = r.filas;
-		resumen = r.resumen;
-	}
 
 	onMount(async () => {
 		const s = (await query("SELECT periodo, SUM(monto) AS m FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
@@ -55,19 +19,82 @@
 		for (const x of inf) infl[x.periodo] = x.valor;
 		const dol = (await query('SELECT substr(fecha,1,7) AS p, valor FROM cotizacion_dolar WHERE perfil_id=1')) as any[];
 		for (const x of dol) dolar[x.p] = x.valor;
-
-		anios = [...new Set(Object.keys(sueldos).map((p) => p.slice(0, 4)))].sort();
+		periodosTodos = Object.keys(sueldos).sort();
+		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
 		anio = anios[anios.length - 1] ?? '';
-
-		resumenAnios = anios.map((y) => ({ anio: y, ...calcularAnio(y).resumen }));
-		recomputar();
 		cargando = false;
 	});
 
-	const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
-	const usd = (n: number | null) => (n == null ? '—' : 'U$D ' + Math.round(n).toLocaleString('es-AR'));
-	const pct = (n: number | null, dec = 1) => (n == null ? '—' : (n * 100).toFixed(dec) + '%');
-	let maxUsd = $derived(Math.max(1, ...filas.map((f) => f.usd ?? 0)));
+	// Períodos de la ventana elegida
+	let periodos = $derived.by(() => {
+		if (vista === 'historico') return periodosTodos;
+		if (vista === 'anio') return periodosTodos.filter((p) => p.startsWith(anio));
+		// últimos 12
+		return periodosTodos.slice(-12);
+	});
+
+	// Serie base 100: salario (var nominal acum) e inflación (acum hasta mes anterior)
+	let serie = $derived.by(() => {
+		const ps = periodos;
+		if (ps.length === 0) return [];
+		const base = sueldos[ps[0]];
+		let idxInfl = 1;
+		return ps.map((p, i) => {
+			if (i > 0) idxInfl *= 1 + (infl[ps[i - 1]] ?? 0);
+			return {
+				periodo: p,
+				salario: (sueldos[p] / base) * 100,
+				inflacion: idxInfl * 100,
+				usd: dolar[p] ? sueldos[p] / dolar[p] : null
+			};
+		});
+	});
+
+	let ultimo = $derived(serie.length ? serie[serie.length - 1] : null);
+	let brechaActual = $derived(ultimo ? ultimo.salario / ultimo.inflacion - 1 : 0);
+
+	// Resumen para tarjetas
+	let resumen = $derived.by(() => {
+		if (!serie.length) return { inflAcum: 0, varNominal: 0, gano: true, desde: '', hasta: '' };
+		const u = serie[serie.length - 1];
+		return {
+			inflAcum: u.inflacion / 100 - 1,
+			varNominal: u.salario / 100 - 1,
+			gano: u.salario >= u.inflacion,
+			desde: serie[0].periodo,
+			hasta: u.periodo
+		};
+	});
+
+	// Gráfico
+	const W = 720, H = 320, P = { l: 44, r: 70, t: 16, b: 28 };
+	let chart = $derived.by(() => {
+		if (serie.length < 2) return null;
+		const allV = serie.flatMap((s) => [s.salario, s.inflacion]);
+		let minY = Math.min(...allV), maxY = Math.max(...allV);
+		const padY = (maxY - minY) * 0.08 || 1; minY -= padY; maxY += padY;
+		const n = serie.length;
+		const px = (i: number) => P.l + (i / (n - 1)) * (W - P.l - P.r);
+		const py = (y: number) => H - P.b - ((y - minY) / (maxY - minY)) * (H - P.t - P.b);
+		const linea = (key: 'salario' | 'inflacion') =>
+			serie.map((s, i) => (i ? 'L' : 'M') + px(i).toFixed(1) + ',' + py(s[key]).toFixed(1)).join(' ');
+		const yticks = Array.from({ length: 4 }, (_, k) => {
+			const v = minY + ((maxY - minY) * k) / 3;
+			return { y: py(v), label: v.toFixed(0) };
+		});
+		const step = Math.max(1, Math.floor(n / 8));
+		const xticks = serie.map((s, i) => ({ i, p: s.periodo })).filter((_, i) => i % step === 0)
+			.map((o) => ({ x: px(o.i), label: o.p.slice(2) }));
+		return {
+			salario: linea('salario'), inflacion: linea('inflacion'), yticks, xticks,
+			ptsS: serie.map((s, i) => ({ x: px(i), y: py(s.salario) })),
+			ptsI: serie.map((s, i) => ({ x: px(i), y: py(s.inflacion) })),
+			finS: { x: px(n - 1), y: py(serie[n - 1].salario) },
+			finI: { x: px(n - 1), y: py(serie[n - 1].inflacion) }
+		};
+	});
+
+	const pct = (n: number, dec = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dec) + '%';
 </script>
 
 <h1>Salario</h1>
@@ -75,88 +102,76 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<label class="sel">Año:
-		<select bind:value={anio} onchange={recomputar}>
-			{#each anios as y (y)}<option value={y}>{y}</option>{/each}
-		</select>
-	</label>
-
 	<div class="resumen">
 		<div class="card"><span>Inflación acum. {resumen.desde}→{resumen.hasta}</span><strong>{pct(resumen.inflAcum)}</strong></div>
 		<div class="card"><span>Variación nominal sueldo</span><strong>{pct(resumen.varNominal)}</strong></div>
 		<div class="card" class:ok={resumen.gano} class:bad={!resumen.gano}>
-			<span>Resultado real</span><strong>{resumen.gano ? 'Le ganó a la inflación' : 'Perdió contra inflación'}</strong>
+			<span>Poder adquisitivo vs base</span><strong>{pct(brechaActual)}</strong>
 		</div>
 	</div>
 
-	<h2>Poder adquisitivo {anio}</h2>
-	<table>
-		<thead>
-			<tr><th>Período</th><th>Inflación</th><th>Acum.</th><th>Reportado</th><th>Teórico</th><th>Poder adq.</th><th>En USD</th></tr>
-		</thead>
-		<tbody>
-			{#each filas as f (f.periodo)}
-				<tr>
-					<td>{f.periodo}</td>
-					<td class="num">{pct(f.infl)}</td>
-					<td class="num">{f.acum.toFixed(3)}</td>
-					<td class="num">{peso(f.reportado)}</td>
-					<td class="num">{peso(f.teorico)}</td>
-					<td class="num" class:ok={f.poder >= 100} class:bad={f.poder < 100}>{f.poder.toFixed(0)}%</td>
-					<td class="num">{usd(f.usd)}</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-
-	<h2>Sueldo en dólares (moneda dura)</h2>
-	<div class="bars">
-		{#each filas as f (f.periodo)}
-			<div class="barrow">
-				<span class="lbl">{f.periodo}</span>
-				<div class="track"><div class="bar" style="width:{((f.usd ?? 0) / maxUsd) * 100}%"></div></div>
-				<span class="val">{usd(f.usd)}</span>
-			</div>
-		{/each}
+	<div class="vistas">
+		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
+		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
+		<button class:activo={vista === 'anio'} onclick={() => (vista = 'anio')}>Año calendario</button>
+		{#if vista === 'anio'}
+			<select bind:value={anio}>{#each anios as y (y)}<option value={y}>{y}</option>{/each}</select>
+		{/if}
 	</div>
 
-	<h2>Resumen por año</h2>
-	<table>
-		<thead><tr><th>Año</th><th>Inflación acum.</th><th>Var. nominal sueldo</th><th>Resultado</th></tr></thead>
-		<tbody>
-			{#each resumenAnios as r (r.anio)}
-				<tr>
-					<td>{r.anio}</td>
-					<td class="num">{pct(r.inflAcum)}</td>
-					<td class="num">{pct(r.varNominal)}</td>
-					<td class:ok={r.gano} class:bad={!r.gano}>{r.gano ? 'Ganó' : 'Perdió'}</td>
-				</tr>
+	<div class="leyenda">
+		<span class="leg"><span class="sw sw-sal"></span> Salario</span>
+		<span class="leg"><span class="sw sw-inf"></span> Inflación</span>
+		<span class="aclara">Ambas en base 100 al inicio de la ventana. Si Salario va por encima, le ganás a la inflación.</span>
+	</div>
+
+	{#if chart}
+		<svg viewBox="0 0 {W} {H}" class="chart">
+			{#each chart.yticks as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
 			{/each}
-		</tbody>
-	</table>
-	<p class="nota">El "teórico" parte del primer sueldo del año y se ajusta por la inflación acumulada de cada mes (enero = base, resetea cada año). El poder adquisitivo compara tu sueldo reportado contra ese teórico.</p>
+			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			<path d={chart.inflacion} class="line-inf" />
+			<path d={chart.salario} class="line-sal" />
+			{#each chart.ptsI as p}<circle cx={p.x} cy={p.y} r="2" class="dot-inf" />{/each}
+			{#each chart.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-sal" />{/each}
+			<text x={chart.finS.x + 5} y={chart.finS.y + 3} class="endlbl sal">{serie[serie.length-1].salario.toFixed(0)}</text>
+			<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
+		</svg>
+	{:else}
+		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
+	{/if}
+
+	<p class="nota">El salario del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el sueldo del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
 {/if}
 
 <style>
 	:global(body) { font-family: system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
-	h2 { font-size: 1.1rem; margin-top: 22px; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid #ddd; border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
 	.card span { font-size: 0.72rem; color: #777; }
 	.card strong { font-size: 1.05rem; }
 	.card.ok { background: #eafaf0; border-color: #b6e6c8; }
 	.card.bad { background: #fdeceb; border-color: #f3c2bf; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-	th, td { border: 1px solid #ddd; padding: 5px 8px; text-align: left; }
-	td.num { text-align: right; white-space: nowrap; }
-	td.ok { color: #137333; font-weight: 600; }
-	td.bad { color: #c5221f; font-weight: 600; }
-	.bars { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
-	.lbl { width: 64px; color: #555; }
-	.track { flex: 1; background: #f0f0f0; border-radius: 4px; height: 16px; overflow: hidden; }
-	.bar { height: 100%; background: #1a73e8; }
-	.val { width: 90px; text-align: right; color: #333; }
+	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+	.vistas button { padding: 5px 12px; border: 1px solid #bbb; background: #fff; border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
+	.vistas button.activo { background: #111; color: #fff; border-color: #111; }
+	.vistas select { padding: 5px 8px; border: 1px solid #bbb; border-radius: 6px; }
+	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: #555; margin: 6px 0; }
+	.leg { display: inline-flex; align-items: center; gap: 5px; }
+	.sw { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+	.sw-sal { background: #1a73e8; }
+	.sw-inf { background: #e8710a; }
+	.aclara { color: #888; }
+	.chart { width: 100%; height: auto; border: 1px solid #eee; border-radius: 8px; background: #fafbff; }
+	.grid { stroke: #e8e8e8; stroke-width: 1; }
+	.ylbl { font-size: 10px; fill: #999; text-anchor: end; }
+	.xlbl { font-size: 10px; fill: #999; text-anchor: middle; }
+	.line-sal { fill: none; stroke: #1a73e8; stroke-width: 2.5; }
+	.line-inf { fill: none; stroke: #e8710a; stroke-width: 2.5; }
+	.dot-sal { fill: #1a73e8; } .dot-inf { fill: #e8710a; }
+	.endlbl { font-size: 11px; font-weight: 700; }
+	.endlbl.sal { fill: #1a73e8; } .endlbl.inf { fill: #e8710a; }
 	.nota { font-size: 0.8rem; color: #777; margin-top: 12px; }
 </style>
