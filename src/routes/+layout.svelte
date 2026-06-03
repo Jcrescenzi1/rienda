@@ -200,6 +200,16 @@
 		gap: 6px;
 		z-index: 10;
 	}
+	@media (max-width: 640px) {
+		header { max-width: 100%; }
+		.backup {
+			position: static;
+			justify-content: flex-end;
+			padding: 8px 12px 0;
+		}
+		.nivel1 { flex-wrap: wrap; }
+		.nivel2 { overflow-x: auto; }
+	}
 	.bk {
 		background: var(--surface-2);
 		color: var(--text-dim);
