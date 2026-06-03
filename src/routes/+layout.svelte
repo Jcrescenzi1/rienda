@@ -13,6 +13,37 @@
 	});
 	let { children } = $props();
 
+	import { exportarDatos, importarDatos } from '$lib/db/backup';
+
+	let importInput: HTMLInputElement;
+
+	async function onExportar() {
+		try {
+			await exportarDatos();
+		} catch (e: any) {
+			alert('Error al exportar: ' + (e?.message ?? e));
+		}
+	}
+
+	async function onImportar(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		if (!confirm('Importar reemplaza TODOS los datos actuales de este dispositivo. ¿Continuar?')) {
+			input.value = '';
+			return;
+		}
+		try {
+			await importarDatos(file);
+			alert('Importación completa. La página se va a recargar.');
+			location.reload();
+		} catch (err: any) {
+			alert(err?.message ?? String(err));
+		} finally {
+			input.value = '';
+		}
+	}
+
 	const finanzas = [
 		{ href: '/', label: 'Presupuesto' },
 		{ href: '/ingresos', label: 'Ingresos' }
@@ -31,6 +62,17 @@
 </script>
 
 <header>
+	<div class="backup">
+		<button class="bk" onclick={onExportar} title="Exportar datos">⬇ Exportar</button>
+		<button class="bk" onclick={() => importInput.click()} title="Importar datos">⬆ Importar</button>
+		<input
+			type="file"
+			accept="application/json"
+			bind:this={importInput}
+			onchange={onImportar}
+			style="display:none"
+		/>
+	</div>
 	<div class="nivel1">
 		<a href="/" class="mundo" class:activo={mundo === 'finanzas'}>Finanzas</a>
 		<a href="/inversiones" class="mundo" class:activo={mundo === 'inversiones'}>Inversiones</a>
@@ -140,5 +182,23 @@
 		animation-duration: 0.25s;
 		animation-timing-function: ease;
 	}
-	
+	header { position: relative; }
+	.backup {
+		position: absolute;
+		top: 12px;
+		right: 16px;
+		display: flex;
+		gap: 6px;
+		z-index: 10;
+	}
+	.bk {
+		background: var(--surface-2);
+		color: var(--text-dim);
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		font-size: 0.78rem;
+		padding: 4px 10px;
+		cursor: pointer;
+	}
+	.bk:hover { color: var(--text); border-color: var(--accent); }
 </style>
