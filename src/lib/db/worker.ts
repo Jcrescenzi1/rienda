@@ -10,6 +10,12 @@ import { SEED_LIQUIDEZ } from './seed_liquidez';
 
 let db: any = null;
 
+// Ejecuta un seed solo si tiene contenido (los seeds personales están vacíos
+// en el repo; los datos reales se cargan importando el backup JSON).
+function seed(sql: string) {
+	if (sql && sql.trim()) db.exec(sql);
+}
+
 async function init() {
 	const sqlite3 = await sqlite3InitModule();
 	const poolUtil = await sqlite3.installOpfsSAHPoolVfs({ name: 'rienda-pool' });
@@ -31,35 +37,59 @@ async function init() {
 		db.exec('ALTER TABLE transaccion ADD COLUMN monto_pago REAL');
 	}
 
+	// Perfil base: se carga siempre (la app necesita un perfil id=1 para funcionar).
 	const r = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
 	if (r[0].n === 0) {
-		db.exec(SEED);
-		db.exec(SEED_GASTOS);
+		seed(SEED);
+		seed(SEED_GASTOS);
 	}
 
 	const ri = db.exec({ sql: 'SELECT COUNT(*) AS n FROM ingreso', rowMode: 'object', returnValue: 'resultRows' });
 	if (ri[0].n === 0) {
-		db.exec(SEED_INGRESOS);
+		seed(SEED_INGRESOS);
 	}
 
+	// Migración: si la tabla cotizacion_dolar no tiene columna 'casa', la recreamos.
+	const cdcols = db.exec({ sql: 'PRAGMA table_info(cotizacion_dolar)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!cdcols.some((c: any) => c.name === 'casa')) {
+		db.exec(`
+			BEGIN;
+			ALTER TABLE cotizacion_dolar RENAME TO cotizacion_dolar_old;
+			CREATE TABLE cotizacion_dolar (
+				id INTEGER PRIMARY KEY,
+				perfil_id INTEGER NOT NULL REFERENCES perfil(id),
+				casa TEXT NOT NULL DEFAULT 'bolsa',
+				fecha TEXT NOT NULL,
+				valor REAL NOT NULL CHECK (valor > 0),
+				UNIQUE (perfil_id, casa, fecha)
+			);
+			INSERT INTO cotizacion_dolar (perfil_id, casa, fecha, valor)
+				SELECT perfil_id, 'bolsa', fecha, valor FROM cotizacion_dolar_old;
+			DROP TABLE cotizacion_dolar_old;
+			COMMIT;
+		`);
+	}
+
+	// Datos macro (dólar/inflación): públicos, sirven de fallback inicial hasta
+	// que el usuario toque "Actualizar cotizaciones". Se cargan siempre.
 	const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
 	if (rm[0].n === 0) {
-		db.exec(SEED_MACRO);
+		seed(SEED_MACRO);
 	}
 
 	const rt = db.exec({ sql: 'SELECT COUNT(*) AS n FROM transaccion', rowMode: 'object', returnValue: 'resultRows' });
 	if (rt[0].n === 0) {
-		db.exec(SEED_INVERSIONES);
+		seed(SEED_INVERSIONES);
 	}
 
 	const rs = db.exec({ sql: 'SELECT COUNT(*) AS n FROM snapshot', rowMode: 'object', returnValue: 'resultRows' });
 	if (rs[0].n === 0) {
-		db.exec(SEED_SNAPSHOTS);
+		seed(SEED_SNAPSHOTS);
 	}
 
 	const rl = db.exec({ sql: 'SELECT COUNT(*) AS n FROM liquidez', rowMode: 'object', returnValue: 'resultRows' });
 	if (rl[0].n === 0) {
-		db.exec(SEED_LIQUIDEZ);
+		seed(SEED_LIQUIDEZ);
 	}
 }
 

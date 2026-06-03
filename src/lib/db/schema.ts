@@ -144,9 +144,10 @@ CREATE TABLE IF NOT EXISTS inflacion (
 CREATE TABLE IF NOT EXISTS cotizacion_dolar (
   id          INTEGER PRIMARY KEY,
   perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
+  casa        TEXT NOT NULL DEFAULT 'bolsa',
   fecha       TEXT NOT NULL,
   valor       REAL NOT NULL CHECK (valor > 0),
-  UNIQUE (perfil_id, fecha)
+  UNIQUE (perfil_id, casa, fecha)
 );
 
 CREATE TABLE IF NOT EXISTS presupuesto (

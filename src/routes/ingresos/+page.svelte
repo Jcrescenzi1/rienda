@@ -4,7 +4,16 @@
 
 	let sueldos: Record<string, number> = {};
 	let infl: Record<string, number> = {};
-	let dolar: Record<string, number> = {};
+	let dolarSerie: { fecha: string; valor: number }[] = [];  // serie diaria ordenada, para conversión por día
+
+	function dolarDeFecha(fecha: string): number | null {
+		let elegido: number | null = null;
+		for (const d of dolarSerie) {
+			if (d.fecha <= fecha) elegido = d.valor;
+			else break;
+		}
+		return elegido;
+	}
 	let ingresosPeriodo: Record<string, number> = {};
 	let gastosPeriodo: Record<string, number> = {};
 	let cortes: { fecha: string; periodo: string }[] = [];
@@ -29,8 +38,8 @@
 		for (const x of s) sueldos[x.periodo] = x.m;
 		const inf = (await query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1')) as any[];
 		for (const x of inf) infl[x.periodo] = x.valor;
-		const dol = (await query('SELECT substr(fecha,1,7) AS p, valor FROM cotizacion_dolar WHERE perfil_id=1')) as any[];
-		for (const x of dol) dolar[x.p] = x.valor;
+		const dolDia = (await query("SELECT fecha, valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha")) as any[];
+		dolarSerie = dolDia.map((d) => ({ fecha: d.fecha, valor: d.valor }));
 		periodosTodos = Object.keys(sueldos).sort();
 		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
 		anio = anios[anios.length - 1] ?? '';
@@ -41,18 +50,18 @@
 		// Ingresos por periodo, en USD (dólar del mes calendario del periodo)
 		const ing = (await query("SELECT periodo, fecha, monto, moneda FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL")) as any[];
 		for (const x of ing) {
-			const mesDolar = x.fecha.slice(0, 7);
-			const usd = x.moneda === 'USD' ? x.monto : (dolar[mesDolar] ? x.monto / dolar[mesDolar] : null);
+			const d = dolarDeFecha(x.fecha);
+			const usd = x.moneda === 'USD' ? x.monto : (d ? x.monto / d : null);
 			if (usd != null) ingresosPeriodo[x.periodo] = (ingresosPeriodo[x.periodo] ?? 0) + usd;
 		}
 
 		// Gastos asignados a periodo via periodoDeFecha, en USD (dólar del mes del gasto)
 		const gas = (await query("SELECT fecha, monto, moneda FROM gasto WHERE perfil_id=1")) as any[];
-		for (const x of gas) {
+			for (const x of gas) {
 			const per = periodoDeFecha(x.fecha);
 			if (!per) continue;
-			const mesDolar = x.fecha.slice(0, 7);
-			const usd = x.moneda === 'USD' ? x.monto : (dolar[mesDolar] ? x.monto / dolar[mesDolar] : null);
+			const d = dolarDeFecha(x.fecha);
+			const usd = x.moneda === 'USD' ? x.monto : (d ? x.monto / d : null);
 			if (usd != null) gastosPeriodo[per] = (gastosPeriodo[per] ?? 0) + usd;
 		}
 		cargando = false;
@@ -78,7 +87,7 @@
 				periodo: p,
 				salario: (sueldos[p] / base) * 100,
 				inflacion: idxInfl * 100,
-				usd: dolar[p] ? sueldos[p] / dolar[p] : null
+			
 			};
 		});
 	});
@@ -170,6 +179,57 @@
 		return { barras, yticks, xticks, barW };
 	});
 
+	// Serie sueldo en USD + dólar bolsa (doble eje), por periodo de sueldo
+	let serieSueldoUSD = $derived.by(() => {
+		return periodos.map((p) => {
+			// dólar del día del corte de ese periodo
+			const corte = cortes.find((c) => c.periodo === p);
+			const dolarP = corte ? dolarDeFecha(corte.fecha) : null;
+			const sueldoUSD = (sueldos[p] != null && dolarP) ? sueldos[p] / dolarP : null;
+			return { periodo: p, sueldoUSD, dolar: dolarP };
+		}).filter((x) => x.sueldoUSD != null && x.dolar != null);
+	});
+
+	let chartSueldoUSD = $derived.by(() => {
+		const s = serieSueldoUSD;
+		if (s.length < 2) return null;
+		const n = s.length;
+		const px = (i: number) => P.l + (i / (n - 1)) * (W - P.l - P.r);
+
+		// Eje izquierdo: sueldo USD
+		const vSueldo = s.map((d) => d.sueldoUSD as number);
+		let minL = Math.min(...vSueldo), maxL = Math.max(...vSueldo);
+		const padL = (maxL - minL) * 0.1 || 1; minL -= padL; maxL += padL;
+		const pyL = (y: number) => H - P.b - ((y - minL) / (maxL - minL)) * (H - P.t - P.b);
+
+		// Eje derecho: dólar
+		const vDolar = s.map((d) => d.dolar as number);
+		let minR = Math.min(...vDolar), maxR = Math.max(...vDolar);
+		const padR = (maxR - minR) * 0.1 || 1; minR -= padR; maxR += padR;
+		const pyR = (y: number) => H - P.b - ((y - minR) / (maxR - minR)) * (H - P.t - P.b);
+
+		const lineaSueldo = s.map((d, i) => (i ? 'L' : 'M') + px(i).toFixed(1) + ',' + pyL(d.sueldoUSD as number).toFixed(1)).join(' ');
+		const lineaDolar = s.map((d, i) => (i ? 'L' : 'M') + px(i).toFixed(1) + ',' + pyR(d.dolar as number).toFixed(1)).join(' ');
+
+		const yticksL = Array.from({ length: 4 }, (_, k) => {
+			const v = minL + ((maxL - minL) * k) / 3;
+			return { y: pyL(v), label: Math.round(v) };
+		});
+		const yticksR = Array.from({ length: 4 }, (_, k) => {
+			const v = minR + ((maxR - minR) * k) / 3;
+			return { y: pyR(v), label: Math.round(v) };
+		});
+		const step = Math.max(1, Math.floor(n / 8));
+		const xticks = s.map((d, i) => ({ i, p: d.periodo })).filter((_, i) => i % step === 0)
+			.map((o) => ({ x: px(o.i), label: o.p.slice(2) }));
+
+		return {
+			lineaSueldo, lineaDolar, yticksL, yticksR, xticks,
+			ptsS: s.map((d, i) => ({ x: px(i), y: pyL(d.sueldoUSD as number) })),
+			ptsD: s.map((d, i) => ({ x: px(i), y: pyR(d.dolar as number) }))
+		};
+	});
+
 	let resumenIG = $derived.by(() => {
 		const tIng = serieIG.reduce((s, x) => s + x.ingreso, 0);
 		const tGas = serieIG.reduce((s, x) => s + x.gasto, 0);
@@ -257,6 +317,31 @@
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
+	
+	<h2>Sueldo en USD vs Dólar</h2>
+	<div class="leyenda">
+		<span class="leg"><span class="sw sw-sueldo"></span> Sueldo (USD, eje izq.)</span>
+		<span class="leg"><span class="sw sw-dolar"></span> Dólar bolsa (ARS, eje der.)</span>
+		<span class="aclara">Si el sueldo en USD cae mientras el dólar sube, el golpe vino del tipo de cambio, no de tu sueldo real.</span>
+	</div>
+	{#if chartSueldoUSD}
+		<svg viewBox="0 0 {W} {H}" class="chart">
+			{#each chartSueldoUSD.yticksL as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
+			{/each}
+			{#each chartSueldoUSD.yticksR as t}
+				<text x={W - P.r + 6} y={t.y + 3} class="ylbl-r">{t.label}</text>
+			{/each}
+			{#each chartSueldoUSD.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			<path d={chartSueldoUSD.lineaDolar} class="line-dolar" />
+			<path d={chartSueldoUSD.lineaSueldo} class="line-sueldo" />
+			{#each chartSueldoUSD.ptsD as p}<circle cx={p.x} cy={p.y} r="2" class="dot-dolar" />{/each}
+			{#each chartSueldoUSD.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-sueldo" />{/each}
+		</svg>
+	{:else}
+		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
+	{/if}
 
 	<p class="nota">El salario del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el sueldo del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
 {/if}
@@ -294,4 +379,11 @@
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }
 	.bar-gas { fill: var(--neg); }
+	.ylbl-r { font-size: 10px; fill: var(--text-dim); text-anchor: start; }
+	.line-sueldo { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+	.line-dolar { fill: none; stroke: #e8975b; stroke-width: 2.5; }
+	.dot-sueldo { fill: var(--accent); }
+	.dot-dolar { fill: #e8975b; }
+	.sw-sueldo { background: var(--accent); }
+	.sw-dolar { background: #e8975b; }
 </style>

@@ -55,7 +55,7 @@
 	async function prepararFoto() {
 		calculando = true; fMsg = '';
 		try {
-			const dq = (await query('SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
+			const dq = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
 			const dolar = dq[0]?.valor ?? 1; fDolar = dolar;
 			const activos = (await query('SELECT id, moneda, precio_actual FROM activo WHERE perfil_id=1')) as any[];
 			const aMap: Record<number, any> = {};
