@@ -2,150 +2,179 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 
-	const hoy = new Date();
-	let periodoSel = $state(hoy.toISOString().slice(0, 7));
+	let sueldos: Record<string, number> = {};
+	let infl: Record<string, number> = {};
+	let dolar: Record<string, number> = {};
+	let periodosTodos: string[] = [];
 
-	let ingresos = $state<any[]>([]);
-	let resumen = $state<any>({ sueldo: 0, aciclico: 0, otros: 0 });
-	let mensaje = $state('');
+	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
+	let anio = $state('');
+	let anios = $state<string[]>([]);
+	let cargando = $state(true);
 
-	// Form
-	let fecha = $state(hoy.toISOString().slice(0, 10));
-	let monto = $state<number | null>(null);
-	let moneda = $state('ARS');
-	let categoria = $state<'Salario' | 'Otros'>('Salario');
-	let tipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
-	let detalle = $state('');
-	let periodoIngreso = $state('');
-
-	// Calcula el período por defecto según la regla (Salario -> mes siguiente; Otros -> mismo mes)
-	function periodoRegla(f: string, cat: string): string {
-		const [y, m] = f.split('-').map(Number);
-		const d = cat === 'Salario' ? new Date(y, m, 1) : new Date(y, m - 1, 1);
-		return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
-	}
-
-	// Cuando cambian fecha o categoría, recalcula el período sugerido
-	$effect(() => {
-		periodoIngreso = periodoRegla(fecha, categoria);
+	onMount(async () => {
+		const s = (await query("SELECT periodo, SUM(monto) AS m FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
+		for (const x of s) sueldos[x.periodo] = x.m;
+		const inf = (await query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1')) as any[];
+		for (const x of inf) infl[x.periodo] = x.valor;
+		const dol = (await query('SELECT substr(fecha,1,7) AS p, valor FROM cotizacion_dolar WHERE perfil_id=1')) as any[];
+		for (const x of dol) dolar[x.p] = x.valor;
+		periodosTodos = Object.keys(sueldos).sort();
+		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
+		anio = anios[anios.length - 1] ?? '';
+		cargando = false;
 	});
 
-	async function cargar() {
-		ingresos = (await query(
-			'SELECT id, fecha, monto, moneda, categoria, tipo, detalle, periodo FROM ingreso WHERE perfil_id=1 ORDER BY periodo DESC, fecha DESC, id DESC'
-		)) as any[];
-		const delMes = ingresos.filter((i) => i.periodo === periodoSel);
-		resumen = {
-			sueldo: delMes.filter((i) => i.tipo === 'Sueldo').reduce((s, i) => s + i.monto, 0),
-			aciclico: delMes.filter((i) => i.tipo === 'Aciclico').reduce((s, i) => s + i.monto, 0),
-			otros: delMes.filter((i) => i.categoria === 'Otros').reduce((s, i) => s + i.monto, 0)
+	// Períodos de la ventana elegida
+	let periodos = $derived.by(() => {
+		if (vista === 'historico') return periodosTodos;
+		if (vista === 'anio') return periodosTodos.filter((p) => p.startsWith(anio));
+		// últimos 12
+		return periodosTodos.slice(-12);
+	});
+
+	// Serie base 100: salario (var nominal acum) e inflación (acum hasta mes anterior)
+	let serie = $derived.by(() => {
+		const ps = periodos;
+		if (ps.length === 0) return [];
+		const base = sueldos[ps[0]];
+		let idxInfl = 1;
+		return ps.map((p, i) => {
+			if (i > 0) idxInfl *= 1 + (infl[ps[i - 1]] ?? 0);
+			return {
+				periodo: p,
+				salario: (sueldos[p] / base) * 100,
+				inflacion: idxInfl * 100,
+				usd: dolar[p] ? sueldos[p] / dolar[p] : null
+			};
+		});
+	});
+
+	let ultimo = $derived(serie.length ? serie[serie.length - 1] : null);
+	let brechaActual = $derived(ultimo ? ultimo.salario / ultimo.inflacion - 1 : 0);
+
+	// Resumen para tarjetas
+	let resumen = $derived.by(() => {
+		if (!serie.length) return { inflAcum: 0, varNominal: 0, gano: true, desde: '', hasta: '' };
+		const u = serie[serie.length - 1];
+		return {
+			inflAcum: u.inflacion / 100 - 1,
+			varNominal: u.salario / 100 - 1,
+			gano: u.salario >= u.inflacion,
+			desde: serie[0].periodo,
+			hasta: u.periodo
 		};
-	}
+	});
 
-	onMount(cargar);
+	// Gráfico
+	const W = 720, H = 320, P = { l: 44, r: 70, t: 16, b: 28 };
+	let chart = $derived.by(() => {
+		if (serie.length < 2) return null;
+		const allV = serie.flatMap((s) => [s.salario, s.inflacion]);
+		let minY = Math.min(...allV), maxY = Math.max(...allV);
+		const padY = (maxY - minY) * 0.08 || 1; minY -= padY; maxY += padY;
+		const n = serie.length;
+		const px = (i: number) => P.l + (i / (n - 1)) * (W - P.l - P.r);
+		const py = (y: number) => H - P.b - ((y - minY) / (maxY - minY)) * (H - P.t - P.b);
+		const linea = (key: 'salario' | 'inflacion') =>
+			serie.map((s, i) => (i ? 'L' : 'M') + px(i).toFixed(1) + ',' + py(s[key]).toFixed(1)).join(' ');
+		const yticks = Array.from({ length: 4 }, (_, k) => {
+			const v = minY + ((maxY - minY) * k) / 3;
+			return { y: py(v), label: v.toFixed(0) };
+		});
+		const step = Math.max(1, Math.floor(n / 8));
+		const xticks = serie.map((s, i) => ({ i, p: s.periodo })).filter((_, i) => i % step === 0)
+			.map((o) => ({ x: px(o.i), label: o.p.slice(2) }));
+		return {
+			salario: linea('salario'), inflacion: linea('inflacion'), yticks, xticks,
+			ptsS: serie.map((s, i) => ({ x: px(i), y: py(s.salario) })),
+			ptsI: serie.map((s, i) => ({ x: px(i), y: py(s.inflacion) })),
+			finS: { x: px(n - 1), y: py(serie[n - 1].salario) },
+			finI: { x: px(n - 1), y: py(serie[n - 1].inflacion) }
+		};
+	});
 
-	async function guardar() {
-		mensaje = '';
-		const m = Number(monto);
-		if (!fecha) return (mensaje = 'Falta la fecha');
-		if (!m || m <= 0) return (mensaje = 'Monto inválido');
-		if (!periodoIngreso) return (mensaje = 'Falta el período');
-		const t = categoria === 'Salario' ? tipo : null;
-		try {
-			await query(
-				'INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)',
-				[fecha, m, moneda, categoria, t, detalle.trim() || null, periodoIngreso]
-			);
-			mensaje = 'Ingreso guardado ✅';
-			monto = null;
-			detalle = '';
-			await cargar();
-		} catch (e: any) {
-			mensaje = 'Error: ' + (e?.message ?? String(e));
-		}
-	}
-
-	async function borrar(id: number) {
-		if (!confirm('¿Borrar este ingreso?')) return;
-		await query('DELETE FROM ingreso WHERE id=?', [id]);
-		await cargar();
-	}
-
-	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
+	const pct = (n: number, dec = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dec) + '%';
 </script>
 
 <h1>Ingresos</h1>
 
-<label class="sel">Mes / Año: <input type="month" bind:value={periodoSel} onchange={cargar} /></label>
+<a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
 
-<div class="cards">
-	<div class="card"><span>Sueldo</span><strong>{peso(resumen.sueldo)}</strong></div>
-	<div class="card"><span>Acíclicos</span><strong>{peso(resumen.aciclico)}</strong></div>
-	<div class="card"><span>Otros</span><strong>{peso(resumen.otros)}</strong></div>
-	<div class="card tot"><span>Total período</span><strong>{peso(resumen.sueldo + resumen.aciclico + resumen.otros)}</strong></div>
-</div>
-
-<h2>Cargar ingreso</h2>
-<div class="form">
-	<label>Fecha<input type="date" bind:value={fecha} /></label>
-	<label>Monto<input type="number" min="0" bind:value={monto} /></label>
-	<label>Moneda<select bind:value={moneda}><option>ARS</option><option>USD</option></select></label>
-
-	<div class="medio">
-		<button type="button" class:activo={categoria === 'Salario'} onclick={() => (categoria = 'Salario')}>Salario</button>
-		<button type="button" class:activo={categoria === 'Otros'} onclick={() => (categoria = 'Otros')}>Otros</button>
+{#if cargando}
+	<p>Cargando…</p>
+{:else}
+	<div class="resumen">
+		<div class="card"><span>Inflación acum. {resumen.desde}→{resumen.hasta}</span><strong>{pct(resumen.inflAcum)}</strong></div>
+		<div class="card"><span>Variación nominal sueldo</span><strong>{pct(resumen.varNominal)}</strong></div>
+		<div class="card" class:ok={resumen.gano} class:bad={!resumen.gano}>
+			<span>Poder adquisitivo vs base</span><strong>{pct(brechaActual)}</strong>
+		</div>
 	</div>
 
-	{#if categoria === 'Salario'}
-		<div class="medio">
-			<button type="button" class:activo={tipo === 'Sueldo'} onclick={() => (tipo = 'Sueldo')}>Sueldo</button>
-			<button type="button" class:activo={tipo === 'Aciclico'} onclick={() => (tipo = 'Aciclico')}>Acíclico</button>
-		</div>
+	<div class="vistas">
+		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
+		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
+		<button class:activo={vista === 'anio'} onclick={() => (vista = 'anio')}>Año calendario</button>
+		{#if vista === 'anio'}
+			<select bind:value={anio}>{#each anios as y (y)}<option value={y}>{y}</option>{/each}</select>
+		{/if}
+	</div>
+
+	<div class="leyenda">
+		<span class="leg"><span class="sw sw-sal"></span> Salario</span>
+		<span class="leg"><span class="sw sw-inf"></span> Inflación</span>
+		<span class="aclara">Ambas en base 100 al inicio de la ventana. Si Salario va por encima, le ganás a la inflación.</span>
+	</div>
+
+	{#if chart}
+		<svg viewBox="0 0 {W} {H}" class="chart">
+			{#each chart.yticks as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
+			{/each}
+			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			<path d={chart.inflacion} class="line-inf" />
+			<path d={chart.salario} class="line-sal" />
+			{#each chart.ptsI as p}<circle cx={p.x} cy={p.y} r="2" class="dot-inf" />{/each}
+			{#each chart.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-sal" />{/each}
+			<text x={chart.finS.x + 5} y={chart.finS.y + 3} class="endlbl sal">{serie[serie.length-1].salario.toFixed(0)}</text>
+			<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
+		</svg>
+	{:else}
+		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
 
-	<label>Período (mes al que pertenece)<input type="month" bind:value={periodoIngreso} /></label>
-
-	<label>Detalle (opcional)<input bind:value={detalle} placeholder="Ej: Aguinaldo, Cochera, Dolares…" /></label>
-	<button class="guardar" onclick={guardar}>Guardar ingreso</button>
-	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
-</div>
-
-<h2>Ingresos cargados</h2>
-<table>
-	<thead><tr><th>Fecha</th><th>Período</th><th>Tipo</th><th>Detalle</th><th>Monto</th><th></th></tr></thead>
-	<tbody>
-		{#each ingresos as i (i.id)}
-			<tr class:foco={i.periodo === periodoSel}>
-				<td>{i.fecha}</td>
-				<td>{i.periodo ?? '—'}</td>
-				<td>{i.categoria === 'Otros' ? 'Otros' : i.tipo}</td>
-				<td>{i.detalle ?? '—'}</td>
-				<td class="num">{peso(i.monto, i.moneda)}</td>
-				<td><button class="sec" onclick={() => borrar(i.id)}>✕</button></td>
-			</tr>
-		{/each}
-		{#if ingresos.length === 0}<tr><td colspan="6" class="vacio">Todavía no hay ingresos.</td></tr>{/if}
-	</tbody>
-</table>
+	<p class="nota">El salario del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el sueldo del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
+{/if}
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
-	h2 { font-size: 1.1rem; margin-top: 22px; }
-	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
-	input, select { padding: 6px; font-size: 0.95rem; }
-	button { padding: 6px 12px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	button.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-	.guardar { padding: 9px; margin-top: 4px; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-	th, td { padding: 5px 8px; text-align: left; }
-	td.num, th.num { text-align: right; white-space: nowrap; }
-	.msg { font-weight: 600; color: var(--text); }
-	.vacio { color: var(--text-dim); font-style: italic; text-align: center; }
-	tr.editrow { background: rgba(91, 157, 255, 0.08); }
-	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
-	.lapiz:hover { opacity: 1; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
+	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
+	.card span { font-size: 0.72rem; color: var(--text-dim); }
+	.card strong { font-size: 1.05rem; }
+	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
+	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
+	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
+	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.vistas select { padding: 5px 8px; }
+	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
+	.leg { display: inline-flex; align-items: center; gap: 5px; }
+	.sw { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
+	.sw-sal { background: var(--accent); }
+	.sw-inf { background: #e8975b; }
+	.aclara { color: var(--text-dim); }
+	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+	.grid { stroke: var(--border); stroke-width: 1; }
+	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
+	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
+	.line-sal { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+	.line-inf { fill: none; stroke: #e8975b; stroke-width: 2.5; }
+	.dot-sal { fill: var(--accent); } .dot-inf { fill: #e8975b; }
+	.endlbl { font-size: 11px; font-weight: 700; }
+	.endlbl.sal { fill: var(--accent); } .endlbl.inf { fill: #e8975b; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
+	.btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; margin: 4px 0 12px; }
 </style>

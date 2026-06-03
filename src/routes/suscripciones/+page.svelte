@@ -109,7 +109,10 @@
 
 <h1>Suscripciones</h1>
 
+<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+
 <label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+
 <p class="apps">Presupuesto de Aplicaciones (solo ARS): <strong>{peso(presupApps)}</strong> / mes</p>
 
 <table>
@@ -175,7 +178,7 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
+	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-top: 4px; }
 	.apps { font-size: 0.9rem; color: var(--text-dim); }
 	h2 { font-size: 1.1rem; margin-top: 22px; }
 	h3 { font-size: 1rem; margin: 0 0 8px; }
@@ -201,4 +204,6 @@
 	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); padding: 3px 8px; margin-left: 2px; }
 	.editbox { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; max-width: 380px; }
 	.botones { display: flex; gap: 8px; }
+	.btn-volver { display: block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 8px; }
+	.btn-volver:hover { text-decoration: underline; }
 </style>

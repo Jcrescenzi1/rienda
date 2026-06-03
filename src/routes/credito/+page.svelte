@@ -51,6 +51,7 @@
 </script>
 
 <h1>Vista de crédito</h1>
+<a href="/" class="btn-volver">← Volver a Presupuesto</a>
 <p class="sub">Cada gasto en crédito se reparte (total ÷ cuotas) desde su mes de inicio. El total por mes suma todas las cuotas vigentes.</p>
 
 {#if cargando}

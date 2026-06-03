@@ -14,12 +14,8 @@
 	let { children } = $props();
 
 	const finanzas = [
-		{ href: '/', label: 'Cargar gasto' },
-		{ href: '/credito', label: 'Crédito' },
-		{ href: '/presupuesto', label: 'Presupuesto' },
-		{ href: '/suscripciones', label: 'Suscripciones' },
-		{ href: '/ingresos', label: 'Ingresos' },
-		{ href: '/salario', label: 'Salario' }
+		{ href: '/', label: 'Presupuesto' },
+		{ href: '/ingresos', label: 'Ingresos' }
 	];
 	const inversiones = [
 		{ href: '/inversiones', label: 'Inversiones' },

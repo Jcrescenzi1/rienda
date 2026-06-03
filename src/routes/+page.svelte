@@ -2,260 +2,232 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 
-	let categorias = $state<any[]>([]);
-	let subcategorias = $state<any[]>([]);
-	let tarjetasCredito = $state<any[]>([]);
-	let detallesExistentes = $state<string[]>([]);
-	let ultimos = $state<any[]>([]);
+	const hoy = new Date();
+	let periodo = $state(hoy.toISOString().slice(0, 7));
+	let grupos = $state<any[]>([]);
+	let consolidado = $state<any[]>([]);
+	let totales = $state<any>({ n2: 0, n1: 0, presup: 0, real: 0 });
+	let rango = $state('');
+	let cargando = $state(true);
 
-	let fecha = $state(new Date().toISOString().slice(0, 10));
-	let monto = $state<number | null>(null);
-	let moneda = $state('ARS');
-	let categoriaId = $state<number | null>(null);
-	let detalle = $state('');
-	let medio = $state<'debito' | 'credito'>('debito');
-	let tarjetaId = $state<number | null>(null);
-	let cuotas = $state(1);
-	let mesInicio = $state(new Date().toISOString().slice(0, 7));
-
-	let subcatDerivada = $state<string | null>(null);
-	let detalleNuevo = $state(false);
-	let modoSubcat = $state<'existente' | 'nueva'>('existente');
-	let subcatSelId = $state<number | null>(null);
-	let subcatNuevaNombre = $state('');
-
-	let editandoId = $state<number | null>(null);
-	let mensaje = $state('');
-
-	async function cargarBase() {
-		categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
-		subcategorias = await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
-		tarjetasCredito = await query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre");
-		const d = await query('SELECT DISTINCT detalle FROM mapeo_detalle WHERE perfil_id=1 ORDER BY detalle');
-		detallesExistentes = d.map((x: any) => x.detalle);
-		await cargarUltimos();
+	function addMonths(ym: string, delta: number): string {
+		const [y, m] = ym.split('-').map(Number);
+		const d = new Date(y, m - 1 + delta, 1);
+		return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+	}
+	function desvio(real: number, presup: number): string {
+		if (!presup) return '—';
+		if (real <= presup) return 'En margen';
+		if (real <= presup * 1.25) return 'Superado';
+		return 'Muy superado';
 	}
 
-	async function cargarUltimos() {
-		ultimos = await query(`
-			SELECT g.id, g.fecha, g.monto, g.moneda, g.categoria_id, c.nombre AS categoria, g.detalle, g.medio,
-			       g.subcategoria_id, COALESCE(s.nombre, sm.nombre) AS subcategoria,
-			       g.tarjeta_id, t.nombre AS tarjeta, g.cuotas, g.mes_inicio_pago
-			FROM gasto g
-			JOIN categoria c ON c.id = g.categoria_id
-			LEFT JOIN subcategoria s ON s.id = g.subcategoria_id
-			LEFT JOIN mapeo_detalle md ON md.perfil_id = g.perfil_id AND md.detalle = g.detalle
-			LEFT JOIN subcategoria sm ON sm.id = md.subcategoria_id
-			LEFT JOIN tarjeta t ON t.id = g.tarjeta_id
-			WHERE g.perfil_id = 1
-			ORDER BY g.fecha DESC, g.id DESC LIMIT 30
-		`);
-	}
+	// Mapa fecha_gasto -> periodo de sueldo. Se arma con las fechas de los sueldos.
+	let cortes: { fecha: string; periodo: string }[] = [];
 
-	onMount(cargarBase);
-
-	$effect(() => {
-		const d = detalle.trim();
-		if (!d) { subcatDerivada = null; detalleNuevo = false; return; }
-		query('SELECT s.nombre FROM mapeo_detalle m JOIN subcategoria s ON s.id=m.subcategoria_id WHERE m.perfil_id=1 AND m.detalle=?', [d])
-			.then((r: any) => {
-				if (r.length) { subcatDerivada = r[0].nombre; detalleNuevo = false; }
-				else { subcatDerivada = null; detalleNuevo = true; }
-			});
-	});
-
-	function resetForm() {
-		editandoId = null;
-		monto = null; detalle = ''; subcatSelId = null; subcatNuevaNombre = ''; modoSubcat = 'existente';
-		medio = 'debito'; tarjetaId = null; cuotas = 1;
-		fecha = new Date().toISOString().slice(0, 10);
-		mesInicio = new Date().toISOString().slice(0, 7);
-		moneda = 'ARS'; categoriaId = null;
-	}
-
-	function editar(g: any) {
-		editandoId = g.id;
-		fecha = g.fecha;
-		monto = g.monto;
-		moneda = g.moneda;
-		categoriaId = g.categoria_id;
-		detalle = g.detalle;
-		medio = g.medio;
-		tarjetaId = g.tarjeta_id;
-		cuotas = g.cuotas ?? 1;
-		mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : new Date().toISOString().slice(0, 7);
-		mensaje = '';
-		window.scrollTo({ top: 0, behavior: 'smooth' });
-	}
-
-	async function eliminar(id: number) {
-		if (!confirm('¿Eliminar este gasto? No se puede deshacer.')) return;
-		await query('DELETE FROM gasto WHERE id=? AND perfil_id=1', [id]);
-		if (editandoId === id) resetForm();
-		await cargarUltimos();
-	}
-
-	async function guardar() {
-		mensaje = '';
-		const m = Number(monto);
-		if (!fecha) return (mensaje = 'Falta la fecha');
-		if (!m || m <= 0) return (mensaje = 'El monto debe ser mayor a 0');
-		if (!categoriaId) return (mensaje = 'Elegí una categoría');
-		if (!detalle.trim()) return (mensaje = 'Falta el detalle');
-		if (medio === 'credito') {
-			if (!tarjetaId) return (mensaje = 'Elegí la tarjeta');
-			if (!cuotas || cuotas < 1) return (mensaje = 'Cuotas inválidas');
-			if (!mesInicio) return (mensaje = 'Falta el mes de inicio de pago');
+	function periodoDeFecha(fecha: string): string | null {
+		let elegido: string | null = null;
+		for (const c of cortes) {
+			if (c.fecha <= fecha) elegido = c.periodo;
+			else break;
 		}
-		const dTrim = detalle.trim();
-		try {
-			if (detalleNuevo) {
-				let subId: number | null = null;
-				if (modoSubcat === 'nueva' && subcatNuevaNombre.trim()) {
-					const nom = subcatNuevaNombre.trim();
-					await query('INSERT OR IGNORE INTO subcategoria (perfil_id, nombre) VALUES (1, ?)', [nom]);
-					const r = await query('SELECT id FROM subcategoria WHERE perfil_id=1 AND nombre=?', [nom]);
-					subId = r[0].id;
-				} else if (modoSubcat === 'existente' && subcatSelId) {
-					subId = subcatSelId;
-				}
-				if (subId) await query('INSERT OR IGNORE INTO mapeo_detalle (perfil_id, detalle, subcategoria_id) VALUES (1, ?, ?)', [dTrim, subId]);
-			}
-
-			if (editandoId) {
-				// UPDATE
-				if (medio === 'debito') {
-					await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=NULL, cuotas=1, mes_inicio_pago=NULL WHERE id=? AND perfil_id=1',
-						[fecha, m, moneda, categoriaId, dTrim, 'debito', editandoId]);
-				} else {
-					await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=?, cuotas=?, mes_inicio_pago=? WHERE id=? AND perfil_id=1',
-						[fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01', editandoId]);
-				}
-				mensaje = 'Gasto actualizado ✅';
-			} else {
-				// INSERT
-				if (medio === 'debito') {
-					await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,?,1)',
-						[fecha, m, moneda, categoriaId, dTrim, 'debito']);
-				} else {
-					await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,tarjeta_id,cuotas,mes_inicio_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
-						[fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01']);
-				}
-				mensaje = 'Gasto guardado ✅';
-			}
-			resetForm();
-			await cargarBase();
-		} catch (e: any) {
-			mensaje = 'Error: ' + (e?.message ?? String(e));
-		}
+		return elegido;
 	}
 
-	const fmt = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Number(n).toLocaleString('es-AR');
+	async function cargar() {
+		cargando = true;
+
+		// 1) Cortes = fechas de los sueldos (categoria Salario, tipo Sueldo) con su periodo
+		const sueldos = (await query(
+			"SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Salario' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha"
+		)) as any[];
+		cortes = sueldos.map((s) => ({ fecha: s.fecha, periodo: s.periodo }));
+
+		const n = periodo;
+		const n1 = addMonths(periodo, -1);
+		const n2 = addMonths(periodo, -2);
+		const objetivo = new Set([n, n1, n2]);
+
+		// rango de fechas del período visible (del sueldo que lo abre al día antes del siguiente)
+		const idx = cortes.findIndex((c) => c.periodo === n);
+		if (idx >= 0) {
+			const ini = cortes[idx].fecha;
+			const fin = idx + 1 < cortes.length ? cortes[idx + 1].fecha : 'hoy';
+			rango = `${ini} al ${fin === 'hoy' ? 'hoy' : fin}`;
+		} else rango = '(sin sueldo cargado para este período)';
+
+		// 2) Traigo TODOS los gastos con subcategoria efectiva y los asigno a período en JS
+		const gastos = (await query(
+			`SELECT g.fecha, g.monto, g.categoria_id,
+			        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
+			 FROM gasto g
+			 LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
+			 WHERE g.perfil_id = 1`
+		)) as any[];
+
+		// categoría habitual por subcategoría
+		const hab = (await query(
+			`SELECT scid, categoria_id, COUNT(*) AS c FROM (
+			   SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
+			   FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
+			   WHERE g.perfil_id=1
+			 ) GROUP BY scid, categoria_id`
+		)) as any[];
+		const homeCat: Record<string, number | null> = {};
+		const bestC: Record<string, number> = {};
+		for (const h of hab) {
+			const k = h.scid == null ? 'null' : String(h.scid);
+			if (bestC[k] === undefined || h.c > bestC[k]) { bestC[k] = h.c; homeCat[k] = h.categoria_id; }
+		}
+
+		const subs = (await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1')) as any[];
+		const nombreSub: Record<number, string> = {};
+		for (const s of subs) nombreSub[s.id] = s.nombre;
+		const cats = (await query('SELECT id, nombre FROM categoria WHERE perfil_id=1')) as any[];
+		const nombreCat: Record<number, string> = {};
+		for (const c of cats) nombreCat[c.id] = c.nombre;
+
+		const presup = (await query("SELECT subcategoria_id, monto FROM presupuesto WHERE perfil_id=1 AND periodo='default'")) as any[];
+		const presupMap: Record<number, number> = {};
+		for (const p of presup) presupMap[p.subcategoria_id] = p.monto;
+
+		// 3) Acumular por subcategoría, solo para los 3 períodos objetivo
+		const key = (id: any) => (id == null ? 'null' : String(id));
+		const acc: Record<string, any> = {};
+		for (const g of gastos) {
+			const per = periodoDeFecha(g.fecha);
+			if (!per || !objetivo.has(per)) continue;
+			const k = key(g.scid);
+			acc[k] ??= { scid: g.scid, n2: 0, n1: 0, real: 0 };
+			if (per === n2) acc[k].n2 += g.monto;
+			else if (per === n1) acc[k].n1 += g.monto;
+			else if (per === n) acc[k].real += g.monto;
+		}
+		for (const p of presup) {
+			const k = key(p.subcategoria_id);
+			acc[k] ??= { scid: p.subcategoria_id, n2: 0, n1: 0, real: 0 };
+		}
+
+		const filas = Object.values(acc).map((a: any) => {
+			const presupVal = a.scid != null ? presupMap[a.scid] ?? 0 : 0;
+			const catId = homeCat[key(a.scid)];
+			return {
+				scid: a.scid,
+				nombre: a.scid == null ? '(sin subcategoría)' : nombreSub[a.scid] ?? '?',
+				catNombre: catId != null ? nombreCat[catId] ?? '(sin categoría)' : '(sin categoría)',
+				n2: a.n2, n1: a.n1, presup: presupVal, real: a.real,
+				estado: desvio(a.real, presupVal)
+			};
+		});
+
+		const map: Record<string, any[]> = {};
+		for (const f of filas) (map[f.catNombre] ??= []).push(f);
+		const gr = Object.keys(map).sort((a, b) => a.localeCompare(b, 'es')).map((cat) => {
+			const rows = map[cat].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+			const sub = rows.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
+			return { cat, rows, sub };
+		});
+		grupos = gr;
+		consolidado = gr.map((g) => ({ cat: g.cat, ...g.sub, estado: desvio(g.sub.real, g.sub.presup) }));
+		totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
+		cargando = false;
+	}
+
+	async function guardarPresup(scid: number, valor: string) {
+		const monto = Number(valor);
+		if (scid == null || isNaN(monto) || monto < 0) return;
+		await query("INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto) VALUES (1, ?, 'default', ?) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto = excluded.monto", [scid, monto]);
+		await cargar();
+	}
+
+	onMount(cargar);
+
+	const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
+	const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 </script>
 
-<h1>Rienda — {editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
+<h1>Presupuesto</h1>
 
-<div class="form">
-	{#if editandoId}<p class="editando">✏️ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
-	<label>Fecha<input type="date" bind:value={fecha} /></label>
-	<label>Monto<input type="number" step="0.01" min="0" bind:value={monto} placeholder="0" /></label>
-	<label>Moneda
-		<select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
-	</label>
-	<label>Categoría
-		<select bind:value={categoriaId}>
-			<option value={null} disabled>Elegir…</option>
-			{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
-		</select>
-	</label>
-	<label>Detalle
-		<input list="detalles" bind:value={detalle} placeholder="Ej: Pizza, Auto, Kiosco…" />
-		<datalist id="detalles">{#each detallesExistentes as d (d)}<option value={d}></option>{/each}</datalist>
-	</label>
-
-	{#if detalle.trim()}
-		{#if !detalleNuevo}
-			<p class="hint">Subcategoría: <strong>{subcatDerivada}</strong></p>
-		{:else}
-			<div class="nuevo">
-				<p class="hint">Detalle nuevo. Asignale una subcategoría (se recuerda para este y los próximos):</p>
-				<div class="medio">
-					<button type="button" class:activo={modoSubcat === 'existente'} onclick={() => (modoSubcat = 'existente')}>Usar existente</button>
-					<button type="button" class:activo={modoSubcat === 'nueva'} onclick={() => (modoSubcat = 'nueva')}>Crear nueva</button>
-				</div>
-				{#if modoSubcat === 'existente'}
-					<select bind:value={subcatSelId}>
-						<option value={null} disabled>Elegir subcategoría…</option>
-						{#each subcategorias as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
-					</select>
-				{:else}
-					<input bind:value={subcatNuevaNombre} placeholder="Nombre de la nueva subcategoría" />
-				{/if}
-			</div>
-		{/if}
-	{/if}
-
-	<div class="medio">
-		<button type="button" class:activo={medio === 'debito'} onclick={() => (medio = 'debito')}>Débito</button>
-		<button type="button" class:activo={medio === 'credito'} onclick={() => (medio = 'credito')}>Crédito</button>
-	</div>
-
-	{#if medio === 'credito'}
-		<label>Tarjeta
-			<select bind:value={tarjetaId}>
-				<option value={null} disabled>Elegir…</option>
-				{#each tarjetasCredito as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}
-			</select>
-		</label>
-		<label>Cuotas<input type="number" min="1" bind:value={cuotas} /></label>
-		<label>Mes inicio de pago<input type="month" bind:value={mesInicio} /></label>
-	{/if}
-
-	<button class="guardar" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
-	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
+<div class="accesos">
+	<a href="/gastos" class="btn-carga">➕ Cargar gasto</a>
+	<a href="/credito" class="btn-carga sec">Gastos en Crédito</a>
+	<a href="/suscripciones" class="btn-carga sec">Ver Suscripciones</a>
 </div>
 
-<h2>Últimos gastos</h2>
-<table>
-	<thead><tr><th>Fecha</th><th>Detalle</th><th>Subcat.</th><th>Categoría</th><th>Medio</th><th class="num">Monto</th><th></th></tr></thead>
-	<tbody>
-		{#each ultimos as g (g.id)}
-			<tr class:editrow={editandoId === g.id}>
-				<td>{g.fecha}</td>
-				<td>{g.detalle}</td>
-				<td>{g.subcategoria ?? '—'}</td>
-				<td>{g.categoria}</td>
-				<td>{g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</td>
-				<td class="num">{fmt(g.monto, g.moneda)}</td>
-				<td class="acc">
-					<button class="lapiz" onclick={() => editar(g)} title="Editar">✏️</button>
-					<button class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
-				</td>
-			</tr>
-		{/each}
-	</tbody>
-</table>
+<label class="sel">Período de sueldo: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+<p class="rango">Gastos del <strong>{rango}</strong> (el período lo abre la fecha real de tu sueldo).</p>
+
+{#if cargando}
+	<p>Cargando…</p>
+{:else}
+	<h2>Consolidado por categoría</h2>
+	<table>
+		<thead><tr><th>Categoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
+		<tbody>
+			{#each consolidado as c (c.cat)}
+				<tr>
+					<td><strong>{c.cat}</strong></td>
+					<td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
+					<td class="num">{peso(c.presup)}</td><td class="num">{peso(c.real)}</td>
+					<td class={claseEstado(c.estado)}>{c.estado}</td>
+				</tr>
+			{/each}
+		</tbody>
+		<tfoot>
+			<tr><td><strong>Total general</strong></td>
+				<td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
+				<td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
+		</tfoot>
+	</table>
+
+	<h2>Detalle por subcategoría</h2>
+	<table>
+		<thead><tr><th>Subcategoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
+		<tbody>
+			{#each grupos as g (g.cat)}
+				<tr class="cat"><td colspan="6">{g.cat}</td></tr>
+				{#each g.rows as f (f.scid ?? 'null')}
+					<tr>
+						<td class="ind">{f.nombre}</td>
+						<td class="num">{peso(f.n2)}</td>
+						<td class="num">{peso(f.n1)}</td>
+						<td class="num">
+							{#if f.scid != null}
+								<input class="presup" type="number" min="0" value={f.presup || ''} placeholder="—"
+									onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
+							{:else}—{/if}
+						</td>
+						<td class="num">{peso(f.real)}</td>
+						<td class={claseEstado(f.estado)}>{f.estado}</td>
+					</tr>
+				{/each}
+			{/each}
+		</tbody>
+		<tfoot>
+			<tr><td><strong>Total general</strong></td>
+				<td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
+				<td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
+		</tfoot>
+	</table>
+{/if}
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 0 auto; }
-	label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
-	input, select { padding: 7px; font-size: 1rem; }
-	.medio { display: flex; gap: 8px; }
-	.medio button { flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; }
-	.medio button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
-	.guardar { padding: 10px; font-size: 1rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-top: 4px; }
-	.nuevo { border: 1px dashed var(--warn); background: rgba(251, 191, 36, 0.08); padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
-	.hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
-	.msg { font-weight: 600; color: var(--text); }
-	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-	.link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
-	table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.9rem; }
+	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+	.rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
+	h2 { font-size: 1.05rem; margin-top: 20px; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; }
 	th, td { padding: 5px 8px; text-align: left; }
-	td.num, th.num { text-align: right; white-space: nowrap; }
-	tr.editrow { background: rgba(91, 157, 255, 0.08); }
-	td.acc { white-space: nowrap; }
-	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
-	.lapiz:hover { opacity: 1; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
+	td.num, th:nth-child(n + 2) { text-align: right; }
+	td.ind { padding-left: 20px; }
+	tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); }
+	input.presup { width: 90px; text-align: right; padding: 3px 5px; }
+	td.ok { color: var(--pos); }
+	td.warn { color: var(--warn); font-weight: 600; }
+	td.bad { color: var(--neg); font-weight: 700; }
+	td.none { color: var(--text-dim); }
+	tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
+	.accesos { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+	.btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
+	.btn-carga.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
 </style>
