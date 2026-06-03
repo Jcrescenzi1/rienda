@@ -314,15 +314,14 @@
 
 	<h2>Cartera actual</h2>
 	<table>
-		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Mix</th><th class="num">Monto</th><th class="num">Unidades</th>
+		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Mix</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num">Valor mercado</th><th class="num hl">Resultado</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr class:liqrow={h.esLiq}>
 					<td>{h.tipo}</td><td>{h.nombre}</td><td class="pctcol">{(h.peso * 100).toFixed(1)}%</td>
-					<td class="num">{money(h.monto, h.moneda)}</td>
 					{#if h.esLiq}
-						<td class="num">—</td><td class="num hl">—</td><td class="num hl">—</td><td class="num">—</td>
+						<td class="num hl">—</td><td class="num hl">—</td><td class="num">—</td>
 						<td class="num precioedit">
 							{#if editLiq === h.moneda}
 								<input type="number" step="any" bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
@@ -330,7 +329,7 @@
 							{:else}{money(h.mercado, h.moneda)}<button class="lapiz" onclick={() => abrirEditLiq(h)}>✏️</button>{/if}
 						</td><td class="num hl">—</td>
 					{:else}
-						<td class="num">{nf(h.unidades)}</td><td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
+						<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
 						<td class="num precioedit">
 							{#if editId === h.id}
 								<input type="number" step="any" bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />

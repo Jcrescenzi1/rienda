@@ -5,6 +5,18 @@
 	let sueldos: Record<string, number> = {};
 	let infl: Record<string, number> = {};
 	let dolar: Record<string, number> = {};
+	let ingresosPeriodo: Record<string, number> = {};
+	let gastosPeriodo: Record<string, number> = {};
+	let cortes: { fecha: string; periodo: string }[] = [];
+
+	function periodoDeFecha(fecha: string): string | null {
+		let elegido: string | null = null;
+		for (const c of cortes) {
+			if (c.fecha <= fecha) elegido = c.periodo;
+			else break;
+		}
+		return elegido;
+	}
 	let periodosTodos: string[] = [];
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
@@ -22,6 +34,27 @@
 		periodosTodos = Object.keys(sueldos).sort();
 		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
 		anio = anios[anios.length - 1] ?? '';
+		// Cortes = fechas de sueldos con su periodo (mismo criterio que Presupuesto)
+		const sld = (await query("SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Salario' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha")) as any[];
+		cortes = sld.map((s) => ({ fecha: s.fecha, periodo: s.periodo }));
+
+		// Ingresos por periodo, en USD (dólar del mes calendario del periodo)
+		const ing = (await query("SELECT periodo, fecha, monto, moneda FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL")) as any[];
+		for (const x of ing) {
+			const mesDolar = x.fecha.slice(0, 7);
+			const usd = x.moneda === 'USD' ? x.monto : (dolar[mesDolar] ? x.monto / dolar[mesDolar] : null);
+			if (usd != null) ingresosPeriodo[x.periodo] = (ingresosPeriodo[x.periodo] ?? 0) + usd;
+		}
+
+		// Gastos asignados a periodo via periodoDeFecha, en USD (dólar del mes del gasto)
+		const gas = (await query("SELECT fecha, monto, moneda FROM gasto WHERE perfil_id=1")) as any[];
+		for (const x of gas) {
+			const per = periodoDeFecha(x.fecha);
+			if (!per) continue;
+			const mesDolar = x.fecha.slice(0, 7);
+			const usd = x.moneda === 'USD' ? x.monto : (dolar[mesDolar] ? x.monto / dolar[mesDolar] : null);
+			if (usd != null) gastosPeriodo[per] = (gastosPeriodo[per] ?? 0) + usd;
+		}
 		cargando = false;
 	});
 
@@ -93,6 +126,57 @@
 			finI: { x: px(n - 1), y: py(serie[n - 1].inflacion) }
 		};
 	});
+	let periodosIG = $derived.by(() => {
+		const todos = [...new Set([...Object.keys(ingresosPeriodo), ...Object.keys(gastosPeriodo)])].sort();
+		if (vista === 'historico') return todos;
+		if (vista === 'anio') return todos.filter((p) => p.startsWith(anio));
+		return todos.slice(-12);
+	});
+
+	let serieIG = $derived.by(() =>
+		periodosIG.map((p) => ({
+			periodo: p,
+			ingreso: ingresosPeriodo[p] ?? 0,
+			gasto: gastosPeriodo[p] ?? 0,
+			balance: (ingresosPeriodo[p] ?? 0) - (gastosPeriodo[p] ?? 0)
+		}))
+	);
+
+	let chartIG = $derived.by(() => {
+		if (serieIG.length < 1) return null;
+		const allV = serieIG.flatMap((s) => [s.ingreso, s.gasto]);
+		let minY = Math.min(0, ...allV), maxY = Math.max(...allV, 1);
+		const padY = (maxY - minY) * 0.08 || 1; maxY += padY;
+		const n = serieIG.length;
+		const innerW = W - P.l - P.r;
+		const grupoW = innerW / n;
+		const barW = Math.min(18, (grupoW * 0.8) / 2);
+		const py = (y: number) => H - P.b - ((y - minY) / (maxY - minY)) * (H - P.t - P.b);
+		const y0 = py(0);
+		const barras = serieIG.map((s, i) => {
+			const cx = P.l + grupoW * i + grupoW / 2;
+			return {
+				ing: { x: cx - barW - 1, y: py(s.ingreso), h: Math.abs(y0 - py(s.ingreso)) },
+				gas: { x: cx + 1, y: py(s.gasto), h: Math.abs(y0 - py(s.gasto)) },
+				periodo: s.periodo
+			};
+		});
+		const yticks = Array.from({ length: 4 }, (_, k) => {
+			const v = minY + ((maxY - minY) * k) / 3;
+			return { y: py(v), label: v.toFixed(0) };
+		});
+		const step = Math.max(1, Math.floor(n / 8));
+		const xticks = barras.filter((_, i) => i % step === 0).map((b) => ({ x: b.ing.x + barW, label: b.periodo.slice(2) }));
+		return { barras, yticks, xticks, barW };
+	});
+
+	let resumenIG = $derived.by(() => {
+		const tIng = serieIG.reduce((s, x) => s + x.ingreso, 0);
+		const tGas = serieIG.reduce((s, x) => s + x.gasto, 0);
+		return { tIng, tGas, balance: tIng - tGas };
+	});
+
+	const usd0 = (n: number) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 });
 
 	const pct = (n: number, dec = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dec) + '%';
 </script>
@@ -104,14 +188,7 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<div class="resumen">
-		<div class="card"><span>Inflación acum. {resumen.desde}→{resumen.hasta}</span><strong>{pct(resumen.inflAcum)}</strong></div>
-		<div class="card"><span>Variación nominal sueldo</span><strong>{pct(resumen.varNominal)}</strong></div>
-		<div class="card" class:ok={resumen.gano} class:bad={!resumen.gano}>
-			<span>Poder adquisitivo vs base</span><strong>{pct(brechaActual)}</strong>
-		</div>
-	</div>
-
+	
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
 		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
@@ -121,9 +198,45 @@
 		{/if}
 	</div>
 
+	<h2>Ingresos vs Gastos (USD)</h2>
+	<div class="resumen">
+		<div class="card"><span>Ingresos totales</span><strong>{usd0(resumenIG.tIng)}</strong></div>
+		<div class="card"><span>Gastos totales</span><strong>{usd0(resumenIG.tGas)}</strong></div>
+		<div class="card" class:ok={resumenIG.balance >= 0} class:bad={resumenIG.balance < 0}>
+			<span>Balance</span><strong>{usd0(resumenIG.balance)}</strong>
+		</div>
+	</div>
 	<div class="leyenda">
-		<span class="leg"><span class="sw sw-sal"></span> Salario</span>
-		<span class="leg"><span class="sw sw-inf"></span> Inflación</span>
+		<span class="leg"><span class="sw sw-ing"></span> Ingresos</span>
+		<span class="leg"><span class="sw sw-gas"></span> Gastos</span>
+		<span class="aclara">Por período de sueldo, en USD. Gastos asignados al período según la fecha de tu sueldo; crédito en el mes del gasto.</span>
+	</div>
+	{#if chartIG}
+		<svg viewBox="0 0 {W} {H}" class="chart">
+			{#each chartIG.yticks as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
+			{/each}
+			{#each chartIG.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			{#each chartIG.barras as b}
+				<rect x={b.ing.x} y={b.ing.y} width={chartIG.barW} height={b.ing.h} class="bar-ing" />
+				<rect x={b.gas.x} y={b.gas.y} width={chartIG.barW} height={b.gas.h} class="bar-gas" />
+			{/each}
+		</svg>
+	{:else}
+		<p class="nota">No hay datos para esta ventana.</p>
+	{/if}
+
+	<h2>Salario vs Inflación</h2>
+	<div class="resumen">
+		<div class="card"><span>Inflación acum. {resumen.desde}→{resumen.hasta}</span><strong>{pct(resumen.inflAcum)}</strong></div>
+		<div class="card"><span>Variación nominal sueldo</span><strong>{pct(resumen.varNominal)}</strong></div>
+		<div class="card" class:ok={resumen.gano} class:bad={!resumen.gano}>
+			<span>Poder adquisitivo vs base</span><strong>{pct(brechaActual)}</strong>
+		</div>
+	</div>
+	<div class="leyenda">
+		<span class="leg"><span class="sw sw-sal"></span> Salario</span>	<span class="leg"><span class="sw sw-inf"></span> Inflación</span>
 		<span class="aclara">Ambas en base 100 al inicio de la ventana. Si Salario va por encima, le ganás a la inflación.</span>
 	</div>
 
@@ -177,4 +290,8 @@
 	.endlbl.sal { fill: var(--accent); } .endlbl.inf { fill: #e8975b; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; margin: 4px 0 12px; }
+	.sw-ing { background: var(--pos); }
+	.sw-gas { background: var(--neg); }
+	.bar-ing { fill: var(--pos); }
+	.bar-gas { fill: var(--neg); }
 </style>
