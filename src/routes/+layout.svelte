@@ -59,6 +59,15 @@
 	});
 	let tabs = $derived(mundo === 'inversiones' ? inversiones : finanzas);
 	let actual = $derived($page.url.pathname);
+
+	import { onMount } from 'svelte';
+
+	onMount(() => {
+		if ('serviceWorker' in navigator) {
+			navigator.serviceWorker.register('/service-worker.js');
+		}
+	});
+	
 </script>
 
 <header>
