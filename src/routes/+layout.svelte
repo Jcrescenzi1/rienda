@@ -77,8 +77,10 @@
 
 	const finanzas = [
 		{ href: '/', label: 'Presupuesto' },
-		{ href: '/ingresos', label: 'Ingresos' }
+		{ href: '/ingresos', label: 'Ingresos' },
+		{ href: '/configuracion', label: 'Configuración' }
 	];
+
 	const inversiones = [
 		{ href: '/inversiones', label: 'Inversiones' },
 		{ href: '/evolucion', label: 'Evolución' }
@@ -135,7 +137,6 @@
 	<!-- App normal -->
 	<header>
 		<div class="backup">
-			<a class="bk" href="/configuracion" title="Configuración">⚙</a>
 			<button class="bk" onclick={onExportar} title="Exportar datos">⬇ Exportar</button>
 			<button class="bk" onclick={() => importInput.click()} title="Importar datos">⬆ Importar</button>
 			<input
