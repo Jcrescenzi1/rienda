@@ -1,6 +1,10 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onNavigate } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { dev } from '$app/environment';
+	import { exportarDatos, importarDatos } from '$lib/db/backup';
+	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -13,7 +17,34 @@
 	});
 	let { children } = $props();
 
-	import { exportarDatos, importarDatos } from '$lib/db/backup';
+	// ===== Perfil / bienvenida =====
+	let perfilListo = $state(false);   // true si ya hay perfil (mostrar app)
+	let chequeando = $state(true);     // true mientras consultamos la base
+	let nombreNuevo = $state('');
+	let creando = $state(false);
+	let bienvenidaMsg = $state('');
+
+	async function chequearPerfil() {
+		try {
+			perfilListo = await hayPerfil();
+		} catch {
+			perfilListo = false;
+		} finally {
+			chequeando = false;
+		}
+	}
+
+	async function onCrearPerfil() {
+		if (!nombreNuevo.trim()) { bienvenidaMsg = 'Escribí tu nombre.'; return; }
+		creando = true; bienvenidaMsg = '';
+		try {
+			await crearPerfil(nombreNuevo);
+			location.reload();
+		} catch (e: any) {
+			bienvenidaMsg = e?.message ?? String(e);
+			creando = false;
+		}
+	}
 
 	let importInput: HTMLInputElement;
 
@@ -60,42 +91,74 @@
 	let tabs = $derived(mundo === 'inversiones' ? inversiones : finanzas);
 	let actual = $derived($page.url.pathname);
 
-	import { onMount } from 'svelte';
-
-	import { dev } from '$app/environment';
-
 	onMount(() => {
+		chequearPerfil();
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
 		}
 	});
-	
 </script>
 
-<header>
-	<div class="backup">
-		<button class="bk" onclick={onExportar} title="Exportar datos">⬇ Exportar</button>
-		<button class="bk" onclick={() => importInput.click()} title="Importar datos">⬆ Importar</button>
-		<input
-			type="file"
-			accept="application/json"
-			bind:this={importInput}
-			onchange={onImportar}
-			style="display:none"
-		/>
+{#if chequeando}
+	<!-- Pantalla mínima mientras se consulta la base -->
+	<div class="cargando-app"><p>Cargando…</p></div>
+{:else if !perfilListo}
+	<!-- Pantalla de bienvenida: crear perfil o importar backup -->
+	<div class="bienvenida">
+		<div class="bcard">
+			<h1>Bienvenido a Rienda</h1>
+			<p class="sub">Tus finanzas viven solo en este dispositivo. Empezá creando tu perfil.</p>
+			<label>Tu nombre
+				<input
+					bind:value={nombreNuevo}
+					placeholder="Ej: Juan"
+					onkeydown={(e) => e.key === 'Enter' && onCrearPerfil()}
+				/>
+			</label>
+			<button class="crear" onclick={onCrearPerfil} disabled={creando}>
+				{creando ? 'Creando…' : 'Empezar'}
+			</button>
+			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
+			<div class="separador"><span>o</span></div>
+			<p class="sub">¿Ya tenés un backup de Rienda?</p>
+			<button class="importar-b" onclick={() => importInput.click()}>⬆ Importar backup</button>
+			<input
+				type="file"
+				accept="application/json"
+				bind:this={importInput}
+				onchange={onImportar}
+				style="display:none"
+			/>
+		</div>
 	</div>
-	<div class="nivel1">
-		<a href="/" class="mundo" class:activo={mundo === 'finanzas'}>Finanzas</a>
-		<a href="/inversiones" class="mundo" class:activo={mundo === 'inversiones'}>Inversiones</a>
-	</div>
-	<nav class="nivel2">
-		{#each tabs as t (t.href)}
-			<a href={t.href} class:activo={actual === t.href}>{t.label}</a>
-		{/each}
-	</nav>
-</header>
+{:else}
+	<!-- App normal -->
+	<header>
+		<div class="backup">
+			<a class="bk" href="/configuracion" title="Configuración">⚙</a>
+			<button class="bk" onclick={onExportar} title="Exportar datos">⬇ Exportar</button>
+			<button class="bk" onclick={() => importInput.click()} title="Importar datos">⬆ Importar</button>
+			<input
+				type="file"
+				accept="application/json"
+				bind:this={importInput}
+				onchange={onImportar}
+				style="display:none"
+			/>
+		</div>
+		<div class="nivel1">
+			<a href="/" class="mundo" class:activo={mundo === 'finanzas'}>Finanzas</a>
+			<a href="/inversiones" class="mundo" class:activo={mundo === 'inversiones'}>Inversiones</a>
+		</div>
+		<nav class="nivel2">
+			{#each tabs as t (t.href)}
+				<a href={t.href} class:activo={actual === t.href}>{t.label}</a>
+			{/each}
+		</nav>
+	</header>
 
-{@render children()}
+	{@render children()}
+{/if}
 
 <style>
 	/* ===== Sistema de color global (paleta oscura "calma y foco") ===== */
@@ -143,15 +206,47 @@
 	}
 	:global(input::placeholder) { color: var(--text-dim); }
 
-	/* Semáforo: las clases .pos/.neg que ya usás en todas las pantallas */
+	/* Semáforo */
 	:global(.pos) { color: var(--pos) !important; }
 	:global(.neg) { color: var(--neg) !important; }
 	:global(td.ok) { color: var(--pos) !important; }
 	:global(td.bad) { color: var(--neg) !important; }
 	:global(td.warn) { color: var(--warn) !important; }
 
+	/* ===== Bienvenida ===== */
+	.cargando-app { max-width: 820px; margin: 40px auto; padding: 16px; }
+	.bienvenida { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+	.bcard {
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		padding: 28px 24px;
+		max-width: 360px;
+		width: 100%;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.bcard h1 { margin: 0; font-size: 1.4rem; }
+	.bcard .sub { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
+	.bcard label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 5px; }
+	.bcard input { padding: 9px; font-size: 1rem; }
+	.crear {
+		background: var(--accent); color: #fff; border: none; border-radius: 6px;
+		padding: 10px; font-weight: 600; cursor: pointer; font-size: 0.95rem;
+	}
+	.crear:disabled { opacity: 0.6; cursor: default; }
+	.bmsg { font-size: 0.82rem; color: var(--neg); margin: 0; }
+	.separador { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 0.8rem; }
+	.separador::before, .separador::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+	.importar-b {
+		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+		border-radius: 6px; padding: 9px; cursor: pointer; font-size: 0.9rem;
+	}
+	.importar-b:hover { border-color: var(--accent); }
+
 	/* ===== Navegación ===== */
-	header { max-width: 820px; margin: 0 auto 12px; }
+	header { max-width: 820px; margin: 0 auto 12px; position: relative; }
 	.nivel1 { display: flex; gap: 8px; padding: 12px 16px 0; }
 	.mundo {
 		text-decoration: none;
@@ -193,7 +288,6 @@
 		animation-duration: 0.25s;
 		animation-timing-function: ease;
 	}
-	header { position: relative; }
 	.backup {
 		position: absolute;
 		top: 12px;

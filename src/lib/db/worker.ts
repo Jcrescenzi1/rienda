@@ -1,20 +1,8 @@
 import sqlite3InitModule from '@sqlite.org/sqlite-wasm';
 import { SCHEMA } from './schema';
-import { SEED } from './seed';
-import { SEED_GASTOS } from './seed_gastos';
-import { SEED_INGRESOS } from './seed_ingresos';
 import { SEED_MACRO } from './seed_macro';
-import { SEED_INVERSIONES } from './seed_inversiones';
-import { SEED_SNAPSHOTS } from './seed_snapshots';
-import { SEED_LIQUIDEZ } from './seed_liquidez';
 
 let db: any = null;
-
-// Ejecuta un seed solo si tiene contenido (los seeds personales están vacíos
-// en el repo; los datos reales se cargan importando el backup JSON).
-function seed(sql: string) {
-	if (sql && sql.trim()) db.exec(sql);
-}
 
 async function init() {
 	const sqlite3 = await sqlite3InitModule();
@@ -35,18 +23,6 @@ async function init() {
 	}
 	if (!tcols.some((c: any) => c.name === 'monto_pago')) {
 		db.exec('ALTER TABLE transaccion ADD COLUMN monto_pago REAL');
-	}
-
-	// Perfil base: se carga siempre (la app necesita un perfil id=1 para funcionar).
-	const r = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
-	if (r[0].n === 0) {
-		seed(SEED);
-		seed(SEED_GASTOS);
-	}
-
-	const ri = db.exec({ sql: 'SELECT COUNT(*) AS n FROM ingreso', rowMode: 'object', returnValue: 'resultRows' });
-	if (ri[0].n === 0) {
-		seed(SEED_INGRESOS);
 	}
 
 	// Migración: si la tabla cotizacion_dolar no tiene columna 'casa', la recreamos.
@@ -70,26 +46,19 @@ async function init() {
 		`);
 	}
 
+	// NOTA: el perfil ya NO se crea acá. Lo crea la pantalla de bienvenida con el
+	// nombre del usuario (ver src/lib/db/perfil.ts). Hasta que exista un perfil,
+	// la app muestra la bienvenida.
+
 	// Datos macro (dólar/inflación): públicos, sirven de fallback inicial hasta
-	// que el usuario toque "Actualizar cotizaciones". Se cargan siempre.
-	const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
-	if (rm[0].n === 0) {
-		seed(SEED_MACRO);
-	}
-
-	const rt = db.exec({ sql: 'SELECT COUNT(*) AS n FROM transaccion', rowMode: 'object', returnValue: 'resultRows' });
-	if (rt[0].n === 0) {
-		seed(SEED_INVERSIONES);
-	}
-
-	const rs = db.exec({ sql: 'SELECT COUNT(*) AS n FROM snapshot', rowMode: 'object', returnValue: 'resultRows' });
-	if (rs[0].n === 0) {
-		seed(SEED_SNAPSHOTS);
-	}
-
-	const rl = db.exec({ sql: 'SELECT COUNT(*) AS n FROM liquidez', rowMode: 'object', returnValue: 'resultRows' });
-	if (rl[0].n === 0) {
-		seed(SEED_LIQUIDEZ);
+	// que el usuario toque "Actualizar cotizaciones". Necesitan perfil_id=1, así que
+	// solo se cargan si ya existe el perfil.
+	const rp = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
+	if (rp[0].n > 0) {
+		const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
+		if (rm[0].n === 0 && SEED_MACRO && SEED_MACRO.trim()) {
+			db.exec(SEED_MACRO);
+		}
 	}
 }
 
