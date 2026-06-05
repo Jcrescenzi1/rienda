@@ -4,6 +4,42 @@ import { SEED_MACRO } from './seed_macro';
 
 let db: any = null;
 
+// ===== Clasificación de tablas por módulo (para registrar última edición) =====
+const TABLAS_FINANZAS = new Set([
+	'gasto', 'ingreso', 'categoria', 'subcategoria', 'mapeo_detalle',
+	'tarjeta', 'suscripcion', 'suscripcion_registro', 'presupuesto'
+]);
+const TABLAS_INVERSIONES = new Set([
+	'activo', 'transaccion', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja'
+]);
+// Neutras (no cuentan como edición del usuario): cotizacion_dolar, inflacion,
+// perfil, meta. No actualizan ninguna fecha.
+
+// Detecta si un SQL es de escritura y a qué tabla apunta.
+function tablaAfectada(sql: string): string | null {
+	const s = sql.trim().toLowerCase();
+	let m: RegExpMatchArray | null = null;
+	if (s.startsWith('insert')) m = s.match(/insert\s+(?:or\s+\w+\s+)?into\s+["']?(\w+)/);
+	else if (s.startsWith('update')) m = s.match(/update\s+["']?(\w+)/);
+	else if (s.startsWith('delete')) m = s.match(/delete\s+from\s+["']?(\w+)/);
+	return m ? m[1] : null;
+}
+
+// Registra la última edición del módulo correspondiente (si aplica).
+function registrarEdicion(sql: string) {
+	const tabla = tablaAfectada(sql);
+	if (!tabla) return;
+	let clave: string | null = null;
+	if (TABLAS_FINANZAS.has(tabla)) clave = 'ultima_edicion_finanzas';
+	else if (TABLAS_INVERSIONES.has(tabla)) clave = 'ultima_edicion_inversiones';
+	if (!clave) return; // tabla neutra
+	const ahora = new Date().toISOString();
+	db.exec({
+		sql: "INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+		bind: [clave, ahora]
+	});
+}
+
 async function init() {
 	const sqlite3 = await sqlite3InitModule();
 	const poolUtil = await sqlite3.installOpfsSAHPoolVfs({ name: 'rienda-pool' });
@@ -46,13 +82,7 @@ async function init() {
 		`);
 	}
 
-	// NOTA: el perfil ya NO se crea acá. Lo crea la pantalla de bienvenida con el
-	// nombre del usuario (ver src/lib/db/perfil.ts). Hasta que exista un perfil,
-	// la app muestra la bienvenida.
-
-	// Datos macro (dólar/inflación): públicos, sirven de fallback inicial hasta
-	// que el usuario toque "Actualizar cotizaciones". Necesitan perfil_id=1, así que
-	// solo se cargan si ya existe el perfil.
+	// Datos macro (dólar/inflación): públicos, fallback inicial. Solo si hay perfil.
 	const rp = db.exec({ sql: 'SELECT COUNT(*) AS n FROM perfil', rowMode: 'object', returnValue: 'resultRows' });
 	if (rp[0].n > 0) {
 		const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
@@ -69,6 +99,8 @@ self.onmessage = async (e: MessageEvent) => {
 	try {
 		await ready;
 		const rows = db.exec({ sql, bind, rowMode: 'object', returnValue: 'resultRows' });
+		// Registrar última edición por módulo (después de ejecutar, si fue escritura)
+		try { registrarEdicion(sql); } catch { /* no romper la query principal por esto */ }
 		self.postMessage({ id, rows });
 	} catch (err: any) {
 		self.postMessage({ id, error: err?.message ?? String(err) });

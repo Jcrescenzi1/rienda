@@ -4,8 +4,8 @@
 
 import { query } from './client';
 
-// Las 18 tablas, ordenadas de "padres" a "hijas" (según las foreign keys).
-// El EXPORT usa este orden; el IMPORT inserta en este orden y borra en el inverso.
+// Tablas ordenadas de "padres" a "hijas" (según foreign keys).
+// meta va al final: no tiene dependencias.
 const TABLAS = [
 	'perfil',
 	'categoria',
@@ -24,20 +24,20 @@ const TABLAS = [
 	'presupuesto',
 	'snapshot',
 	'liquidez',
-	'mov_caja'
+	'mov_caja',
+	'meta'
 ];
 
 // ---------- EXPORTAR ----------
 export async function exportarDatos(): Promise<void> {
 	const tablas: Record<string, any[]> = {};
 	for (const t of TABLAS) {
-		// SELECT * toma automáticamente columnas agregadas por ALTER (moneda_pago, etc.)
 		tablas[t] = await query(`SELECT * FROM ${t}`);
 	}
 
 	const backup = {
 		app: 'rienda',
-		version: 1,
+		version: 2,
 		exportado_en: new Date().toISOString(),
 		tablas
 	};
@@ -46,7 +46,7 @@ export async function exportarDatos(): Promise<void> {
 	const blob = new Blob([json], { type: 'application/json' });
 	const url = URL.createObjectURL(blob);
 
-	const fecha = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+	const fecha = new Date().toISOString().slice(0, 10);
 	const a = document.createElement('a');
 	a.href = url;
 	a.download = `rienda-backup-${fecha}.json`;
@@ -54,14 +54,54 @@ export async function exportarDatos(): Promise<void> {
 	URL.revokeObjectURL(url);
 }
 
-// ---------- IMPORTAR ----------
-export async function importarDatos(file: File): Promise<void> {
+// Tipo para la comparación previa
+export type FechasBackup = {
+	valido: boolean;
+	tieneMeta: boolean;
+	edicion_finanzas: string | null;
+	edicion_inversiones: string | null;
+	exportado_en: string | null;
+};
+
+// ---------- LEER FECHAS DE UN BACKUP (sin importar) ----------
+// Sirve para la comparación previa: leer qué trae el archivo antes de pisar nada.
+export async function leerFechasBackup(file: File): Promise<{ backup: any; fechas: FechasBackup }> {
 	const texto = await file.text();
 	let backup: any;
 	try {
 		backup = JSON.parse(texto);
 	} catch {
 		throw new Error('El archivo no es un JSON válido.');
+	}
+	if (backup?.app !== 'rienda' || !backup?.tablas) {
+		throw new Error('El archivo no es un backup válido de Rienda.');
+	}
+
+	const metaRows: any[] = Array.isArray(backup.tablas.meta) ? backup.tablas.meta : [];
+	const m: Record<string, string> = {};
+	for (const r of metaRows) if (r?.clave) m[r.clave] = r.valor;
+
+	const fechas: FechasBackup = {
+		valido: true,
+		tieneMeta: metaRows.length > 0,
+		edicion_finanzas: m['ultima_edicion_finanzas'] ?? null,
+		edicion_inversiones: m['ultima_edicion_inversiones'] ?? null,
+		exportado_en: backup.exportado_en ?? null
+	};
+
+	return { backup, fechas };
+}
+
+// ---------- IMPORTAR ----------
+// Acepta un backup ya parseado (de leerFechasBackup) o un File.
+export async function importarDatos(fileOrBackup: File | any): Promise<void> {
+	let backup: any;
+	if (fileOrBackup instanceof File) {
+		const texto = await fileOrBackup.text();
+		try { backup = JSON.parse(texto); }
+		catch { throw new Error('El archivo no es un JSON válido.'); }
+	} else {
+		backup = fileOrBackup;
 	}
 
 	if (backup?.app !== 'rienda' || !backup?.tablas) {
@@ -70,29 +110,24 @@ export async function importarDatos(file: File): Promise<void> {
 
 	const tablas = backup.tablas as Record<string, any[]>;
 
-	// Transacción manual: si algo falla, ROLLBACK deja la base intacta.
 	await query('BEGIN');
 	try {
-		// Borrar en orden inverso (hijas primero) para no chocar con foreign keys.
+		// Borrar en orden inverso (hijas primero)
 		for (const t of [...TABLAS].reverse()) {
 			await query(`DELETE FROM ${t}`);
 		}
-
-		// Insertar en orden directo (padres primero).
+		// Insertar en orden directo (padres primero)
 		for (const t of TABLAS) {
 			const filas = tablas[t];
 			if (!Array.isArray(filas) || filas.length === 0) continue;
-
 			for (const fila of filas) {
 				const cols = Object.keys(fila);
 				if (cols.length === 0) continue;
 				const placeholders = cols.map(() => '?').join(', ');
 				const valores = cols.map((c) => fila[c]);
-				const sql = `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`;
-				await query(sql, valores);
+				await query(`INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`, valores);
 			}
 		}
-
 		await query('COMMIT');
 	} catch (err: any) {
 		await query('ROLLBACK');

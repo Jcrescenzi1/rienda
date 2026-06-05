@@ -189,4 +189,9 @@ CREATE TABLE IF NOT EXISTS mov_caja (
   grupo TEXT,
   nota TEXT
 );
+
+CREATE TABLE IF NOT EXISTS meta (
+  clave TEXT PRIMARY KEY,
+  valor TEXT
+);
 `;

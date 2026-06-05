@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -34,21 +33,6 @@
 	let editPrecio = $state<number | null>(null);
 	let editLiq = $state<string | null>(null);
 	let editSaldo = $state<number | null>(null);
-
-	let actualizandoCotiz = $state(false);
-
-	async function onActualizarCotiz() {
-		actualizandoCotiz = true;
-		try {
-			const msg = await actualizarCotizaciones();
-			alert(msg);
-			await cargarTodo();
-		} catch (e: any) {
-			alert('Error: ' + (e?.message ?? e));
-		} finally {
-			actualizandoCotiz = false;
-		}
-	}
 
 	// Guardar Cartera (foto)
 	let showFoto = $state(false);
@@ -263,9 +247,6 @@
 	<div class="topbar">
 		<button class="nueva" onclick={() => (showForm = !showForm)}>{showForm ? '✕ Cerrar' : '➕ Nuevo movimiento'}</button>
 		<button class="guardarcart" onclick={prepararFoto}>📸 Guardar Cartera</button>
-		<button class="cotiz" onclick={onActualizarCotiz} disabled={actualizandoCotiz}>
-			{actualizandoCotiz ? '⏳ Actualizando…' : '🔄 Actualizar cotizaciones'}
-		</button>
 	</div>
 	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
 
@@ -446,7 +427,5 @@
 	.val { width: 170px; text-align: right; color: var(--text); }
 	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	.cotiz { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.cotiz:hover:not(:disabled) { border-color: var(--accent); }
-	.cotiz:disabled { opacity: 0.6; cursor: default; }
+	
 </style>

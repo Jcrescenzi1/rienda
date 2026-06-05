@@ -221,7 +221,7 @@
 	td.num, th:nth-child(n + 2) { text-align: right; }
 	td.ind { padding-left: 20px; }
 	tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); }
-	input.presup { width: 90px; text-align: right; padding: 3px 5px; }
+	input.presup { width: 60px; text-align: right; padding: 3px 5px; }
 	td.ok { color: var(--pos); }
 	td.warn { color: var(--warn); font-weight: 600; }
 	td.bad { color: var(--neg); font-weight: 700; }

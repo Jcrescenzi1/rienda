@@ -149,7 +149,6 @@
 </script>
 
 <h1>Configuración</h1>
-<a href="/" class="btn-volver">← Volver</a>
 
 <p class="intro">
 	Acá administrás cómo se clasifican tus gastos. Cada gasto tiene una <strong>categoría</strong>
@@ -287,8 +286,6 @@
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
-	.btn-volver:hover { text-decoration: underline; }
 	.intro { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
 	.intro strong { color: var(--text); }
 	.sub { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 8px; }
