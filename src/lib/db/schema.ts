@@ -69,14 +69,14 @@ CREATE TABLE IF NOT EXISTS ingreso (
   fecha       TEXT NOT NULL,
   monto       REAL NOT NULL CHECK (monto > 0),
   moneda      TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
-  categoria   TEXT NOT NULL CHECK (categoria IN ('Salario','Otros')),
+  categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros')),
   tipo        TEXT CHECK (tipo IN ('Sueldo','Aciclico')),
   detalle     TEXT,
   periodo     TEXT,
   CHECK (
-    (categoria = 'Salario' AND tipo IS NOT NULL)
+    (categoria = 'Ingreso Principal' AND tipo IS NOT NULL)
     OR
-    (categoria = 'Otros' AND tipo IS NULL)
+    (categoria IN ('Ingresos Secundarios','Otros') AND tipo IS NULL)
   )
 );
 

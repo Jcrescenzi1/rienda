@@ -68,6 +68,45 @@ async function init() {
 		db.exec("ALTER TABLE perfil ADD COLUMN modo_periodo TEXT NOT NULL DEFAULT 'sueldo'");
 	}
 
+	// Migración: renombrar categorías de ingreso (Salario→Ingreso Principal) y
+	// ampliar el CHECK para 'Ingresos Secundarios'. El CHECK está cocido en el
+	// CREATE, así que hay que recrear la tabla. Idempotente: solo corre si el
+	// esquema actual NO menciona 'Ingreso Principal'.
+	const isql = db.exec({
+		sql: "SELECT sql FROM sqlite_master WHERE type='table' AND name='ingreso'",
+		rowMode: 'object', returnValue: 'resultRows'
+	});
+	const ingDef: string = isql[0]?.sql ?? '';
+	if (ingDef && !ingDef.includes('Ingreso Principal')) {
+		db.exec(`
+			BEGIN;
+			ALTER TABLE ingreso RENAME TO ingreso_old;
+			CREATE TABLE ingreso (
+				id          INTEGER PRIMARY KEY,
+				perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
+				fecha       TEXT NOT NULL,
+				monto       REAL NOT NULL CHECK (monto > 0),
+				moneda      TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
+				categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros')),
+				tipo        TEXT CHECK (tipo IN ('Sueldo','Aciclico')),
+				detalle     TEXT,
+				periodo     TEXT,
+				CHECK (
+					(categoria = 'Ingreso Principal' AND tipo IS NOT NULL)
+					OR
+					(categoria IN ('Ingresos Secundarios','Otros') AND tipo IS NULL)
+				)
+			);
+			INSERT INTO ingreso (id, perfil_id, fecha, monto, moneda, categoria, tipo, detalle, periodo)
+				SELECT id, perfil_id, fecha, monto, moneda,
+					CASE categoria WHEN 'Salario' THEN 'Ingreso Principal' ELSE categoria END,
+					tipo, detalle, periodo
+				FROM ingreso_old;
+			DROP TABLE ingreso_old;
+			COMMIT;
+		`);
+	}
+	
 	// Migración: si la tabla cotizacion_dolar no tiene columna 'casa', la recreamos.
 	const cdcols = db.exec({ sql: 'PRAGMA table_info(cotizacion_dolar)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cdcols.some((c: any) => c.name === 'casa')) {

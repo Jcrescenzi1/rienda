@@ -22,14 +22,14 @@
 	let perfilListo = $state(false);
 	let chequeando = $state(true);
 	let nombreNuevo = $state('');
-	let modoNuevo = $state<ModoPeriodo>('sueldo');
+	let modoNuevo = $state<ModoPeriodo | null>(null);
 	let creando = $state(false);
 	let bienvenidaMsg = $state('');
 	let importInputBienvenida: HTMLInputElement;
 
 	const explicacionModo: Record<ModoPeriodo, string> = {
-		sueldo: 'Cada período arranca el día que cobrás tu sueldo. Ideal si tenés un ingreso principal fijo.',
-		calendario: 'Cada período es un mes corrido (del 1 al último día). Ideal si tus ingresos varían o no tenés un sueldo fijo.'
+		sueldo: 'Un cobro define tu mes financiero (sueldo, jubilación, una renta fija). Tu mes de gastos e ingresos arranca el día que lo cobrás.',
+		calendario: 'Varios cobros que se complementan, o montos que varían mes a mes. Tus períodos siguen el mes calendario (del 1 al último día).'
 	};
 
 	async function chequearPerfil() {
@@ -40,6 +40,7 @@
 
 	async function onCrearPerfil() {
 		if (!nombreNuevo.trim()) { bienvenidaMsg = 'Escribí tu nombre.'; return; }
+		if (!modoNuevo) { bienvenidaMsg = 'Elegí una opción de ingresos.'; return; }
 		creando = true; bienvenidaMsg = '';
 		try { await crearPerfil(nombreNuevo, modoNuevo); location.reload(); }
 		catch (e: any) { bienvenidaMsg = e?.message ?? String(e); creando = false; }
@@ -109,15 +110,17 @@
 			</label>
 
 			<div class="modo">
-				<span class="modo-tit">¿Cómo querés organizar tus períodos?</span>
+				<span class="modo-tit">¿Hay un ingreso que marque tu mes?</span>
 				<div class="modo-btns">
-					<button type="button" class:activo={modoNuevo === 'sueldo'} onclick={() => (modoNuevo = 'sueldo')}>Por mi sueldo</button>
-					<button type="button" class:activo={modoNuevo === 'calendario'} onclick={() => (modoNuevo = 'calendario')}>Por mes calendario</button>
+					<button type="button" class:activo={modoNuevo === 'sueldo'} onclick={() => (modoNuevo = 'sueldo')}>Sí, tengo uno</button>
+					<button type="button" class:activo={modoNuevo === 'calendario'} onclick={() => (modoNuevo = 'calendario')}>No, son varios</button>
 				</div>
-				<p class="modo-exp">{explicacionModo[modoNuevo]}</p>
+				{#if modoNuevo}
+					<p class="modo-exp">{explicacionModo[modoNuevo]}</p>
+				{/if}
 			</div>
 
-			<button class="crear" onclick={onCrearPerfil} disabled={creando}>{creando ? 'Creando…' : 'Empezar'}</button>
+			<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim() || !modoNuevo}>{creando ? 'Creando…' : 'Empezar'}</button>
 			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
 			<div class="separador"><span>o</span></div>
 			<p class="sub">¿Ya tenés un backup de Rienda?</p>
@@ -276,7 +279,16 @@
 		color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.82rem;
 	}
 	.modo-btns button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
-	.modo-exp { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
+	.modo-exp {
+		font-size: 0.82rem;
+		color: var(--accent);
+		background: rgba(91, 157, 255, 0.1);
+		border-left: 3px solid var(--accent);
+		border-radius: 0 6px 6px 0;
+		padding: 8px 10px;
+		margin: 2px 0 4px;
+		line-height: 1.4;
+	}
 
 	:global(::view-transition-old(root)), :global(::view-transition-new(root)) {
 		animation-duration: 0.25s; animation-timing-function: ease;

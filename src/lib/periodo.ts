@@ -22,11 +22,13 @@ export async function cargarModo(): Promise<ModoPeriodo> {
 	return r[0]?.modo_periodo === 'calendario' ? 'calendario' : 'sueldo';
 }
 
-// Trae los cortes (fechas de sueldo con su período), ordenados por fecha.
-// Solo se usa en modo 'sueldo'; en 'calendario' no hace falta llamarlo.
+// Trae los cortes (fechas de Ingreso Principal Regular con su período), ordenados.
+// Solo los ingresos Regular (internamente tipo='Sueldo') marcan el ritmo del período;
+// los Extraordinario (aguinaldo, bonos) son plata extra dentro del mismo mes, no abren corte.
+// Solo se usa en modo 'sueldo'; en 'calendario' no hace falta.
 export async function cargarCortes(): Promise<{ fecha: string; periodo: string }[]> {
 	const sueldos = (await query(
-		"SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Salario' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha"
+		"SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Ingreso Principal' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha"
 	)) as any[];
 	return sueldos.map((s) => ({ fecha: s.fecha, periodo: s.periodo }));
 }
