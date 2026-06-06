@@ -5,6 +5,7 @@
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
+	import type { ModoPeriodo } from '$lib/periodo';
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -21,9 +22,15 @@
 	let perfilListo = $state(false);
 	let chequeando = $state(true);
 	let nombreNuevo = $state('');
+	let modoNuevo = $state<ModoPeriodo>('sueldo');
 	let creando = $state(false);
 	let bienvenidaMsg = $state('');
 	let importInputBienvenida: HTMLInputElement;
+
+	const explicacionModo: Record<ModoPeriodo, string> = {
+		sueldo: 'Cada período arranca el día que cobrás tu sueldo. Ideal si tenés un ingreso principal fijo.',
+		calendario: 'Cada período es un mes corrido (del 1 al último día). Ideal si tus ingresos varían o no tenés un sueldo fijo.'
+	};
 
 	async function chequearPerfil() {
 		try { perfilListo = await hayPerfil(); }
@@ -34,7 +41,7 @@
 	async function onCrearPerfil() {
 		if (!nombreNuevo.trim()) { bienvenidaMsg = 'Escribí tu nombre.'; return; }
 		creando = true; bienvenidaMsg = '';
-		try { await crearPerfil(nombreNuevo); location.reload(); }
+		try { await crearPerfil(nombreNuevo, modoNuevo); location.reload(); }
 		catch (e: any) { bienvenidaMsg = e?.message ?? String(e); creando = false; }
 	}
 
@@ -100,6 +107,16 @@
 			<label>Tu nombre
 				<input bind:value={nombreNuevo} placeholder="Ej: Juan" onkeydown={(e) => e.key === 'Enter' && onCrearPerfil()} />
 			</label>
+
+			<div class="modo">
+				<span class="modo-tit">¿Cómo querés organizar tus períodos?</span>
+				<div class="modo-btns">
+					<button type="button" class:activo={modoNuevo === 'sueldo'} onclick={() => (modoNuevo = 'sueldo')}>Por mi sueldo</button>
+					<button type="button" class:activo={modoNuevo === 'calendario'} onclick={() => (modoNuevo = 'calendario')}>Por mes calendario</button>
+				</div>
+				<p class="modo-exp">{explicacionModo[modoNuevo]}</p>
+			</div>
+
 			<button class="crear" onclick={onCrearPerfil} disabled={creando}>{creando ? 'Creando…' : 'Empezar'}</button>
 			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
 			<div class="separador"><span>o</span></div>
@@ -249,6 +266,17 @@
 	.separador::before, .separador::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 	.importar-b { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px; cursor: pointer; font-size: 0.9rem; }
 	.importar-b:hover { border-color: var(--accent); }
+
+	/* ===== Selección de modo de período ===== */
+	.modo { display: flex; flex-direction: column; gap: 6px; }
+	.modo-tit { font-size: 0.82rem; color: var(--text-dim); }
+	.modo-btns { display: flex; gap: 8px; }
+	.modo-btns button {
+		flex: 1; padding: 8px 6px; border: 1px solid var(--border); background: var(--surface-2);
+		color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.82rem;
+	}
+	.modo-btns button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.modo-exp { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
 
 	:global(::view-transition-old(root)), :global(::view-transition-new(root)) {
 		animation-duration: 0.25s; animation-timing-function: ease;

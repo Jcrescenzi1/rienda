@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
 
 	let sueldos: Record<string, number> = {};
 	let infl: Record<string, number> = {};
@@ -17,15 +18,6 @@
 	let ingresosPeriodo: Record<string, number> = {};
 	let gastosPeriodo: Record<string, number> = {};
 	let cortes: { fecha: string; periodo: string }[] = [];
-
-	function periodoDeFecha(fecha: string): string | null {
-		let elegido: string | null = null;
-		for (const c of cortes) {
-			if (c.fecha <= fecha) elegido = c.periodo;
-			else break;
-		}
-		return elegido;
-	}
 	let periodosTodos: string[] = [];
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
@@ -34,6 +26,10 @@
 	let cargando = $state(true);
 
 	onMount(async () => {
+		const modo: ModoPeriodo = await cargarModo();
+		cortes = modo === 'sueldo' ? await cargarCortes() : [];
+		const asignar = crearAsignador(modo, cortes);
+
 		const s = (await query("SELECT periodo, SUM(monto) AS m FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
 		for (const x of s) sueldos[x.periodo] = x.m;
 		const inf = (await query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1')) as any[];
@@ -43,11 +39,8 @@
 		periodosTodos = Object.keys(sueldos).sort();
 		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
 		anio = anios[anios.length - 1] ?? '';
-		// Cortes = fechas de sueldos con su periodo (mismo criterio que Presupuesto)
-		const sld = (await query("SELECT fecha, periodo FROM ingreso WHERE perfil_id=1 AND categoria='Salario' AND tipo='Sueldo' AND periodo IS NOT NULL ORDER BY fecha")) as any[];
-		cortes = sld.map((s) => ({ fecha: s.fecha, periodo: s.periodo }));
 
-		// Ingresos por periodo, en USD (dólar del mes calendario del periodo)
+		// Ingresos por periodo, en USD (dólar del día del ingreso)
 		const ing = (await query("SELECT periodo, fecha, monto, moneda FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL")) as any[];
 		for (const x of ing) {
 			const d = dolarDeFecha(x.fecha);
@@ -55,10 +48,10 @@
 			if (usd != null) ingresosPeriodo[x.periodo] = (ingresosPeriodo[x.periodo] ?? 0) + usd;
 		}
 
-		// Gastos asignados a periodo via periodoDeFecha, en USD (dólar del mes del gasto)
+		// Gastos asignados a periodo según el modo, en USD (dólar del día del gasto)
 		const gas = (await query("SELECT fecha, monto, moneda FROM gasto WHERE perfil_id=1")) as any[];
-			for (const x of gas) {
-			const per = periodoDeFecha(x.fecha);
+		for (const x of gas) {
+			const per = asignar(x.fecha);
 			if (!per) continue;
 			const d = dolarDeFecha(x.fecha);
 			const usd = x.moneda === 'USD' ? x.monto : (d ? x.monto / d : null);
@@ -269,7 +262,7 @@
 	<div class="leyenda">
 		<span class="leg"><span class="sw sw-ing"></span> Ingresos</span>
 		<span class="leg"><span class="sw sw-gas"></span> Gastos</span>
-		<span class="aclara">Por período de sueldo, en USD. Gastos asignados al período según la fecha de tu sueldo; crédito en el mes del gasto.</span>
+		<span class="aclara">Por período, en USD. Los gastos se asignan al período según el modo elegido en tu perfil.</span>
 	</div>
 	{#if chartIG}
 		<svg viewBox="0 0 {W} {H}" class="chart">

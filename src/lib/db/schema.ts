@@ -3,9 +3,10 @@
 
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS perfil (
-  id          INTEGER PRIMARY KEY,
-  nombre      TEXT NOT NULL,
-  creado_en   TEXT NOT NULL DEFAULT (datetime('now'))
+  id            INTEGER PRIMARY KEY,
+  nombre        TEXT NOT NULL,
+  modo_periodo  TEXT NOT NULL DEFAULT 'sueldo',
+  creado_en     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS categoria (

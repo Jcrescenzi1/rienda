@@ -61,6 +61,13 @@ async function init() {
 		db.exec('ALTER TABLE transaccion ADD COLUMN monto_pago REAL');
 	}
 
+	// Columna modo_periodo en perfil (sueldo | calendario). Default 'sueldo'
+	// mantiene el comportamiento histórico para perfiles ya existentes.
+	const pcols = db.exec({ sql: 'PRAGMA table_info(perfil)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!pcols.some((c: any) => c.name === 'modo_periodo')) {
+		db.exec("ALTER TABLE perfil ADD COLUMN modo_periodo TEXT NOT NULL DEFAULT 'sueldo'");
+	}
+
 	// Migración: si la tabla cotizacion_dolar no tiene columna 'casa', la recreamos.
 	const cdcols = db.exec({ sql: 'PRAGMA table_info(cotizacion_dolar)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cdcols.some((c: any) => c.name === 'casa')) {
