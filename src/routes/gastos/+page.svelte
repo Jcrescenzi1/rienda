@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
+    import { fmtFecha } from '$lib/format';
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -244,7 +245,7 @@
     <tbody>
         {#each ultimos as g (g.id)}
             <tr class:editrow={editandoId === g.id}>
-                <td>{g.fecha}</td>
+                <td>{fmtFecha(g.fecha)}</td>
                 <td>{g.detalle}</td>
                 <td>{g.subcategoria ?? '—'}</td>
                 <td>{g.categoria}</td>

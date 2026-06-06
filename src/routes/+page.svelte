@@ -13,7 +13,7 @@
     function addMonths(ym: string, delta: number): string {
         const [y, m] = ym.split('-').map(Number);
         const d = new Date(y, m - 1 + delta, 1);
-        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
     }
 
     function desvio(real: number, presup: number): string {
@@ -21,7 +21,6 @@
         if (real <= presup) return 'En margen';
         if (real <= presup * 1.25) return 'Superado';
         return 'Muy superado';
-
     }
 
     // Mapa fecha_gasto -> periodo de sueldo. Se arma con las fechas de los sueldos.

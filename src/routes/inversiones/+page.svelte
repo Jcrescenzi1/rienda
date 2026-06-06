@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { parseNum, esNumValido, formatNum, soloNum, fmtFecha } from '$lib/format';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -358,7 +359,7 @@
 		<thead><tr><th>Fecha</th><th>Activo</th><th>Tipo</th><th>Op.</th><th class="num">Unidades</th><th class="num">Precio</th><th class="num">Monto</th><th></th></tr></thead>
 		<tbody>
 			{#each ledger as t (t.id)}
-				<tr><td>{t.fecha}</td><td>{t.nombre}</td><td>{t.tipo}</td>
+				<tr><td>{fmtFecha(t.fecha)}</td><td>{t.nombre}</td><td>{t.tipo}</td>
 					<td class={t.operacion === 'Compra' ? 'pos' : 'neg'}>{t.operacion}</td>
 					<td class="num">{nf(t.unidades)}</td><td class="num">{money(t.precio, t.moneda, 2)}</td>
 					<td class="num">{money(t.unidades * t.precio, t.moneda)}</td>
@@ -372,7 +373,7 @@
 		<thead><tr><th>Fecha</th><th>Acción</th><th>Moneda</th><th class="num">Monto</th><th></th></tr></thead>
 		<tbody>
 			{#each cajaLedger as m (m.id)}
-				<tr><td>{m.fecha}</td><td>{m.accion}</td><td>{m.moneda}</td>
+				<tr><td>{fmtFecha(m.fecha)}</td><td>{m.accion}</td><td>{m.moneda}</td>
 					<td class="num {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</td>
 					<td><button class="del" onclick={() => borrarCaja(m)}>✕</button></td></tr>
 			{:else}

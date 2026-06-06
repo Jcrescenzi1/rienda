@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { fmtFecha } from '$lib/format';
 
 	const hoy = new Date();
 	let periodoSel = $state(hoy.toISOString().slice(0, 7));
@@ -116,7 +117,7 @@
 	<tbody>
 		{#each ingresos as i (i.id)}
 			<tr class:foco={i.periodo === periodoSel}>
-				<td>{i.fecha}</td>
+				<td>{fmtFecha(i.fecha)}</td>
 				<td>{i.periodo ?? '—'}</td>
 				<td>{i.categoria === 'Otros' ? 'Otros' : i.tipo}</td>
 				<td>{i.detalle ?? '—'}</td>
