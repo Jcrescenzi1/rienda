@@ -1,12 +1,16 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { cargarModo, type ModoPeriodo } from '$lib/periodo';
 
 	let cargando = $state(true);
 	let categorias = $state<any[]>([]);
 	let tarjetas = $state<any[]>([]);
 	let subcategorias = $state<any[]>([]);
 	let detalles = $state<any[]>([]);   // diccionario: detalle -> subcategoria
+
+	// Modo de período
+	let modo = $state<ModoPeriodo>('sueldo');
 
 	// Alta de categoría
 	let nuevaCat = $state('');
@@ -27,7 +31,14 @@
 
 	let msg = $state('');
 
+	const explicacionModo: Record<ModoPeriodo, string> = {
+		sueldo: 'Cada período arranca el día que cobrás tu sueldo. Ideal si tenés un ingreso principal fijo.',
+		calendario: 'Cada período es un mes corrido (del 1 al último día). Ideal si tus ingresos varían o no tenés un sueldo fijo.'
+	};
+
 	async function cargar() {
+		modo = await cargarModo();
+
 		categorias = (await query(`
 			SELECT c.id, c.nombre,
 				(SELECT COUNT(*) FROM gasto g WHERE g.categoria_id = c.id) AS usos
@@ -68,6 +79,16 @@
 
 	function flash(t: string) { msg = t; setTimeout(() => (msg = ''), 3000); }
 	function esUnique(e: any) { return e?.message?.includes('UNIQUE'); }
+
+	// ===== Modo de período =====
+	async function cambiarModo(nuevo: ModoPeriodo) {
+		if (nuevo === modo) return;
+		if (!confirm('Cambiar el modo recalcula cómo se agrupan tus gastos e ingresos por período. ¿Continuar?')) return;
+		try {
+			await query('UPDATE perfil SET modo_periodo=? WHERE id=1', [nuevo]);
+			location.reload();
+		} catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
+	}
 
 	// ===== Categorías =====
 	async function crearCat() {
@@ -162,6 +183,15 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
+	<!-- ===== MODO DE PERÍODO ===== -->
+	<h2>Modo de período</h2>
+	<p class="sub">Define cómo se agrupan tus gastos e ingresos. Cambiarlo recalcula todo (no borra datos).</p>
+	<div class="modo-btns">
+		<button type="button" class:activo={modo === 'sueldo'} onclick={() => cambiarModo('sueldo')}>Por mi sueldo</button>
+		<button type="button" class:activo={modo === 'calendario'} onclick={() => cambiarModo('calendario')}>Por mes calendario</button>
+	</div>
+	<p class="modo-exp">{explicacionModo[modo]}</p>
+
 	<!-- ===== TARJETAS ===== -->
 	<h2>Tarjetas</h2>
 	<div class="alta">
@@ -309,4 +339,8 @@
 	.del:hover { background: rgba(248, 113, 113, 0.28); }
 	.del.off { opacity: 0.35; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
+	.modo-btns { display: flex; gap: 8px; margin: 8px 0; }
+	.modo-btns button { flex: 1; max-width: 220px; padding: 8px 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+	.modo-btns button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
+	.modo-exp { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 4px; line-height: 1.35; }
 </style>
