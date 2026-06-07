@@ -134,3 +134,29 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 		throw new Error('Falló la importación, no se modificó nada: ' + (err?.message ?? err));
 	}
 }
+
+// ---------- RESETEAR (borrado total / "factory reset") ----------
+// Borra TODOS los datos del dispositivo y deja la base vacía.
+// Reusa TABLAS para no desincronizarse nunca con el backup: si mañana agregás
+// una tabla al export, el reset la contempla solo.
+// Mismo patrón transaccional que importarDatos (borra hijas primero), por eso
+// NO necesita tocar PRAGMA foreign_keys (que sería no-op dentro de la transacción).
+export async function resetearBase(): Promise<void> {
+	await query('BEGIN');
+	try {
+		// Borrar en orden inverso (hijas primero), igual que el import.
+		for (const t of [...TABLAS].reverse()) {
+			await query(`DELETE FROM ${t}`);
+		}
+		// Reinicia los contadores AUTOINCREMENT para que arranque como recién instalada.
+		// sqlite_sequence solo existe si hay alguna tabla con AUTOINCREMENT.
+		const seq = (await query(
+			`SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'`
+		)) as any[];
+		if (seq.length) await query('DELETE FROM sqlite_sequence');
+		await query('COMMIT');
+	} catch (err: any) {
+		await query('ROLLBACK');
+		throw new Error('Falló el borrado, no se modificó nada: ' + (err?.message ?? err));
+	}
+}

@@ -135,7 +135,7 @@
     const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 </script>
 
-<h1>Presupuesto</h1>
+<h1>Gastos y Presupuesto</h1>
 
 <div class="accesos">
     <a href="/gastos" class="btn-carga">➕ Cargar gasto</a>

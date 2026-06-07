@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { exportarDatos, importarDatos, leerFechasBackup, type FechasBackup } from '$lib/db/backup';
+	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 
 	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null });
@@ -11,6 +11,12 @@
 	let comparando = $state(false);
 	let fechasBackup = $state<FechasBackup | null>(null);
 	let backupPendiente = $state<any>(null);
+
+	// Estado del borrado total
+	let reseteando = $state(false);
+	let textoConfirm = $state('');
+	let borrando = $state(false);
+	let puedeBorrar = $derived(textoConfirm.trim().toUpperCase() === 'BORRAR');
 
 	async function cargar() {
 		meta = await leerMeta();
@@ -69,6 +75,30 @@
 		comparando = false;
 		fechasBackup = null;
 		backupPendiente = null;
+	}
+
+	// ----- Borrado total -----
+	function abrirReset() {
+		textoConfirm = '';
+		reseteando = true;
+	}
+
+	function cerrarReset() {
+		reseteando = false;
+		textoConfirm = '';
+	}
+
+	async function confirmarReset() {
+		if (!puedeBorrar || borrando) return;
+		borrando = true;
+		try {
+			await resetearBase();
+			alert('Listo. Se borraron todos los datos de este dispositivo. La app vuelve al inicio.');
+			location.reload();
+		} catch (e: any) {
+			alert(e?.message ?? String(e));
+			borrando = false;
+		}
 	}
 </script>
 
@@ -135,6 +165,38 @@
 		"Última edición" registra cuándo cargaste o modificaste datos en este dispositivo, por módulo.
 		Actualizar cotizaciones desde la API no cuenta como edición.
 	</p>
+
+	<div class="peligro">
+		<h2>Zona peligrosa</h2>
+		{#if !reseteando}
+			<p class="peligro-desc">Borra todos los datos de este dispositivo y devuelve la app al inicio. Es irreversible.</p>
+			<button class="btn-peligro" onclick={abrirReset}>Borrar todos mis datos</button>
+		{:else}
+			<p class="peligro-desc">
+				Vas a borrar <strong>todo</strong>: gastos, ingresos, inversiones, configuración y perfil.
+				No se puede deshacer. Si todavía no tenés una copia, exportala ahora.
+			</p>
+			<button class="exp exp-reset" onclick={onExportar}>⬇ Exportar backup primero</button>
+			<label class="lbl-confirm" for="confirm-borrar">Escribí <strong>BORRAR</strong> para confirmar:</label>
+			<input
+				id="confirm-borrar"
+				class="input-confirm"
+				type="text"
+				bind:value={textoConfirm}
+				placeholder="BORRAR"
+				autocapitalize="characters"
+				autocorrect="off"
+				autocomplete="off"
+				spellcheck="false"
+			/>
+			<div class="botones">
+				<button class="cancelar" onclick={cerrarReset}>Cancelar</button>
+				<button class="confirmar" disabled={!puedeBorrar || borrando} onclick={confirmarReset}>
+					{borrando ? 'Borrando…' : 'Borrar todo'}
+				</button>
+			</div>
+		{/if}
+	</div>
 {/if}
 
 <style>
@@ -158,5 +220,17 @@
 	.botones { display: flex; gap: 10px; }
 	.cancelar { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 16px; cursor: pointer; }
 	.confirmar { background: var(--neg); color: #fff; border: none; border-radius: 6px; padding: 9px 16px; cursor: pointer; font-weight: 600; }
+	.confirmar:disabled { opacity: 0.5; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; max-width: 560px; line-height: 1.5; }
+
+	/* Zona peligrosa */
+	.peligro { border: 1px solid var(--neg); border-radius: 8px; padding: 14px; margin-top: 32px; max-width: 560px; box-sizing: border-box; }
+	.peligro h2 { margin-top: 0; color: var(--neg); }
+	.peligro-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; margin: 6px 0 12px; }
+	.btn-peligro { background: transparent; color: var(--neg); border: 1px solid var(--neg); border-radius: 6px; padding: 9px 16px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+	.btn-peligro:hover { background: var(--neg); color: #fff; }
+	.exp-reset { display: inline-block; margin: 0 0 14px; }
+	.lbl-confirm { display: block; font-size: 0.85rem; margin: 4px 0 6px; }
+	.input-confirm { width: 100%; max-width: 240px; box-sizing: border-box; padding: 9px 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); letter-spacing: 0.05em; margin-bottom: 14px; }
+	.input-confirm:focus { outline: none; border-color: var(--neg); }
 </style>

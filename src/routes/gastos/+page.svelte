@@ -53,7 +53,7 @@
         `;
 
         let params: any[] = [];
-        
+
         if (filtroCategoria) {
             sql += " AND g.categoria_id = ?";
             params.push(filtroCategoria);
@@ -168,7 +168,7 @@
 </script>
 
 <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
-<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 <div class="form">
     {#if editandoId}<p class="editando">✏️ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
@@ -216,14 +216,18 @@
     </div>
 
     {#if medio === 'credito'}
-        <label>Tarjeta
-            <select bind:value={tarjetaId}>
-                <option value={null} disabled>Elegir…</option>
-                {#each tarjetasCredito as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}
-            </select>
-        </label>
-        <label>Cuotas<input type="number" min="1" bind:value={cuotas} /></label>
-        <label>Mes inicio de pago<input type="month" bind:value={mesInicio} /></label>
+        {#if tarjetasCredito.length === 0}
+            <p class="aviso-tarjeta">Para ingresar un gasto en tarjeta de crédito debe cargar primero una desde la sección Configuración.</p>
+        {:else}
+            <label>Tarjeta
+                <select bind:value={tarjetaId}>
+                    <option value={null} disabled>Elegir…</option>
+                    {#each tarjetasCredito as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}
+                </select>
+            </label>
+            <label>Cuotas<input type="number" min="1" bind:value={cuotas} /></label>
+            <label>Mes inicio de pago<input type="month" bind:value={mesInicio} /></label>
+        {/if}
     {/if}
 
     <button class="guardar" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
@@ -261,7 +265,6 @@
 </table>
 
 <style>
-    /* ... mantén tus estilos originales ... */
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
     .form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 0 auto; }
     label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
@@ -271,6 +274,7 @@
     .medio button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
     .guardar { padding: 10px; font-size: 1rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-top: 4px; }
     .nuevo { border: 1px dashed var(--warn); background: rgba(251, 191, 36, 0.08); padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
+    .aviso-tarjeta { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); border: 1px dashed var(--warn); padding: 10px; border-radius: 6px; margin: 0; line-height: 1.4; }
     .hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
     .msg { font-weight: 600; color: var(--text); }
     .editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
