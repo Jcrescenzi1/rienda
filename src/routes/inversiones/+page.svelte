@@ -17,6 +17,11 @@
 	let cuentas = $state<any[]>([]);
 	let activosList = $state<any[]>([]);
 
+	// Filtros del libro diario
+	let filtroActivo = $state<string>('');
+	let filtroDesde = $state('');
+	let filtroHasta = $state('');
+
 	let showForm = $state(false);
 	let fAccion = $state<'Compra' | 'Venta' | 'Ingreso' | 'Retiro' | 'Convertir'>('Compra');
 	let fCuenta = $state(''); let fCuentaNueva = $state(''); let fActivo = $state('');
@@ -43,6 +48,19 @@
 
 	const toUSD = (m: number, mon: string, vd: number | null) => (mon === 'USD' ? m : vd ? m / vd : 0);
 	const anioActual = new Date().getFullYear().toString();
+
+	// Query del libro diario, separada para no recalcular toda la cartera al filtrar.
+	async function cargarLedger() {
+		let sql = `SELECT t.id, t.fecha, a.nombre, a.tipo, a.moneda, t.operacion, t.unidades, t.precio
+			FROM transaccion t JOIN activo a ON a.id = t.activo_id WHERE t.perfil_id = 1`;
+		const params: any[] = [];
+		if (filtroActivo) { sql += ' AND t.activo_id = ?'; params.push(Number(filtroActivo)); }
+		if (filtroDesde) { sql += ' AND t.fecha >= ?'; params.push(filtroDesde); }
+		if (filtroHasta) { sql += ' AND t.fecha <= ?'; params.push(filtroHasta); }
+		sql += ' ORDER BY t.fecha DESC, t.id DESC';
+		if (!filtroDesde && !filtroHasta) sql += ' LIMIT 40';
+		ledger = (await query(sql, params)) as any[];
+	}
 
 	async function cargarTodo() {
 		const dq = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
@@ -117,14 +135,25 @@
 		cartera = hold; totalUSD = tUSD;
 		buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
 
-		ledger = (await query(`SELECT t.id, t.fecha, a.nombre, a.tipo, a.moneda, t.operacion, t.unidades, t.precio
-			FROM transaccion t JOIN activo a ON a.id = t.activo_id WHERE t.perfil_id = 1 ORDER BY t.fecha DESC, t.id DESC LIMIT 40`)) as any[];
+		await cargarLedger();
 		cajaLedger = (await query('SELECT id, fecha, accion, moneda, monto, grupo FROM mov_caja WHERE perfil_id=1 ORDER BY fecha DESC, id DESC LIMIT 30')) as any[];
 
 		cargando = false;
 	}
 
 	onMount(cargarTodo);
+
+	// Al cambiar cualquier filtro del libro, recargo solo el ledger (no toda la cartera).
+	$effect(() => {
+		filtroActivo; filtroDesde; filtroHasta;
+		if (!cargando) cargarLedger();
+	});
+
+	function limpiarFiltros() {
+		filtroActivo = '';
+		filtroDesde = '';
+		filtroHasta = '';
+	}
 
 	let monedaActivo = $derived.by(() => {
 		if (fActivo === 'nuevo') return naMoneda;
@@ -238,6 +267,14 @@
 	const pct = (n: number) => (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + '%';
 	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
+
+	const hayFiltro = $derived(!!filtroActivo || !!filtroDesde || !!filtroHasta);
+	const rangoTexto = $derived(
+		!filtroDesde && !filtroHasta ? 'Últimas 40 operaciones'
+		: filtroDesde && filtroHasta ? `Del ${fmtFecha(filtroDesde)} al ${fmtFecha(filtroHasta)}`
+		: filtroDesde ? `Desde ${fmtFecha(filtroDesde)} hasta hoy`
+		: `Desde el inicio hasta ${fmtFecha(filtroHasta)}`
+	);
 </script>
 
 <h1>Inversiones</h1>
@@ -354,33 +391,56 @@
 		{/each}
 	</div>
 
-	<h2>Libro diario (últimas 40)</h2>
-	<table>
-		<thead><tr><th>Fecha</th><th>Activo</th><th>Tipo</th><th>Op.</th><th class="num">Unidades</th><th class="num">Precio</th><th class="num">Monto</th><th></th></tr></thead>
-		<tbody>
-			{#each ledger as t (t.id)}
-				<tr><td>{fmtFecha(t.fecha)}</td><td>{t.nombre}</td><td>{t.tipo}</td>
-					<td class={t.operacion === 'Compra' ? 'pos' : 'neg'}>{t.operacion}</td>
-					<td class="num">{nf(t.unidades)}</td><td class="num">{money(t.precio, t.moneda, 2)}</td>
-					<td class="num">{money(t.unidades * t.precio, t.moneda)}</td>
-					<td><button class="del" onclick={() => borrarTx(t.id)}>✕</button></td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<h2>Libro diario</h2>
+	<div class="filtros">
+		<label>Activo
+			<select bind:value={filtroActivo}>
+				<option value="">Todos</option>
+				{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}
+			</select>
+		</label>
+		<label>Desde<input type="date" bind:value={filtroDesde} /></label>
+		<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
+		{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
+	</div>
+	<p class="rango">{rangoTexto}</p>
+
+	<div class="fichas">
+		{#each ledger as t (t.id)}
+			<div class="ficha">
+				<div class="ficha-top">
+					<span class="ficha-nombre">{t.nombre} <span class="ficha-tipo">({t.tipo})</span></span>
+					<span class="ficha-monto">{money(t.unidades * t.precio, t.moneda)}</span>
+					<span class="ficha-acc">
+						<button class="del" onclick={() => borrarTx(t.id)} title="Borrar">✕</button>
+					</span>
+				</div>
+				<div class="ficha-meta">
+					{fmtFecha(t.fecha)} · <span class={t.operacion === 'Compra' ? 'pos' : 'neg'}>{t.operacion}</span> · {nf(t.unidades)} un. × {money(t.precio, t.moneda, 2)}
+				</div>
+			</div>
+		{/each}
+		{#if ledger.length === 0}<p class="vacio">No hay operaciones para los filtros seleccionados.</p>{/if}
+	</div>
 
 	<h2>Movimientos de caja</h2>
-	<table>
-		<thead><tr><th>Fecha</th><th>Acción</th><th>Moneda</th><th class="num">Monto</th><th></th></tr></thead>
-		<tbody>
-			{#each cajaLedger as m (m.id)}
-				<tr><td>{fmtFecha(m.fecha)}</td><td>{m.accion}</td><td>{m.moneda}</td>
-					<td class="num {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</td>
-					<td><button class="del" onclick={() => borrarCaja(m)}>✕</button></td></tr>
-			{:else}
-				<tr><td colspan="5" class="vacio">Sin movimientos todavía</td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<div class="fichas">
+		{#each cajaLedger as m (m.id)}
+			<div class="ficha">
+				<div class="ficha-top">
+					<span class="ficha-nombre">{m.accion}</span>
+					<span class="ficha-monto {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</span>
+					<span class="ficha-acc">
+						<button class="del" onclick={() => borrarCaja(m)} title="Borrar">✕</button>
+					</span>
+				</div>
+				<div class="ficha-meta">{fmtFecha(m.fecha)} · {m.moneda}</div>
+			</div>
+		{:else}
+			<p class="vacio">Sin movimientos todavía</p>
+		{/each}
+	</div>
+
 	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). "Guardar Cartera" toma una foto del valor actual para la pantalla de Evolución.</p>
 {/if}
 
@@ -428,5 +488,22 @@
 	.val { width: 170px; text-align: right; color: var(--text); }
 	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	
+
+	/* Filtros del libro diario */
+	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+	.filtros label { flex: 1; min-width: 110px; }
+	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
+
+	/* Fichas (libro diario + movimientos de caja) */
+	.fichas { display: flex; flex-direction: column; gap: 8px; }
+	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
+	.ficha-top { display: flex; align-items: baseline; gap: 10px; }
+	.ficha-nombre { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ficha-tipo { font-weight: 400; color: var(--text-dim); font-size: 0.82rem; }
+	.ficha-monto { font-weight: 700; white-space: nowrap; }
+	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
+	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
+	.pos { color: var(--pos); }
+	.neg { color: var(--neg); }
 </style>

@@ -51,7 +51,7 @@
 </script>
 
 <h1>Vista de crédito</h1>
-<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 {#if cargando}
     <p>Cargando…</p>
