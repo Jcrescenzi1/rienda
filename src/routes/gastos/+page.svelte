@@ -98,6 +98,15 @@
             });
     });
 
+    // Al elegir "Crear nueva", sugiere el detalle como nombre de subcategoría.
+    // Solo prellena si el campo está vacío, para no pisar lo que el usuario edite.
+    function elegirCrearNueva() {
+        modoSubcat = 'nueva';
+        if (!subcatNuevaNombre.trim()) {
+            subcatNuevaNombre = detalle.trim();
+        }
+    }
+
     function limpiarFiltros() {
         filtroCategoria = null;
         filtroDesde = '';
@@ -230,7 +239,7 @@
                 <p class="hint">Detalle nuevo. Asignale una subcategoría:</p>
                 <div class="medio">
                     <button type="button" class:activo={modoSubcat === 'existente'} onclick={() => (modoSubcat = 'existente')}>Usar existente</button>
-                    <button type="button" class:activo={modoSubcat === 'nueva'} onclick={() => (modoSubcat = 'nueva')}>Crear nueva</button>
+                    <button type="button" class:activo={modoSubcat === 'nueva'} onclick={elegirCrearNueva}>Crear nueva</button>
                 </div>
                 {#if modoSubcat === 'existente'}
                     <select bind:value={subcatSelId}>

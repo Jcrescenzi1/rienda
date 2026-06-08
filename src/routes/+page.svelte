@@ -172,7 +172,7 @@
 {:else}
     <h2>Consolidado por categoría</h2>
     <table>
-        <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presupuesto</th><th>{labN}</th></tr></thead>
+        <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each consolidado as c (c.cat)}
                 <tr>
@@ -192,7 +192,7 @@
 
     <h2>Detalle por subcategoría</h2>
     <table>
-        <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presupuesto</th><th>{labN}</th></tr></thead>
+        <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each grupos as g (g.cat)}
                 <tr class="cat"><td colspan="5">{g.cat}</td></tr>
@@ -225,14 +225,21 @@
     .sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
     h2 { font-size: 1.05rem; margin-top: 20px; }
-    table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; table-layout: fixed; }
-    table th:first-child, table td:first-child { width: 22%; }
-    table th:not(:first-child), table td:not(:first-child) { width: 19.5%; }
-    th, td { padding: 5px 8px; text-align: left; }
-    td.num, th:nth-child(n + 2) { text-align: right; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
+    th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
+    /* Columna de nombre: corta con … si no entra */
+    table th:first-child, table td:first-child {
+        width: 24%;
+        white-space: nowrap; text-overflow: ellipsis;
+    }
+    /* Columnas de valores: número completo, alineado a la derecha */
+    table th:not(:first-child), table td:not(:first-child) {
+        width: 19%;
+        text-align: right; white-space: nowrap;
+    }
     td.ind { padding-left: 20px; }
-    tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); }
-    input.presup { width: 60px; text-align: right; padding: 3px 5px; }
+    tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); white-space: normal; overflow: visible; }
+    input.presup { width: 100%; max-width: 90px; text-align: right; padding: 3px 4px; box-sizing: border-box; }
     td.real { font-weight: 600; }
     td.real.ok { color: var(--pos); }
     td.real.warn { color: var(--warn); }
