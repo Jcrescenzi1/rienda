@@ -87,6 +87,17 @@
 		}
 	}
 
+	// ===== Botón "subir arriba" =====
+	let mostrarSubir = $state(false);
+
+	function alScrollear() {
+		mostrarSubir = window.scrollY > 400;
+	}
+
+	function subirArriba() {
+		window.scrollTo({ top: 0, behavior: 'smooth' });
+	}
+
 	let actual = $derived($page.url.pathname);
 
 	onMount(() => {
@@ -94,7 +105,10 @@
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
 		}
+		window.addEventListener('scroll', alScrollear, { passive: true });
+		return () => window.removeEventListener('scroll', alScrollear);
 	});
+
 </script>
 
 {#if chequeando}
@@ -165,6 +179,11 @@
 	{/if}
 
 	{@render children()}
+
+	{#if mostrarSubir}
+		<button class="subir" onclick={subirArriba} aria-label="Subir al inicio">↑</button>
+	{/if}
+
 {/if}
 
 <style>
@@ -218,16 +237,27 @@
 	/* ===== Barra superior ===== */
 	.marca-menu { font-size: 1.6rem; font-weight: 700; color: var(--text); padding: 0 8px 4px; }
 	.hamb {
-		position: absolute;
-		top: 67px;
+		position: fixed;
+		top: 16px;
 		right: 16px;
-		transform: translateY(-50%);
 		z-index: 10;
 		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
 		border-radius: 6px; font-size: 1.1rem; padding: 4px 12px; cursor: pointer; line-height: 1;
 	}
 	.hamb:hover { border-color: var(--accent); }
 
+	.subir {
+		position: fixed;
+		bottom: 20px;
+		left:50%;
+		transform: translateX(-50%);
+		z-index: 15;
+		width: 44px; height: 44px;
+		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+		border-radius: 50%; font-size: 1.2rem; cursor: pointer; line-height: 1;
+		box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+	}
+	.subir:hover { border-color: var(--accent); }
 	/* ===== Menú lateral ===== */
 	.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 20; }
 	.panel {

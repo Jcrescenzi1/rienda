@@ -225,7 +225,9 @@
     .sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
     h2 { font-size: 1.05rem; margin-top: 20px; }
-    table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; table-layout: fixed; }
+    table th:first-child, table td:first-child { width: 22%; }
+    table th:not(:first-child), table td:not(:first-child) { width: 19.5%; }
     th, td { padding: 5px 8px; text-align: left; }
     td.num, th:nth-child(n + 2) { text-align: right; }
     td.ind { padding-left: 20px; }
