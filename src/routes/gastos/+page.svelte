@@ -9,6 +9,8 @@
     let detallesExistentes = $state<string[]>([]);
     let ultimos = $state<any[]>([]);
     let filtroCategoria = $state<number | null>(null);
+    let filtroDesde = $state('');
+    let filtroHasta = $state('');
 
     let fecha = $state(new Date().toISOString().slice(0, 10));
     let monto = $state<number | null>(null);
@@ -58,15 +60,31 @@
             sql += " AND g.categoria_id = ?";
             params.push(filtroCategoria);
         }
+        if (filtroDesde) {
+            sql += " AND g.fecha >= ?";
+            params.push(filtroDesde);
+        }
+        if (filtroHasta) {
+            sql += " AND g.fecha <= ?";
+            params.push(filtroHasta);
+        }
 
-        sql += " ORDER BY g.fecha DESC, g.id DESC LIMIT 30";
+        sql += " ORDER BY g.fecha DESC, g.id DESC";
+        // Sin filtro de fechas, limito a los últimos 40 para no listar toda la base.
+        // Con filtro de fechas activo, muestro el rango completo (el filtro ya acota).
+        if (!filtroDesde && !filtroHasta) {
+            sql += " LIMIT 40";
+        }
+
         ultimos = await query(sql, params);
     }
 
     onMount(cargarBase);
 
-    // Reactividad: al cambiar el filtro, se recarga la tabla
+    // Reactividad: al cambiar cualquier filtro, se recarga la lista
     $effect(() => {
+        // dependencias explícitas
+        filtroCategoria; filtroDesde; filtroHasta;
         cargarUltimos();
     });
 
@@ -79,6 +97,12 @@
                 else { subcatDerivada = null; detalleNuevo = true; }
             });
     });
+
+    function limpiarFiltros() {
+        filtroCategoria = null;
+        filtroDesde = '';
+        filtroHasta = '';
+    }
 
     function resetForm() {
         editandoId = null;
@@ -165,6 +189,16 @@
     }
 
     const fmt = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Number(n).toLocaleString('es-AR');
+
+    // Texto del rango activo para mostrar arriba de la lista
+    const rangoTexto = $derived(
+        !filtroDesde && !filtroHasta ? 'Últimos 40 gastos'
+        : filtroDesde && filtroHasta ? `Del ${fmtFecha(filtroDesde)} al ${fmtFecha(filtroHasta)}`
+        : filtroDesde ? `Desde ${fmtFecha(filtroDesde)} hasta hoy`
+        : `Desde el inicio hasta ${fmtFecha(filtroHasta)}`
+    );
+
+    const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta);
 </script>
 
 <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
@@ -234,35 +268,38 @@
     {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
 
-<div style="margin: 30px 0 10px 0;">
-    <label><strong>Filtrar lista por categoría:</strong>
-        <select bind:value={filtroCategoria} style="margin-top:5px;">
-            <option value={null}>Todas las categorías</option>
+<h2>Últimos gastos</h2>
+<div class="filtros">
+    <label>Categoría
+        <select bind:value={filtroCategoria}>
+            <option value={null}>Todas</option>
             {#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
         </select>
     </label>
+    <label>Desde<input type="date" bind:value={filtroDesde} /></label>
+    <label>Hasta<input type="date" bind:value={filtroHasta} /></label>
+    {#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
+<p class="rango">{rangoTexto}</p>
 
-<h2>Últimos gastos</h2>
-<table>
-    <thead><tr><th>Fecha</th><th>Detalle</th><th>Subcat.</th><th>Categoría</th><th>Medio</th><th class="num">Monto</th><th></th></tr></thead>
-    <tbody>
-        {#each ultimos as g (g.id)}
-            <tr class:editrow={editandoId === g.id}>
-                <td>{fmtFecha(g.fecha)}</td>
-                <td>{g.detalle}</td>
-                <td>{g.subcategoria ?? '—'}</td>
-                <td>{g.categoria}</td>
-                <td>{g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</td>
-                <td class="num">{fmt(g.monto, g.moneda)}</td>
-                <td class="acc">
+<div class="fichas">
+    {#each ultimos as g (g.id)}
+        <div class="ficha" class:editrow={editandoId === g.id}>
+            <div class="ficha-top">
+                <span class="ficha-detalle">{g.detalle}</span>
+                <span class="ficha-monto">{fmt(g.monto, g.moneda)}</span>
+            </div>
+            <div class="ficha-bot">
+                <span class="ficha-meta">{fmtFecha(g.fecha)} · {g.categoria} · {g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</span>
+                <span class="ficha-acc">
                     <button class="lapiz" onclick={() => editar(g)} title="Editar">✏️</button>
                     <button class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
-                </td>
-            </tr>
-        {/each}
-    </tbody>
-</table>
+                </span>
+            </div>
+        </div>
+    {/each}
+    {#if ultimos.length === 0}<p class="vacio">No hay gastos para los filtros seleccionados.</p>{/if}
+</div>
 
 <style>
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
@@ -279,11 +316,24 @@
     .msg { font-weight: 600; color: var(--text); }
     .editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
     .link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
-    table { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 0.9rem; }
-    th, td { padding: 5px 8px; text-align: left; }
-    td.num, th.num { text-align: right; white-space: nowrap; }
-    tr.editrow { background: rgba(91, 157, 255, 0.08); }
-    td.acc { white-space: nowrap; }
+
+    /* Filtros de la lista */
+    .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+    .filtros label { flex: 1; min-width: 110px; }
+    .filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+    .rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
+
+    /* Fichas de últimos gastos */
+    .fichas { display: flex; flex-direction: column; gap: 8px; }
+    .ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
+    .ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+    .ficha-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .ficha-detalle { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ficha-monto { font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+    .ficha-bot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 4px; }
+    .ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
+    .ficha-acc { white-space: nowrap; flex-shrink: 0; }
+    .vacio { color: var(--text-dim); font-style: italic; }
     .lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
     .lapiz:hover { opacity: 1; }
     .del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }

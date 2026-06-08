@@ -30,7 +30,7 @@
 		cortes = modo === 'sueldo' ? await cargarCortes() : [];
 		const asignar = crearAsignador(modo, cortes);
 
-		const s = (await query("SELECT periodo, SUM(monto) AS m FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
+		const s = (await query("SELECT periodo, SUM(monto) AS m FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND categoria='Ingreso Principal' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
 		for (const x of s) sueldos[x.periodo] = x.m;
 		const inf = (await query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1')) as any[];
 		for (const x of inf) infl[x.periodo] = x.valor;

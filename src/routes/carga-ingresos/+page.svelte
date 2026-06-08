@@ -4,11 +4,14 @@
 	import { fmtFecha } from '$lib/format';
 
 	const hoy = new Date();
-	let periodoSel = $state(hoy.toISOString().slice(0, 7));
 
 	let ingresos = $state<any[]>([]);
-	let resumen = $state<any>({ principal: 0, secundario: 0, otros: 0 });
 	let mensaje = $state('');
+
+	// Filtros de la lista
+	let filtroCategoria = $state<string>('');
+	let filtroDesde = $state('');
+	let filtroHasta = $state('');
 
 	// Form
 	let editandoId = $state<number | null>(null);
@@ -45,18 +48,30 @@
 	});
 
 	async function cargar() {
-		ingresos = (await query(
-			'SELECT id, fecha, monto, moneda, categoria, tipo, detalle, periodo FROM ingreso WHERE perfil_id=1 ORDER BY periodo DESC, fecha DESC, id DESC'
-		)) as any[];
-		const delMes = ingresos.filter((i) => i.periodo === periodoSel);
-		resumen = {
-			principal: delMes.filter((i) => i.categoria === 'Ingreso Principal').reduce((s, i) => s + i.monto, 0),
-			secundario: delMes.filter((i) => i.categoria === 'Ingresos Secundarios').reduce((s, i) => s + i.monto, 0),
-			otros: delMes.filter((i) => i.categoria === 'Otros').reduce((s, i) => s + i.monto, 0)
-		};
+		let sql = 'SELECT id, fecha, monto, moneda, categoria, tipo, detalle, periodo FROM ingreso WHERE perfil_id=1';
+		const params: any[] = [];
+		if (filtroCategoria) { sql += ' AND categoria = ?'; params.push(filtroCategoria); }
+		if (filtroDesde) { sql += ' AND fecha >= ?'; params.push(filtroDesde); }
+		if (filtroHasta) { sql += ' AND fecha <= ?'; params.push(filtroHasta); }
+		sql += ' ORDER BY fecha DESC, id DESC';
+		// Sin filtro de fechas, limito a los últimos 40. Con filtro activo, muestro el rango completo.
+		if (!filtroDesde && !filtroHasta) sql += ' LIMIT 40';
+		ingresos = (await query(sql, params)) as any[];
 	}
 
 	onMount(cargar);
+
+	// Reactividad: al cambiar cualquier filtro, recargo la lista
+	$effect(() => {
+		filtroCategoria; filtroDesde; filtroHasta;
+		cargar();
+	});
+
+	function limpiarFiltros() {
+		filtroCategoria = '';
+		filtroDesde = '';
+		filtroHasta = '';
+	}
 
 	function resetForm() {
 		editandoId = null;
@@ -91,7 +106,7 @@
 		if (!m || m <= 0) return (mensaje = 'Monto inválido');
 		if (!periodoIngreso) return (mensaje = 'Falta el período');
 		// tipo solo aplica a Ingreso Principal; en el resto va NULL
-		const t = esPrincipal ? tipo : null;
+		const t = tipo;
 		const det = detalle.trim() || null;
 		try {
 			if (editandoId) {
@@ -124,20 +139,24 @@
 	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
 	// Etiqueta visible del tipo (interno Sueldo/Aciclico → Regular/Extraordinario)
 	const tipoLabel = (t: string | null) => t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : '—';
-	// Etiqueta visible de la categoría para la tabla
+	// Etiqueta visible de la categoría para la ficha
 	const catLabel = (c: string) => c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundario' : 'Otros';
+	// El período difiere del mes de la fecha de cobro (caso informativo)
+	const periodoDifiere = (i: any) => i.periodo && i.periodo !== i.fecha?.slice(0, 7);
+
+	// Texto del rango activo
+	const rangoTexto = $derived(
+		!filtroDesde && !filtroHasta ? 'Últimos 40 ingresos'
+		: filtroDesde && filtroHasta ? `Del ${fmtFecha(filtroDesde)} al ${fmtFecha(filtroHasta)}`
+		: filtroDesde ? `Desde ${fmtFecha(filtroDesde)} hasta hoy`
+		: `Desde el inicio hasta ${fmtFecha(filtroHasta)}`
+	);
+
+	const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta);
 </script>
 
 <h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
 <a href="/ingresos" class="btn-volver">← Volver a Ingresos</a>
-<label class="sel">Mes / Año: <input type="month" bind:value={periodoSel} onchange={cargar} /></label>
-
-<div class="cards">
-	<div class="card"><span>Principal</span><strong>{peso(resumen.principal)}</strong></div>
-	<div class="card"><span>Secundarios</span><strong>{peso(resumen.secundario)}</strong></div>
-	<div class="card"><span>Otros</span><strong>{peso(resumen.otros)}</strong></div>
-	<div class="card tot"><span>Total período</span><strong>{peso(resumen.principal + resumen.secundario + resumen.otros)}</strong></div>
-</div>
 
 <h2>{editandoId ? 'Editar ingreso' : 'Cargar ingreso'}</h2>
 <div class="form">
@@ -155,15 +174,13 @@
 	</label>
 	<p class="hint">El Ingreso Principal marca el ritmo de tus períodos. Secundarios y Otros se ajustan a ese mes.</p>
 
-	{#if esPrincipal}
-		<label>Tipo de ingreso
-			<select bind:value={tipo}>
-				<option value="Sueldo">Regular</option>
-				<option value="Aciclico">Extraordinario</option>
-			</select>
-		</label>
-		<p class="hint">Regular: tu ingreso recurrente (sueldo, jubilación, renta). Extraordinario: cobros extra como aguinaldo o bonos.</p>
-	{/if}
+	<label>Tipo de ingreso
+		<select bind:value={tipo}>
+			<option value="Sueldo">Regular</option>
+			<option value="Aciclico">Extraordinario</option>
+		</select>
+	</label>
+	<p class="hint">Regular: ingreso recurrente (sueldo, renta, alquiler). Extraordinario: cobros puntuales como aguinaldo, bonos o una venta.</p>
 
 	<label>Período (mes al que pertenece)<input type="month" bind:value={periodoIngreso} /></label>
 	<p class="hint">Sugerido según tu fecha de cobro. Podés cambiarlo.</p>
@@ -174,36 +191,45 @@
 </div>
 
 <h2>Ingresos cargados</h2>
-<table>
-	<thead><tr><th>Fecha</th><th>Período</th><th>Categoría</th><th>Tipo</th><th>Detalle</th><th class="num">Monto</th><th></th></tr></thead>
-	<tbody>
-		{#each ingresos as i (i.id)}
-			<tr class:foco={i.periodo === periodoSel} class:editrow={editandoId === i.id}>
-				<td>{fmtFecha(i.fecha)}</td>
-				<td>{i.periodo ?? '—'}</td>
-				<td>{catLabel(i.categoria)}</td>
-				<td>{tipoLabel(i.tipo)}</td>
-				<td>{i.detalle ?? '—'}</td>
-				<td class="num">{peso(i.monto, i.moneda)}</td>
-				<td class="acc">
+<div class="filtros">
+	<label>Categoría
+		<select bind:value={filtroCategoria}>
+			<option value="">Todas</option>
+			<option value="Ingreso Principal">Principal</option>
+			<option value="Ingresos Secundarios">Secundarios</option>
+			<option value="Otros">Otros</option>
+		</select>
+	</label>
+	<label>Desde<input type="date" bind:value={filtroDesde} /></label>
+	<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
+	{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
+</div>
+<p class="rango">{rangoTexto}</p>
+
+<div class="fichas">
+	{#each ingresos as i (i.id)}
+		<div class="ficha" class:principal={i.categoria === 'Ingreso Principal'} class:editrow={editandoId === i.id}>
+			<div class="ficha-top">
+				<span class="ficha-detalle">{i.detalle ?? '—'}</span>
+				<span class="ficha-monto">{peso(i.monto, i.moneda)}</span>
+			</div>
+			<div class="ficha-bot">
+				<span class="ficha-meta">
+					{fmtFecha(i.fecha)} · {catLabel(i.categoria)} · {tipoLabel(i.tipo)}{#if periodoDifiere(i)} · período {i.periodo}{/if}
+				</span>
+				<span class="ficha-acc">
 					<button class="lapiz" onclick={() => editar(i)} title="Editar">✏️</button>
 					<button class="del" onclick={() => borrar(i.id)} title="Borrar">✕</button>
-				</td>
-			</tr>
-		{/each}
-		{#if ingresos.length === 0}<tr><td colspan="7" class="vacio">Todavía no hay ingresos.</td></tr>{/if}
-	</tbody>
-</table>
+				</span>
+			</div>
+		</div>
+	{/each}
+	{#if ingresos.length === 0}<p class="vacio">No hay ingresos para los filtros seleccionados.</p>{/if}
+</div>
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; }
 	h2 { font-size: 1.1rem; margin-top: 22px; }
-	.cards { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 120px; }
-	.card span { font-size: 0.72rem; color: var(--text-dim); }
-	.card strong { font-size: 1.05rem; }
-	.card.tot { border-color: var(--accent); }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
@@ -212,16 +238,29 @@
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
 	.link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
-	th, td { padding: 5px 8px; text-align: left; }
-	td.num, th.num { text-align: right; white-space: nowrap; }
-	tr.editrow { background: rgba(91, 157, 255, 0.08); }
-	td.acc { white-space: nowrap; }
+
+	/* Filtros de la lista */
+	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+	.filtros label { flex: 1; min-width: 110px; }
+	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
+	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
+
+	/* Fichas de ingresos cargados */
+	.fichas { display: flex; flex-direction: column; gap: 8px; }
+	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; border-left: 3px solid transparent; }
+	.ficha.principal { background: rgba(255, 255, 255, 0.04); border-color: var(--text-dim); }
+	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+	.ficha-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+	.ficha-detalle { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.ficha-monto { font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+	.ficha-bot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 4px; }
+	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
+	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
+	.vacio { color: var(--text-dim); font-style: italic; }
 	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
 	.lapiz:hover { opacity: 1; }
 	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
 	.msg { font-weight: 600; color: var(--text); }
-	.vacio { color: var(--text-dim); font-style: italic; text-align: center; }
 	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
 	.btn-volver:hover { text-decoration: underline; }
 </style>
