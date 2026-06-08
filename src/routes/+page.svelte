@@ -12,6 +12,16 @@
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
 
+    // Etiquetas de mes para los encabezados (derivadas del período visible)
+    let labN = $state(''); let labN1 = $state(''); let labN2 = $state('');
+
+    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    // '2026-06' -> "jun '26". Parsea el string directo (sin new Date(), evita corrimiento UTC-3).
+    function labelMes(periodo: string): string {
+        const [y, m] = periodo.split('-').map(Number);
+        return `${MESES[m - 1]} '${String(y).slice(2)}`;
+    }
+
     function desvio(real: number, presup: number): string {
         if (!presup) return '—';
         if (real <= presup) return 'En margen';
@@ -30,6 +40,11 @@
         const n1 = addMonths(periodo, -1);
         const n2 = addMonths(periodo, -2);
         const objetivo = new Set([n, n1, n2]);
+
+        // Etiquetas de los encabezados
+        labN = labelMes(n);
+        labN1 = labelMes(n1);
+        labN2 = labelMes(n2);
 
         // Rango de fechas del período visible
         if (modo === 'calendario') {
@@ -157,30 +172,30 @@
 {:else}
     <h2>Consolidado por categoría</h2>
     <table>
-        <thead><tr><th>Categoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
+        <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presupuesto</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each consolidado as c (c.cat)}
                 <tr>
                     <td><strong>{c.cat}</strong></td>
                     <td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
-                    <td class="num">{peso(c.presup)}</td><td class="num">{peso(c.real)}</td>
-                    <td class={claseEstado(c.estado)}>{c.estado}</td>
+                    <td class="num">{peso(c.presup)}</td>
+                    <td class="num real {claseEstado(c.estado)}" title={c.estado}>{peso(c.real)}</td>
                 </tr>
             {/each}
         </tbody>
         <tfoot>
             <tr><td><strong>Total general</strong></td>
                 <td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
-                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
+                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
 
     <h2>Detalle por subcategoría</h2>
     <table>
-        <thead><tr><th>Subcategoría</th><th>n-2</th><th>n-1</th><th>Presupuesto</th><th>Real</th><th>Desvío</th></tr></thead>
+        <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presupuesto</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each grupos as g (g.cat)}
-                <tr class="cat"><td colspan="6">{g.cat}</td></tr>
+                <tr class="cat"><td colspan="5">{g.cat}</td></tr>
                 {#each g.rows as f (f.scid ?? 'null')}
                     <tr>
                         <td class="ind">{f.nombre}</td>
@@ -192,8 +207,7 @@
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
                             {:else}—{/if}
                         </td>
-                        <td class="num">{peso(f.real)}</td>
-                        <td class={claseEstado(f.estado)}>{f.estado}</td>
+                        <td class="num real {claseEstado(f.estado)}" title={f.estado}>{peso(f.real)}</td>
                     </tr>
                 {/each}
             {/each}
@@ -201,7 +215,7 @@
         <tfoot>
             <tr><td><strong>Total general</strong></td>
                 <td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
-                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td><td></td></tr>
+                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
 {/if}
@@ -217,10 +231,11 @@
     td.ind { padding-left: 20px; }
     tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); }
     input.presup { width: 60px; text-align: right; padding: 3px 5px; }
-    td.ok { color: var(--pos); }
-    td.warn { color: var(--warn); font-weight: 600; }
-    td.bad { color: var(--neg); font-weight: 700; }
-    td.none { color: var(--text-dim); }
+    td.real { font-weight: 600; }
+    td.real.ok { color: var(--pos); }
+    td.real.warn { color: var(--warn); }
+    td.real.bad { color: var(--neg); }
+    td.real.none { color: inherit; font-weight: 400; }
     tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
     .accesos { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
     .btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }

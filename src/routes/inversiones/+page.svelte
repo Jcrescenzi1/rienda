@@ -108,7 +108,7 @@
 			const mercadoUSD = a.moneda === 'USD' ? mercado : mercado / dolar;
 			noRealUSD += mercadoUSD - costoUSD;
 			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
-			hold.push({ id: Number(aid), esLiq: false, nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
+			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
 				monto: costo, unidades: u, ppc, ppv: pa, precioActual: pa, mercado,
 				resultado: mercado - costo, pctRes: costo ? (mercado - costo) / costo : 0, mercadoUSD });
 		}
@@ -122,12 +122,12 @@
 		for (const r of movc) bal[r.moneda] = (bal[r.moneda] ?? 0) + r.s;
 		for (const r of tcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
 		liqSaldos = bal;
+		// La liquidez sigue contando en el total y en la estructura de renta,
+		// pero ya NO entra en la tabla de cartera: se muestra en las cards de arriba.
 		for (const mon of ['ARS', 'USD']) {
 			const saldo = bal[mon] ?? 0;
 			const valUSD = mon === 'USD' ? saldo : saldo / dolar;
 			buck['Liquido'] += valUSD; tUSD += valUSD;
-			hold.push({ id: 'liq-' + mon, esLiq: true, nombre: 'Líquido ' + mon, tipo: 'Líquido', renta: 'Liquido', moneda: mon,
-				monto: saldo, unidades: 0, ppc: 0, ppv: 0, precioActual: 0, mercado: saldo, resultado: 0, pctRes: 0, mercadoUSD: valUSD });
 		}
 
 		for (const h of hold) h.peso = tUSD ? h.mercadoUSD / tUSD : 0;
@@ -231,7 +231,7 @@
 		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=?', [editPrecio, new Date().toISOString().slice(0, 10), editId]);
 		editId = null; editPrecio = null; await cargarTodo();
 	}
-	function abrirEditLiq(h: any) { editLiq = h.moneda; editSaldo = h.monto; }
+	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = liqSaldos[mon] ?? 0; }
 	async function guardarLiq() {
 		if (editLiq == null || editSaldo == null || editSaldo < 0) { editLiq = null; return; }
 		const ajuste = editSaldo - (liqSaldos[editLiq] ?? 0);
@@ -350,35 +350,45 @@
 		<div class="card"><span>Ganancia no realizada (USD)</span><strong class={noRealizadoTotal >= 0 ? 'pos' : 'neg'}>{usd(noRealizadoTotal, 2)}</strong></div>
 	</div>
 
+	<div class="liquidez">
+		{#each ['ARS', 'USD'] as mon}
+			<div class="liqcard">
+				<span>Líquido {mon}</span>
+				{#if editLiq === mon}
+					<div class="liqedit">
+						<input type="number" step="any" bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
+						<button class="okp" onclick={guardarLiq}>✓</button>
+						<button class="cancp" onclick={() => (editLiq = null)}>✕</button>
+					</div>
+				{:else}
+					<div class="liqval">
+						<strong>{money(liqSaldos[mon] ?? 0, mon)}</strong>
+						<button class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏️</button>
+					</div>
+				{/if}
+			</div>
+		{/each}
+	</div>
+
 	<h2>Cartera actual</h2>
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Mix</th>
-			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num">Valor mercado</th><th class="num hl">Resultado</th></tr></thead>
+			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Resultado</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
-				<tr class:liqrow={h.esLiq}>
+				<tr>
 					<td>{h.tipo}</td><td>{h.nombre}</td><td class="pctcol">{(h.peso * 100).toFixed(1)}%</td>
-					{#if h.esLiq}
-						<td class="num hl">—</td><td class="num hl">—</td><td class="num">—</td>
-						<td class="num precioedit">
-							{#if editLiq === h.moneda}
-								<input type="number" step="any" bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
-								<button class="okp" onclick={guardarLiq}>✓</button><button class="cancp" onclick={() => (editLiq = null)}>✕</button>
-							{:else}{money(h.mercado, h.moneda)}<button class="lapiz" onclick={() => abrirEditLiq(h)}>✏️</button>{/if}
-						</td><td class="num hl">—</td>
-					{:else}
-						<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
-						<td class="num precioedit">
-							{#if editId === h.id}
-								<input type="number" step="any" bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
-								<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
-							{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏️</button>{/if}
-						</td>
-						<td class="num">{money(h.mercado, h.moneda)}</td>
-						<td class="num hl {h.resultado >= 0 ? 'pos' : 'neg'}">{money(h.resultado, h.moneda)} ({pct(h.pctRes)})</td>
-					{/if}
+					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
+					<td class="num precioedit">
+						{#if editId === h.id}
+							<input type="number" step="any" bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
+							<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
+						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏️</button>{/if}
+					</td>
+					<td class="num hl {h.resultado >= 0 ? 'pos' : 'neg'}">{money(h.resultado, h.moneda)} ({pct(h.pctRes)})</td>
 				</tr>
 			{/each}
+			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 
@@ -467,13 +477,22 @@
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 175px; }
 	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
+
+	/* Franja de liquidez */
+	.liquidez { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+	.liqcard { border: 1px solid var(--border); background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 175px; }
+	.liqcard span { font-size: 0.72rem; color: var(--text-dim); }
+	.liqval { display: flex; align-items: center; gap: 6px; }
+	.liqval strong { font-size: 1.05rem; }
+	.liqedit { display: flex; align-items: center; gap: 4px; }
+	.liqedit input { width: 110px; padding: 3px 5px; font-size: 0.95rem; }
+
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
 	td.pctcol { text-align: center; }
 	th.num { text-align: center; }
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
-	tr.liqrow { background: rgba(74, 222, 128, 0.06); font-style: italic; }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.lapiz { background: none; border: none; cursor: pointer; font-size: 0.8rem; opacity: 0.5; }
 	.lapiz:hover { opacity: 1; }
