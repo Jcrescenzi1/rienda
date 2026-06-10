@@ -389,14 +389,14 @@
 
 	<h2>Libro diario</h2>
 	<div class="filtros">
+		<label>Desde<input type="date" bind:value={filtroDesde} /></label>
+		<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
 		<label>Activo
 			<select bind:value={filtroActivo}>
 				<option value="">Todos</option>
 				{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}
 			</select>
 		</label>
-		<label>Desde<input type="date" bind:value={filtroDesde} /></label>
-		<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
 		{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
 	</div>
 	<p class="rango">{rangoTexto}</p>

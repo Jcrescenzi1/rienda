@@ -286,14 +286,14 @@
 
 <h2>Últimos gastos</h2>
 <div class="filtros">
+    <label>Desde<input type="date" bind:value={filtroDesde} /></label>
+    <label>Hasta<input type="date" bind:value={filtroHasta} /></label>
     <label>Categoría
         <select bind:value={filtroCategoria}>
             <option value={null}>Todas</option>
             {#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
         </select>
     </label>
-    <label>Desde<input type="date" bind:value={filtroDesde} /></label>
-    <label>Hasta<input type="date" bind:value={filtroHasta} /></label>
     {#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>

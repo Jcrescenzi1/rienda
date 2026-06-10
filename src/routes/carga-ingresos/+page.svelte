@@ -190,6 +190,8 @@
 
 <h2>Ingresos cargados</h2>
 <div class="filtros">
+	<label>Desde<input type="date" bind:value={filtroDesde} /></label>
+	<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
 	<label>Categoría
 		<select bind:value={filtroCategoria}>
 			<option value="">Todas</option>
@@ -198,8 +200,6 @@
 			<option value="Otros">Otros</option>
 		</select>
 	</label>
-	<label>Desde<input type="date" bind:value={filtroDesde} /></label>
-	<label>Hasta<input type="date" bind:value={filtroHasta} /></label>
 	{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
