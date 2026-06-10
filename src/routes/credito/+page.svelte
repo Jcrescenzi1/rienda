@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
+    import Guia from '$lib/Guia.svelte';
 
     let meses = $state<string[]>([]);
     let tarjetas = $state<string[]>([]);
@@ -50,7 +51,10 @@
     const peso = (n: number | undefined) => (n ? '$' + Math.round(n).toLocaleString('es-AR') : '—');
 </script>
 
-<h1>Vista de crédito</h1>
+<div class="titulo-guia">
+    <h1>Vista de crédito</h1>
+    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. Tocá un mes para ver el detalle." />
+</div>
 <a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 {#if cargando}

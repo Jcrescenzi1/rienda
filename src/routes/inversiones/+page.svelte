@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
+	import Guia from '$lib/Guia.svelte';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -263,7 +264,10 @@
 	);
 </script>
 
-<h1>Inversiones</h1>
+<div class="titulo-guia">
+	<h1>Inversiones</h1>
+	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: compras, ventas, liquidez en ARS/USD y ganancia realizada y no realizada. Actualizá precios con el lápiz ✏️. '📸 Guardar Cartera' saca la foto que alimenta Evolución." />
+</div>
 
 {#if cargando}
 	<p>Cargando…</p>

@@ -2,8 +2,9 @@
 	import { onMount } from 'svelte';
 	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
+	import Guia from '$lib/Guia.svelte';
 
-	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null });
+	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, backup_aviso_hasta: null });
 	let cargando = $state(true);
 	let importInput: HTMLInputElement;
 
@@ -102,7 +103,10 @@
 	}
 </script>
 
-<h1>Datos</h1>
+<div class="titulo-guia">
+	<h1>Datos</h1>
+	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Exportá backups seguido y guardalos en otro lado: son tu única red de seguridad." />
+</div>
 
 {#if cargando}
 	<p>Cargando…</p>

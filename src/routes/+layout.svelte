@@ -5,6 +5,8 @@
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
+	import { query } from '$lib/db/client';
+	import { fechaISO } from '$lib/format';
 	import type { ModoPeriodo } from '$lib/periodo';
 
 	onNavigate((navigation) => {
@@ -36,6 +38,19 @@
 		try { perfilListo = await hayPerfil(); }
 		catch { perfilListo = false; }
 		finally { chequeando = false; }
+		if (perfilListo) autoCotizaciones(); // en segundo plano, no bloquea la app
+	}
+
+	// Actualiza dólar/inflación solo si la última cotización tiene más de 3 días.
+	// Silencioso: sin internet o con la API caída, sigue con lo guardado.
+	async function autoCotizaciones() {
+		try {
+			const r = (await query("SELECT MAX(fecha) AS f FROM cotizacion_dolar WHERE perfil_id=1")) as any[];
+			const ult = r[0]?.f;
+			const hace3dias = fechaISO(new Date(Date.now() - 3 * 86400000));
+			if (ult && ult >= hace3dias) return; // está fresca
+			await actualizarCotizaciones();
+		} catch { /* sin conexión o API caída: no molestar */ }
 	}
 
 	async function onCrearPerfil() {
@@ -210,6 +225,9 @@
 	}
 
 	:global(h1) { color: var(--text); }
+	/* Título con "?" de guía al lado; el cuadro se despliega debajo a lo ancho */
+	:global(.titulo-guia) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 21px 0 12px; }
+	:global(.titulo-guia h1) { margin: 0; }
 	:global(h2), :global(h3) { color: var(--text); }
 	:global(p) { color: var(--text); }
 

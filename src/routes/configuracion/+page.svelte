@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { cargarModo, type ModoPeriodo } from '$lib/periodo';
+	import Guia from '$lib/Guia.svelte';
 
 	let cargando = $state(true);
 	let categorias = $state<any[]>([]);
@@ -169,14 +170,10 @@
 	}
 </script>
 
-<h1>Configuración</h1>
-
-<p class="intro">
-	Acá administrás cómo se clasifican tus gastos. Cada gasto tiene una <strong>categoría</strong>
-	(que elegís a mano al cargarlo) y una <strong>subcategoría</strong>, que se deduce automáticamente
-	a partir del <strong>detalle</strong> del gasto, según el diccionario de abajo. Si cambiás a qué
-	subcategoría apunta un detalle, se corrige todo tu historial con ese detalle.
-</p>
+<div class="titulo-guia">
+	<h1>Configuración</h1>
+	<Guia clave="configuracion" texto="El cerebro de la clasificación: categorías, tarjetas y el diccionario que conecta cada detalle con su subcategoría. Cambiar el diccionario reclasifica todo tu historial de una." />
+</div>
 
 {#if msg}<p class="msg">{msg}</p>{/if}
 
@@ -316,8 +313,6 @@
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.intro { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
-	.intro strong { color: var(--text); }
 	.sub { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 8px; }
 	.msg { font-weight: 600; color: var(--pos); margin: 6px 0; }
 	.alta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }

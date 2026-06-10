@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+	import Guia from '$lib/Guia.svelte';
 
 	// Todos $state: si en el futuro se recargan después del primer render,
 	// los $derived y gráficos que dependen de ellos se actualizan solos.
@@ -236,7 +237,10 @@
 	const pct = (n: number, dec = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dec) + '%';
 </script>
 
-<h1>Ingresos</h1>
+<div class="titulo-guia">
+	<h1>Ingresos</h1>
+	<Guia clave="ingresos" texto="Tus cobros y tres análisis: ingresos vs gastos en USD, tu sueldo contra la inflación, y tu sueldo en dólares contra el dólar bolsa. Todo por período." />
+</div>
 
 <a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
 

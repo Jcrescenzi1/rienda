@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
     import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+    import Guia from '$lib/Guia.svelte';
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -11,6 +12,7 @@
     let filtroCategoria = $state<number | null>(null);
     let filtroDesde = $state('');
     let filtroHasta = $state('');
+    let filtroTexto = $state('');
 
     let fecha = $state(hoyISO());
     let monto = $state('');
@@ -68,6 +70,10 @@
             sql += " AND g.fecha <= ?";
             params.push(filtroHasta);
         }
+        if (filtroTexto.trim()) {
+            sql += " AND g.detalle LIKE ?";
+            params.push('%' + filtroTexto.trim() + '%');
+        }
 
         sql += " ORDER BY g.fecha DESC, g.id DESC";
         // Sin filtro de fechas, limito a los últimos 40 para no listar toda la base.
@@ -81,12 +87,14 @@
 
     onMount(cargarBase);
 
-    // Reactividad: al cambiar cualquier filtro, se recarga la lista.
-    // (También corre al montar, así que hace la carga inicial.)
+    // Reactividad: al cambiar cualquier filtro, se recarga la lista con un
+    // debounce corto (clave para el buscador de texto: 1 consulta al dejar de
+    // tipear, no 1 por tecla). También corre al montar: hace la carga inicial.
     $effect(() => {
         // dependencias explícitas
-        filtroCategoria; filtroDesde; filtroHasta;
-        cargarUltimos();
+        filtroCategoria; filtroDesde; filtroHasta; filtroTexto;
+        const timer = setTimeout(cargarUltimos, 250);
+        return () => clearTimeout(timer);
     });
 
     // Busca la subcategoría del detalle con debounce: espera 300ms a que dejes
@@ -116,6 +124,7 @@
         filtroCategoria = null;
         filtroDesde = '';
         filtroHasta = '';
+        filtroTexto = '';
     }
 
     function resetForm() {
@@ -214,10 +223,13 @@
         : `Desde el inicio hasta ${fmtFecha(filtroHasta)}`
     );
 
-    const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta);
+    const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta || !!filtroTexto.trim());
 </script>
 
-<h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
+<div class="titulo-guia">
+    <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
+    <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'). La primera vez que usás un detalle le asignás subcategoría; las próximas veces se clasifica solo. Si pagaste con crédito, indicá tarjeta y cuotas: la app reparte el pago en los meses correspondientes." />
+</div>
 <a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 <div class="form">
@@ -293,6 +305,9 @@
             <option value={null}>Todas</option>
             {#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
         </select>
+    </label>
+    <label>Buscar
+        <input type="search" bind:value={filtroTexto} placeholder="Ej: super, farmacia…" />
     </label>
     {#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>

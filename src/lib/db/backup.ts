@@ -4,6 +4,7 @@
 
 import { query } from './client';
 import { hoyISO } from '../format';
+import { setMeta } from './meta';
 
 // Tablas ordenadas de "padres" a "hijas" (según foreign keys).
 // meta va al final: no tiene dependencias.
@@ -53,6 +54,9 @@ export async function exportarDatos(): Promise<void> {
 	a.download = `rienda-backup-${fecha}.json`;
 	a.click();
 	URL.revokeObjectURL(url);
+
+	// Registra cuándo se exportó (para el recordatorio de backup en el home)
+	await setMeta('ultima_exportacion', new Date().toISOString());
 }
 
 // Tipo para la comparación previa

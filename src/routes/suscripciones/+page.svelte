@@ -2,12 +2,17 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+	import { setMeta } from '$lib/db/meta';
+	import Guia from '$lib/Guia.svelte';
 
 	let periodo = $state(mesActual());
 
 	let subs = $state<any[]>([]);
 	let categorias = $state<any[]>([]);
 	let tarjetas = $state<any[]>([]);
+	let subcategorias = $state<any[]>([]);
+	// Subcategoría para TODOS los gastos disparados desde acá ('' = automática, según diccionario)
+	let dispSubcatId = $state('');
 	let registradas = $state<Record<number, boolean>>({});
 	let presupApps = $state(0);
 
@@ -29,6 +34,9 @@
 	async function cargar() {
 		categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		tarjetas = await query('SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
+		subcategorias = await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
+		const sc = (await query("SELECT valor FROM meta WHERE clave='susc_subcat_id'")) as any[];
+		dispSubcatId = sc[0]?.valor ?? '';
 		if (fCatId == null) {
 			const f = categorias.find((c: any) => c.nombre === 'Facturas');
 			fCatId = f ? f.id : categorias[0]?.id ?? null;
@@ -120,8 +128,11 @@
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!dFecha) return (mensaje = 'Falta la fecha');
 		try {
-			const g = (await query("INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,'debito',1) RETURNING id",
-				[dFecha, m, s.moneda, s.categoria_id, s.nombre])) as any[];
+			// Si hay una subcategoría macro elegida, el gasto sale con ese override;
+			// si no, queda NULL y se clasifica por diccionario como siempre.
+			const scid = dispSubcatId ? Number(dispSubcatId) : null;
+			const g = (await query("INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas,subcategoria_id) VALUES (1,?,?,?,?,?,'debito',1,?) RETURNING id",
+				[dFecha, m, s.moneda, s.categoria_id, s.nombre, scid])) as any[];
 			await query('INSERT INTO suscripcion_registro (suscripcion_id,gasto_id,periodo) VALUES (?,?,?)', [s.id, g[0].id, periodo]);
 			disparando = null; mensaje = `"${s.nombre}" registrada en ${periodo} ✅`;
 			await cargar();
@@ -131,13 +142,23 @@
 	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
 </script>
 
-<h1>Suscripciones</h1>
+<div class="titulo-guia">
+	<h1>Suscripciones</h1>
+	<Guia clave="suscripciones" texto="Tus pagos recurrentes (Netflix, Disney+, Google). Cada mes, 'Disparar' los convierte en gasto real con un toque, pudiendo ajustar el monto si la factura vino distinta." />
+</div>
 
 <a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 <label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
 
 <p class="apps">Presupuesto de Aplicaciones (solo ARS): <strong>{peso(presupApps)}</strong> / mes</p>
+
+<label class="disparo-subcat">Subcategoría de los gastos disparados:
+	<select bind:value={dispSubcatId} onchange={() => setMeta('susc_subcat_id', dispSubcatId)}>
+		<option value="">Automática (según diccionario)</option>
+		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
+	</select>
+</label>
 
 <div class="fichas">
 	{#each subs as s (s.id)}
@@ -190,8 +211,10 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-top: 4px; }
+	.sel { font-size: 0.9rem; display: inline-flex; flex-direction: row; gap: 8px; align-items: center; margin-top: 4px; }
 	.apps { font-size: 0.9rem; color: var(--text-dim); }
+	.disparo-subcat { flex-direction: row !important; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 10px; flex-wrap: wrap; }
+	.disparo-subcat select { max-width: 240px; }
 	h2 { font-size: 1.1rem; margin-top: 22px; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }

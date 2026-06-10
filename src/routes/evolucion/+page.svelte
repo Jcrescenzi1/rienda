@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { fechaISO, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { calcularFIFO, calcularFoto, guardarSnapshot } from '$lib/cartera';
+	import Guia from '$lib/Guia.svelte';
 
 	let cargando = $state(true);
 	let snaps = $state<any[]>([]);
@@ -114,7 +115,10 @@
 	});
 </script>
 
-<h1>Evolución de cartera</h1>
+<div class="titulo-guia">
+	<h1>Evolución de cartera</h1>
+	<Guia clave="evolucion" texto="La historia de tu cartera, foto a foto. El TWR mide el rendimiento de tu estrategia sin que aportes o retiros lo distorsionen. Sacá una foto por mes para que la curva diga algo." />
+</div>
 
 <button class="foto" onclick={prepararFoto} disabled={calculando}>{calculando ? 'Calculando…' : '📸 Guardar foto'}</button>
 

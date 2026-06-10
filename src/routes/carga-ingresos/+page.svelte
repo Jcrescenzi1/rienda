@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { query } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import Guia from '$lib/Guia.svelte';
 
 	let ingresos = $state<any[]>([]);
 	let mensaje = $state('');
@@ -153,7 +154,10 @@
 	const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta);
 </script>
 
-<h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
+<div class="titulo-guia">
+	<h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
+	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
+</div>
 <a href="/ingresos" class="btn-volver">← Volver a Ingresos</a>
 
 <h2>{editandoId ? 'Editar ingreso' : 'Cargar ingreso'}</h2>
