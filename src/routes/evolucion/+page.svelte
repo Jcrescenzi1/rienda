@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { fechaISO, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { calcularFIFO, calcularFoto, guardarSnapshot } from '$lib/cartera';
 
 	let cargando = $state(true);
 	let snaps = $state<any[]>([]);
@@ -10,8 +12,8 @@
 
 	let showFoto = $state(false);
 	let realizadoMes = $state<any[]>([]);
-	let fFlujo = $state(0); let fValorUSD = $state(0); let fValorARS = $state(0); let fDolar = $state(1);
-	let fFecha = $state(new Date().toISOString().slice(0, 10));
+	let fFlujo = $state(''); let fValorUSD = $state(0); let fValorARS = $state(0); let fDolar = $state(1);
+	let fFecha = $state(hoyISO());
 	let fMsg = $state(''); let calculando = $state(false);
 
 	async function cargar() {
@@ -23,64 +25,22 @@
 			prev = s.valor_usd;
 			return { ...s, ret: r, idx };
 		});
-		// Ganancia realizada por mes de cierre (USD), desde las ventas
-		const activos = (await query('SELECT id, moneda FROM activo WHERE perfil_id=1')) as any[];
-		const aMon: Record<number, string> = {};
-		for (const a of activos) aMon[a.id] = a.moneda;
-		const txr = (await query('SELECT activo_id, operacion, unidades, precio, fecha, valor_dolar FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id')) as any[];
-		const lot: Record<number, { u: number; pUSD: number }[]> = {};
-		const realMes: Record<string, number> = {};
-		const tu = (m: number, mon: string, vd: number | null) => (mon === 'USD' ? m : vd ? m / vd : 0);
-		for (const t of txr) {
-			const mon = aMon[t.activo_id];
-			lot[t.activo_id] ??= [];
-			if (t.operacion === 'Compra') {
-				lot[t.activo_id].push({ u: t.unidades, pUSD: tu(t.precio, mon, t.valor_dolar) });
-			} else {
-				let rem = t.unidades; const pvUSD = tu(t.precio, mon, t.valor_dolar); const mes = t.fecha.slice(0, 7);
-				const q = lot[t.activo_id];
-				while (rem > 1e-9 && q.length) {
-					const l = q[0]; const take = Math.min(rem, l.u);
-					realMes[mes] = (realMes[mes] ?? 0) + take * (pvUSD - l.pUSD);
-					l.u -= take; rem -= take;
-					if (l.u < 1e-9) q.shift();
-				}
-			}
-		}
-		realizadoMes = Object.keys(realMes).sort().reverse().map((m) => ({ mes: m, valor: realMes[m] }));
+		// Ganancia realizada por mes (USD) — FIFO compartido con Inversiones
+		const { realPorMes } = await calcularFIFO();
+		realizadoMes = Object.keys(realPorMes).sort().reverse().map((m) => ({ mes: m, valor: realPorMes[m] }));
 		cargando = false;
 	}
 	onMount(cargar);
 
+	// Foto de cartera — cálculo compartido con Inversiones
 	async function prepararFoto() {
 		calculando = true; fMsg = '';
 		try {
-			const dq = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
-			const dolar = dq[0]?.valor ?? 1; fDolar = dolar;
-			const activos = (await query('SELECT id, moneda, precio_actual FROM activo WHERE perfil_id=1')) as any[];
-			const aMap: Record<number, any> = {};
-			for (const a of activos) aMap[a.id] = a;
-			const txs = (await query('SELECT activo_id, operacion, unidades, precio FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id')) as any[];
-			const net: Record<number, { u: number }> = {};
-			for (const t of txs) { net[t.activo_id] ??= { u: 0 }; net[t.activo_id].u += (t.operacion === 'Compra' ? 1 : -1) * t.unidades; }
-			let valUSD = 0;
-			for (const [aid, h] of Object.entries(net)) {
-				if (h.u < 1e-6) continue;
-				const a = aMap[Number(aid)]; const mercado = h.u * (a.precio_actual ?? 0);
-				valUSD += a.moneda === 'USD' ? mercado : mercado / dolar;
-			}
-			const anchor = (await query('SELECT moneda, saldo FROM liquidez WHERE perfil_id=1')) as any[];
-			const movc = (await query('SELECT moneda, COALESCE(SUM(monto),0) s FROM mov_caja WHERE perfil_id=1 GROUP BY moneda')) as any[];
-			const tcash = (await query("SELECT moneda_pago m, COALESCE(SUM(CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END),0) s FROM transaccion WHERE perfil_id=1 AND monto_pago IS NOT NULL GROUP BY moneda_pago")) as any[];
-			const bal: Record<string, number> = { ARS: 0, USD: 0 };
-			for (const a of anchor) bal[a.moneda] = (bal[a.moneda] ?? 0) + a.saldo;
-			for (const r of movc) bal[r.moneda] = (bal[r.moneda] ?? 0) + r.s;
-			for (const r of tcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
-			valUSD += (bal.USD ?? 0) + (bal.ARS ?? 0) / dolar;
-			fValorUSD = valUSD; fValorARS = valUSD * dolar;
-			const ult = snaps.length ? snaps[snaps.length - 1].fecha : '2000-01-01';
-			const fl = (await query("SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ?", [dolar, ult])) as any[];
-			fFlujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
+			const f = await calcularFoto();
+			fDolar = f.dolar;
+			fValorUSD = f.valorUSD;
+			fValorARS = f.valorARS;
+			fFlujo = formatNum(f.flujo, 2);
 			showFoto = true;
 		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
 		calculando = false;
@@ -88,8 +48,8 @@
 
 	async function guardarFoto() {
 		try {
-			await query('INSERT INTO snapshot (perfil_id,fecha,valor_usd,flujo_usd,dolar,valor_ars) VALUES (1,?,?,?,?,?) ON CONFLICT(perfil_id,fecha) DO UPDATE SET valor_usd=excluded.valor_usd, flujo_usd=excluded.flujo_usd, dolar=excluded.dolar, valor_ars=excluded.valor_ars',
-				[fFecha, fValorUSD, fFlujo, fDolar, fValorARS]);
+			const flujo = parseNum(fFlujo);
+			await guardarSnapshot(fFecha, fValorUSD, Number.isFinite(flujo) ? flujo : 0, fDolar, fValorARS);
 			showFoto = false; fMsg = ''; await cargar();
 		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
 	}
@@ -113,7 +73,7 @@
 		else if (periodo === '1m') d.setMonth(d.getMonth() - 1);
 		else if (periodo === '1s') d.setDate(d.getDate() - 7);
 		else return null;
-		return d.toISOString().slice(0, 10);
+		return fechaISO(d);
 	});
 	// snapshot base = el último en/antes del corte (o el primero)
 	let baseSnap = $derived.by(() => {
@@ -163,7 +123,7 @@
 		<h3>Nueva foto — {fFecha}</h3>
 		<label>Fecha<input type="date" bind:value={fFecha} /></label>
 		<p class="calc">Valor calculado: <strong>{usd(fValorUSD)}</strong> ({ars(fValorARS)} · dólar {fDolar})</p>
-		<label>Flujo neto desde la última foto (USD)<input type="number" step="any" bind:value={fFlujo} /></label>
+		<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
 		<p class="hint">Calculado de tus Ingresos/Retiros. Editalo si hace falta.</p>
 		<div class="botones"><button class="guardar" onclick={guardarFoto}>Guardar foto</button><button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button></div>
 		{#if fMsg}<p class="msg">{fMsg}</p>{/if}

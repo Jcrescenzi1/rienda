@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { parseNum, esNumValido, formatNum, soloNum, fmtFecha } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -25,10 +26,10 @@
 	let showForm = $state(false);
 	let fAccion = $state<'Compra' | 'Venta' | 'Ingreso' | 'Retiro' | 'Convertir'>('Compra');
 	let fCuenta = $state(''); let fCuentaNueva = $state(''); let fActivo = $state('');
-	let fFecha = $state(new Date().toISOString().slice(0, 10));
-	let fUnidades = $state<number | null>(null);
-	let fMonto = $state<number | null>(null);
-	let fValorDolar = $state<number | null>(null);
+	let fFecha = $state(hoyISO());
+	let fUnidades = $state('');
+	let fMonto = $state('');
+	let fValorDolar = $state('');
 	let fPago = $state<'ARS' | 'USD'>('USD');
 	let fMoneda = $state<'ARS' | 'USD'>('ARS');
 	let naTicker = $state(''); let naNombre = $state(''); let naTipo = $state('Accion');
@@ -36,18 +37,22 @@
 	let fMsg = $state('');
 
 	let editId = $state<number | null>(null);
-	let editPrecio = $state<number | null>(null);
+	let editPrecio = $state('');
 	let editLiq = $state<string | null>(null);
-	let editSaldo = $state<number | null>(null);
+	let editSaldo = $state('');
 
 	// Guardar Cartera (foto)
 	let showFoto = $state(false);
-	let fFlujo = $state(0); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
-	let fotoFecha = $state(new Date().toISOString().slice(0, 10));
+	let fFlujo = $state(''); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
+	let fotoFecha = $state(hoyISO());
 	let fotoMsg = $state('');
 
-	const toUSD = (m: number, mon: string, vd: number | null) => (mon === 'USD' ? m : vd ? m / vd : 0);
 	const anioActual = new Date().getFullYear().toString();
+
+	// Versión numérica de los campos de texto (formato AR: "1.234,56")
+	const uN = $derived(parseNum(fUnidades));
+	const mN = $derived(parseNum(fMonto));
+	const vdN = $derived(parseNum(fValorDolar));
 
 	// Query del libro diario, separada para no recalcular toda la cartera al filtrar.
 	async function cargarLedger() {
@@ -63,37 +68,17 @@
 	}
 
 	async function cargarTodo() {
-		const dq = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
-		dolar = dq[0]?.valor ?? 1;
-		if (fValorDolar == null) fValorDolar = dolar;
+		dolar = await dolarActual();
+		if (!fValorDolar) fValorDolar = formatNum(dolar, 2);
 
 		cuentas = (await query('SELECT id, nombre FROM cuenta_inversion WHERE perfil_id=1 AND activa=1 ORDER BY nombre')) as any[];
 		activosList = (await query('SELECT id, ticker, nombre, tipo, moneda FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY nombre')) as any[];
 
-		const activos = (await query('SELECT id, nombre, tipo, renta, moneda, precio_actual FROM activo WHERE perfil_id=1')) as any[];
-		const aMap: Record<number, any> = {};
-		for (const a of activos) aMap[a.id] = a;
-
-		const txs = (await query('SELECT activo_id, operacion, unidades, precio, fecha, valor_dolar FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id')) as any[];
-		const lotes: Record<number, { u: number; pNat: number; pUSD: number }[]> = {};
-		let realAnio = 0;
-		for (const t of txs) {
-			const a = aMap[t.activo_id];
-			lotes[t.activo_id] ??= [];
-			if (t.operacion === 'Compra') {
-				lotes[t.activo_id].push({ u: t.unidades, pNat: t.precio, pUSD: toUSD(t.precio, a.moneda, t.valor_dolar) });
-			} else {
-				let rem = t.unidades; const pvUSD = toUSD(t.precio, a.moneda, t.valor_dolar);
-				const q = lotes[t.activo_id];
-				while (rem > 1e-9 && q.length) {
-					const lote = q[0]; const take = Math.min(rem, lote.u);
-					if (t.fecha.slice(0, 4) === anioActual) realAnio += take * (pvUSD - lote.pUSD);
-					lote.u -= take; rem -= take;
-					if (lote.u < 1e-9) q.shift();
-				}
-			}
-		}
-		realizadoAnioActual = realAnio;
+		// FIFO compartido con Evolución (una sola implementación)
+		const { lotes, realPorMes, aMap } = await calcularFIFO();
+		realizadoAnioActual = Object.entries(realPorMes)
+			.filter(([mes]) => mes.startsWith(anioActual))
+			.reduce((s, [, v]) => s + v, 0);
 
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
@@ -114,13 +99,7 @@
 		}
 		noRealizadoTotal = noRealUSD;
 
-		const anchor = (await query('SELECT moneda, saldo FROM liquidez WHERE perfil_id=1')) as any[];
-		const movc = (await query('SELECT moneda, COALESCE(SUM(monto),0) s FROM mov_caja WHERE perfil_id=1 GROUP BY moneda')) as any[];
-		const tcash = (await query("SELECT moneda_pago m, COALESCE(SUM(CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END),0) s FROM transaccion WHERE perfil_id=1 AND monto_pago IS NOT NULL GROUP BY moneda_pago")) as any[];
-		const bal: Record<string, number> = { ARS: 0, USD: 0 };
-		for (const a of anchor) bal[a.moneda] = (bal[a.moneda] ?? 0) + a.saldo;
-		for (const r of movc) bal[r.moneda] = (bal[r.moneda] ?? 0) + r.s;
-		for (const r of tcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
+		const bal = await calcularLiquidez();
 		liqSaldos = bal;
 		// La liquidez sigue contando en el total y en la estructura de renta,
 		// pero ya NO entra en la tabla de cartera: se muestra en las cards de arriba.
@@ -164,13 +143,13 @@
 
 	async function guardar() {
 		fMsg = '';
-		const monto = Number(fMonto);
+		const monto = mN;
 		if (!fFecha) return (fMsg = 'Falta la fecha');
-		if (!monto || monto <= 0) return (fMsg = 'Monto inválido');
+		if (!Number.isFinite(monto) || monto <= 0) return (fMsg = 'Monto inválido');
 		try {
 			if (esTrade) {
-				const u = Number(fUnidades);
-				if (!u || u <= 0) return (fMsg = 'Unidades inválidas');
+				const u = uN;
+				if (!Number.isFinite(u) || u <= 0) return (fMsg = 'Unidades inválidas');
 				if (!fCuenta) return (fMsg = 'Elegí cuenta');
 				if (!fActivo) return (fMsg = 'Elegí activo');
 				if (fCuenta === 'nueva' && !fCuentaNueva.trim()) return (fMsg = 'Nombre de cuenta');
@@ -191,25 +170,32 @@
 					if (neto[0].n + 1e-9 < u) return (fMsg = `No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
 				}
 				const precio = monto / u;
+				if (fPago !== monA && (!Number.isFinite(vdN) || vdN <= 0)) return (fMsg = 'Valor dólar inválido');
 				let montoPago = monto;
-				if (fPago !== monA) montoPago = monA === 'USD' && fPago === 'ARS' ? monto * Number(fValorDolar) : monto / Number(fValorDolar);
+				if (fPago !== monA) montoPago = monA === 'USD' && fPago === 'ARS' ? monto * vdN : monto / vdN;
 				await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
-					[activoId, cuentaId, fFecha, fAccion, u, precio, fValorDolar, fPago, montoPago]);
-				await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=?', [precio, fFecha, activoId]);
-				fMsg = `${fAccion} guardada ✅`; fUnidades = null; fMonto = null; fActivo = ''; fCuentaNueva = ''; naTicker = ''; naNombre = '';
+					[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago]);
+				// Actualiza el precio de mercado SOLO si esta operación es igual o más
+				// nueva que la última actualización: una carga retroactiva no pisa el precio.
+				const pa = (await query('SELECT precio_actualizado_en FROM activo WHERE id=? AND perfil_id=1', [activoId])) as any[];
+				const ultAct = pa[0]?.precio_actualizado_en;
+				if (!ultAct || fFecha >= ultAct) {
+					await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [precio, fFecha, activoId]);
+				}
+				fMsg = `${fAccion} guardada ✅`; fUnidades = ''; fMonto = ''; fActivo = ''; fCuentaNueva = ''; naTicker = ''; naNombre = '';
 			} else if (fAccion === 'Ingreso' || fAccion === 'Retiro') {
 				const signo = fAccion === 'Ingreso' ? 1 : -1;
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto) VALUES (1,?,?,?,?)', [fFecha, fAccion, fMoneda, signo * monto]);
-				fMsg = `${fAccion} de ${fMoneda} guardado ✅`; fMonto = null;
+				fMsg = `${fAccion} de ${fMoneda} guardado ✅`; fMonto = '';
 			} else if (fAccion === 'Convertir') {
-				const vd = Number(fValorDolar);
-				if (!vd || vd <= 0) return (fMsg = 'Valor dólar inválido');
+				const vd = vdN;
+				if (!Number.isFinite(vd) || vd <= 0) return (fMsg = 'Valor dólar inválido');
 				const destinoMon = fMoneda === 'ARS' ? 'USD' : 'ARS';
 				const montoDestino = fMoneda === 'ARS' ? monto / vd : monto * vd;
 				const grupo = 'conv-' + Date.now();
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', fMoneda, -monto, grupo]);
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', destinoMon, montoDestino, grupo]);
-				fMsg = `Convertido ${fMoneda}→${destinoMon} ✅`; fMonto = null;
+				fMsg = `Convertido ${fMoneda}→${destinoMon} ✅`; fMonto = '';
 			}
 			await cargarTodo();
 		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
@@ -217,46 +203,46 @@
 
 	async function borrarTx(id: number) {
 		if (!confirm('¿Borrar esta operación?')) return;
-		await query('DELETE FROM transaccion WHERE id=?', [id]); await cargarTodo();
+		await query('DELETE FROM transaccion WHERE id=? AND perfil_id=1', [id]); await cargarTodo();
 	}
 	async function borrarCaja(m: any) {
 		if (!confirm('¿Borrar este movimiento de caja?')) return;
-		if (m.grupo) await query('DELETE FROM mov_caja WHERE grupo=?', [m.grupo]);
-		else await query('DELETE FROM mov_caja WHERE id=?', [m.id]);
+		if (m.grupo) await query('DELETE FROM mov_caja WHERE grupo=? AND perfil_id=1', [m.grupo]);
+		else await query('DELETE FROM mov_caja WHERE id=? AND perfil_id=1', [m.id]);
 		await cargarTodo();
 	}
-	function abrirEdit(h: any) { editId = h.id; editPrecio = h.precioActual; }
+	function abrirEdit(h: any) { editId = h.id; editPrecio = formatNum(h.precioActual, 2); }
 	async function guardarPrecio() {
-		if (editId == null || !editPrecio || editPrecio <= 0) { editId = null; return; }
-		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=?', [editPrecio, new Date().toISOString().slice(0, 10), editId]);
-		editId = null; editPrecio = null; await cargarTodo();
+		const p = parseNum(editPrecio);
+		if (editId == null || !Number.isFinite(p) || p <= 0) { editId = null; return; }
+		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, hoyISO(), editId]);
+		editId = null; editPrecio = ''; await cargarTodo();
 	}
-	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = liqSaldos[mon] ?? 0; }
+	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 2); }
 	async function guardarLiq() {
-		if (editLiq == null || editSaldo == null || editSaldo < 0) { editLiq = null; return; }
-		const ajuste = editSaldo - (liqSaldos[editLiq] ?? 0);
+		const s = parseNum(editSaldo);
+		if (editLiq == null || !Number.isFinite(s) || s < 0) { editLiq = null; return; }
+		const ajuste = s - (liqSaldos[editLiq] ?? 0);
 		if (Math.abs(ajuste) > 1e-6)
 			await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,nota) VALUES (1,?,?,?,?,?)',
-				[new Date().toISOString().slice(0, 10), 'Ajuste', editLiq, ajuste, 'Ajuste de saldo (rendimiento fondo)']);
-		editLiq = null; editSaldo = null; await cargarTodo();
+				[hoyISO(), 'Ajuste', editLiq, ajuste, 'Ajuste de saldo (rendimiento fondo)']);
+		editLiq = null; editSaldo = ''; await cargarTodo();
 	}
 
-	// Guardar Cartera (snapshot)
+	// Guardar Cartera (snapshot) — cálculo compartido con Evolución
 	async function prepararFoto() {
 		fotoMsg = '';
-		fotoDolar = dolar;
-		fotoValorUSD = totalUSD;
-		fotoValorARS = totalUSD * dolar;
-		const ult = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
-		const ultFecha = ult[0]?.fecha ?? '2000-01-01';
-		const fl = (await query("SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ?", [dolar, ultFecha])) as any[];
-		fFlujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
+		const f = await calcularFoto();
+		fotoDolar = f.dolar;
+		fotoValorUSD = f.valorUSD;
+		fotoValorARS = f.valorARS;
+		fFlujo = formatNum(f.flujo, 2);
 		showFoto = true;
 	}
 	async function guardarFoto() {
 		try {
-			await query('INSERT INTO snapshot (perfil_id,fecha,valor_usd,flujo_usd,dolar,valor_ars) VALUES (1,?,?,?,?,?) ON CONFLICT(perfil_id,fecha) DO UPDATE SET valor_usd=excluded.valor_usd, flujo_usd=excluded.flujo_usd, dolar=excluded.dolar, valor_ars=excluded.valor_ars',
-				[fotoFecha, fotoValorUSD, fFlujo, fotoDolar, fotoValorARS]);
+			const flujo = parseNum(fFlujo);
+			await guardarSnapshot(fotoFecha, fotoValorUSD, Number.isFinite(flujo) ? flujo : 0, fotoDolar, fotoValorARS);
 			showFoto = false; fotoMsg = '📸 Cartera guardada en Evolución ✅';
 			setTimeout(() => (fotoMsg = ''), 3000);
 		} catch (e: any) { fotoMsg = 'Error: ' + (e?.message ?? String(e)); }
@@ -293,7 +279,7 @@
 			<h3>Guardar foto de cartera — {fotoFecha}</h3>
 			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
 			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {fotoDolar})</p>
-			<label>Flujo neto desde la última foto (USD)<input type="number" step="any" bind:value={fFlujo} /></label>
+			<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
 			<div class="botones"><button class="guardar" onclick={guardarFoto}>Guardar</button><button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button></div>
 		</div>
 	{/if}
@@ -325,19 +311,19 @@
 						<label>Moneda<select bind:value={naMoneda}><option>USD</option><option>ARS</option></select></label>
 					</div>
 				{/if}
-				<label>Unidades<input type="number" step="any" bind:value={fUnidades} /></label>
-				<label>Monto en {monedaActivo} (define precio)<input type="number" step="any" bind:value={fMonto} /></label>
+				<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
+				<label>Monto en {monedaActivo} (define precio)<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 				<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} con<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
-				<label>Valor dólar<input type="number" step="any" bind:value={fValorDolar} /></label>
-				{#if fUnidades && fMonto}<p class="hint">Precio: {money(fMonto / fUnidades, monedaActivo, 4)} · {fAccion === 'Compra' ? 'sale' : 'entra'} de Líquido {fPago}</p>{/if}
+				<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
+				{#if uN > 0 && mN > 0}<p class="hint">Precio: {money(mN / uN, monedaActivo, 4)} · {fAccion === 'Compra' ? 'sale' : 'entra'} de Líquido {fPago}</p>{/if}
 			{:else if fAccion === 'Ingreso' || fAccion === 'Retiro'}
 				<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-				<label>Monto<input type="number" step="any" bind:value={fMonto} /></label>
+				<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 			{:else if fAccion === 'Convertir'}
 				<label>Convierto desde<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-				<label>Monto en {fMoneda}<input type="number" step="any" bind:value={fMonto} /></label>
-				<label>Valor dólar<input type="number" step="any" bind:value={fValorDolar} /></label>
-				{#if fMonto && fValorDolar}<p class="hint">Entran {money(fMoneda === 'ARS' ? fMonto / fValorDolar : fMonto * fValorDolar, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
+				<label>Monto en {fMoneda}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+				<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
+				{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 			{/if}
 			<button class="guardar" onclick={guardar}>Guardar</button>
 			{#if fMsg}<p class="msg">{fMsg}</p>{/if}
@@ -356,7 +342,7 @@
 				<span>Líquido {mon}</span>
 				{#if editLiq === mon}
 					<div class="liqedit">
-						<input type="number" step="any" bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
+						<input type="text" inputmode="decimal" use:soloNum bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
 						<button class="okp" onclick={guardarLiq}>✓</button>
 						<button class="cancp" onclick={() => (editLiq = null)}>✕</button>
 					</div>
@@ -381,7 +367,7 @@
 					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
 					<td class="num precioedit">
 						{#if editId === h.id}
-							<input type="number" step="any" bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
+							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
 							<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
 						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏️</button>{/if}
 					</td>
@@ -510,7 +496,10 @@
 
 	/* Filtros del libro diario */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
-	.filtros label { flex: 1; min-width: 110px; }
+	.filtros label { flex: 1 1 140px; min-width: 0; }
+	/* El input ocupa el 100% de su columna: los campos de fecha tienen ancho
+	   mínimo propio y sin esto desbordan y se superponen en el celular. */
+	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 

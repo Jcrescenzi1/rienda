@@ -3,9 +3,11 @@
 	import { query } from '$lib/db/client';
 	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
 
-	let sueldos: Record<string, number> = {};
-	let infl: Record<string, number> = {};
-	let dolarSerie: { fecha: string; valor: number }[] = [];  // serie diaria ordenada, para conversión por día
+	// Todos $state: si en el futuro se recargan después del primer render,
+	// los $derived y gráficos que dependen de ellos se actualizan solos.
+	let sueldos = $state<Record<string, number>>({});
+	let infl = $state<Record<string, number>>({});
+	let dolarSerie = $state<{ fecha: string; valor: number }[]>([]);  // serie diaria ordenada, para conversión por día
 
 	function dolarDeFecha(fecha: string): number | null {
 		let elegido: number | null = null;
@@ -15,10 +17,10 @@
 		}
 		return elegido;
 	}
-	let ingresosPeriodo: Record<string, number> = {};
-	let gastosPeriodo: Record<string, number> = {};
-	let cortes: { fecha: string; periodo: string }[] = [];
-	let periodosTodos: string[] = [];
+	let ingresosPeriodo = $state<Record<string, number>>({});
+	let gastosPeriodo = $state<Record<string, number>>({});
+	let cortes = $state<{ fecha: string; periodo: string }[]>([]);
+	let periodosTodos = $state<string[]>([]);
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');

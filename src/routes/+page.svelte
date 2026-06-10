@@ -2,9 +2,9 @@
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+    import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
 
-    const hoy = new Date();
-    let periodo = $state(hoy.toISOString().slice(0, 7));
+    let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
     let consolidado = $state<any[]>([]);
     let totales = $state<any>({ n2: 0, n1: 0, presup: 0, real: 0 });
@@ -139,8 +139,9 @@
     }
 
     async function guardarPresup(scid: number, valor: string) {
-        const monto = Number(valor);
-        if (scid == null || isNaN(monto) || monto < 0) return;
+        // Campo vacío = presupuesto 0 (comportamiento histórico de "borrar" el valor)
+        const monto = valor.trim() === '' ? 0 : parseNum(valor);
+        if (scid == null || !Number.isFinite(monto) || monto < 0) return;
         await query("INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto) VALUES (1, ?, 'default', ?) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto = excluded.monto", [scid, monto]);
         await cargar();
     }
@@ -203,7 +204,7 @@
                         <td class="num">{peso(f.n1)}</td>
                         <td class="num">
                             {#if f.scid != null}
-                                <input class="presup" type="number" min="0" value={f.presup || ''} placeholder="—"
+                                <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup, 0) : ''} placeholder="—"
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
                             {:else}—{/if}
                         </td>

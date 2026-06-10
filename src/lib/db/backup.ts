@@ -3,6 +3,7 @@
 // Modelo: volcado completo + reemplazar todo.
 
 import { query } from './client';
+import { hoyISO } from '../format';
 
 // Tablas ordenadas de "padres" a "hijas" (según foreign keys).
 // meta va al final: no tiene dependencias.
@@ -46,7 +47,7 @@ export async function exportarDatos(): Promise<void> {
 	const blob = new Blob([json], { type: 'application/json' });
 	const url = URL.createObjectURL(blob);
 
-	const fecha = new Date().toISOString().slice(0, 10);
+	const fecha = hoyISO();
 	const a = document.createElement('a');
 	a.href = url;
 	a.download = `rienda-backup-${fecha}.json`;

@@ -2,7 +2,7 @@
 // Helpers para manejar números y fechas en formato argentino.
 
 // "1.234,56" -> 1234.56  |  "1234,5" -> 1234.5  |  "1000" -> 1000
-// Acepta number tal cual (inputs aún no migrados a texto). NaN si inválido.
+// Acepta number tal cual por compatibilidad. NaN si inválido.
 export function parseNum(texto: string | number | null | undefined): number {
 	if (texto == null) return NaN;
 	if (typeof texto === 'number') return texto;
@@ -39,6 +39,22 @@ export function soloNum(node: HTMLInputElement) {
 	};
 	node.addEventListener('input', handler);
 	return { destroy() { node.removeEventListener('input', handler); } };
+}
+
+// Date -> 'yyyy-mm-dd' en hora LOCAL. Evita toISOString(), que usa UTC y
+// después de las 21:00 (AR es UTC-3) devuelve el día siguiente.
+export function fechaISO(d: Date): string {
+	return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Hoy en 'yyyy-mm-dd' (local).
+export function hoyISO(): string {
+	return fechaISO(new Date());
+}
+
+// Mes actual en 'yyyy-mm' (local).
+export function mesActual(): string {
+	return hoyISO().slice(0, 7);
 }
 
 // "yyyy-mm-dd" -> "dd-mmm" para tablas (ej. "2025-06-05" -> "05-jun").

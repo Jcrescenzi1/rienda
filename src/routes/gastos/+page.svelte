@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { fmtFecha } from '$lib/format';
+    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -12,15 +12,15 @@
     let filtroDesde = $state('');
     let filtroHasta = $state('');
 
-    let fecha = $state(new Date().toISOString().slice(0, 10));
-    let monto = $state<number | null>(null);
+    let fecha = $state(hoyISO());
+    let monto = $state('');
     let moneda = $state('ARS');
     let categoriaId = $state<number | null>(null);
     let detalle = $state('');
     let medio = $state<'debito' | 'credito'>('debito');
     let tarjetaId = $state<number | null>(null);
     let cuotas = $state(1);
-    let mesInicio = $state(new Date().toISOString().slice(0, 7));
+    let mesInicio = $state(mesActual());
 
     let subcatDerivada = $state<string | null>(null);
     let detalleNuevo = $state(false);
@@ -37,7 +37,7 @@
         tarjetasCredito = await query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre");
         const d = await query('SELECT DISTINCT detalle FROM mapeo_detalle WHERE perfil_id=1 ORDER BY detalle');
         detallesExistentes = d.map((x: any) => x.detalle);
-        await cargarUltimos();
+        // La lista de últimos gastos la carga el $effect de filtros (corre al montar).
     }
 
     async function cargarUltimos() {
@@ -81,21 +81,26 @@
 
     onMount(cargarBase);
 
-    // Reactividad: al cambiar cualquier filtro, se recarga la lista
+    // Reactividad: al cambiar cualquier filtro, se recarga la lista.
+    // (También corre al montar, así que hace la carga inicial.)
     $effect(() => {
         // dependencias explícitas
         filtroCategoria; filtroDesde; filtroHasta;
         cargarUltimos();
     });
 
+    // Busca la subcategoría del detalle con debounce: espera 300ms a que dejes
+    // de tipear (1 consulta en vez de 1 por tecla) y descarta respuestas viejas.
     $effect(() => {
         const d = detalle.trim();
         if (!d) { subcatDerivada = null; detalleNuevo = false; return; }
-        query('SELECT s.nombre FROM mapeo_detalle m JOIN subcategoria s ON s.id=m.subcategoria_id WHERE m.perfil_id=1 AND m.detalle=?', [d])
-            .then((r: any) => {
-                if (r.length) { subcatDerivada = r[0].nombre; detalleNuevo = false; }
-                else { subcatDerivada = null; detalleNuevo = true; }
-            });
+        const timer = setTimeout(async () => {
+            const r = (await query('SELECT s.nombre FROM mapeo_detalle m JOIN subcategoria s ON s.id=m.subcategoria_id WHERE m.perfil_id=1 AND m.detalle=?', [d])) as any[];
+            if (d !== detalle.trim()) return; // el usuario siguió tipeando: respuesta vieja
+            if (r.length) { subcatDerivada = r[0].nombre; detalleNuevo = false; }
+            else { subcatDerivada = null; detalleNuevo = true; }
+        }, 300);
+        return () => clearTimeout(timer);
     });
 
     // Al elegir "Crear nueva", sugiere el detalle como nombre de subcategoría.
@@ -115,24 +120,25 @@
 
     function resetForm() {
         editandoId = null;
-        monto = null; detalle = ''; subcatSelId = null; subcatNuevaNombre = ''; modoSubcat = 'existente';
+        monto = ''; detalle = ''; subcatSelId = null; subcatNuevaNombre = ''; modoSubcat = 'existente';
         medio = 'debito'; tarjetaId = null; cuotas = 1;
-        fecha = new Date().toISOString().slice(0, 10);
-        mesInicio = new Date().toISOString().slice(0, 7);
+        // La fecha NO se resetea: si cargaste o editaste un gasto, la próxima
+        // carga arranca con esa misma fecha. Al abrir la página, arranca en hoy.
+        mesInicio = mesActual();
         moneda = 'ARS'; categoriaId = null;
     }
 
     function editar(g: any) {
         editandoId = g.id;
         fecha = g.fecha;
-        monto = g.monto;
+        monto = formatNum(g.monto);
         moneda = g.moneda;
         categoriaId = g.categoria_id;
         detalle = g.detalle;
         medio = g.medio;
         tarjetaId = g.tarjeta_id;
         cuotas = g.cuotas ?? 1;
-        mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : new Date().toISOString().slice(0, 7);
+        mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : mesActual();
         mensaje = '';
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -146,9 +152,9 @@
 
     async function guardar() {
         mensaje = '';
-        const m = Number(monto);
+        const m = parseNum(monto);
         if (!fecha) return (mensaje = 'Falta la fecha');
-        if (!m || m <= 0) return (mensaje = 'El monto debe ser mayor a 0');
+        if (!Number.isFinite(m) || m <= 0) return (mensaje = 'El monto debe ser mayor a 0');
         if (!categoriaId) return (mensaje = 'Elegí una categoría');
         if (!detalle.trim()) return (mensaje = 'Falta el detalle');
         if (medio === 'credito') {
@@ -192,6 +198,7 @@
             }
             resetForm();
             await cargarBase();
+            await cargarUltimos();
         } catch (e: any) {
             mensaje = 'Error: ' + (e?.message ?? String(e));
         }
@@ -216,7 +223,7 @@
 <div class="form">
     {#if editandoId}<p class="editando">✏️ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
-    <label>Monto<input type="number" step="0.01" min="0" bind:value={monto} placeholder="0" /></label>
+    <label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
     <label>Moneda
         <select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
     </label>
@@ -328,7 +335,10 @@
 
     /* Filtros de la lista */
     .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
-    .filtros label { flex: 1; min-width: 110px; }
+    .filtros label { flex: 1 1 140px; min-width: 0; }
+    /* El input ocupa el 100% de su columna: los campos de fecha tienen ancho
+       mínimo propio y sin esto desbordan y se superponen en el celular. */
+    .filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
     .filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
     .rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 

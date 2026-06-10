@@ -1,9 +1,6 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { fmtFecha } from '$lib/format';
-
-	const hoy = new Date();
+	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 
 	let ingresos = $state<any[]>([]);
 	let mensaje = $state('');
@@ -15,8 +12,8 @@
 
 	// Form
 	let editandoId = $state<number | null>(null);
-	let fecha = $state(hoy.toISOString().slice(0, 10));
-	let monto = $state<number | null>(null);
+	let fecha = $state(hoyISO());
+	let monto = $state('');
 	let moneda = $state('ARS');
 	let categoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros'>('Ingreso Principal');
 	let tipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
@@ -59,9 +56,8 @@
 		ingresos = (await query(sql, params)) as any[];
 	}
 
-	onMount(cargar);
-
-	// Reactividad: al cambiar cualquier filtro, recargo la lista
+	// Reactividad: al cambiar cualquier filtro, recargo la lista.
+	// (También corre al montar, así que hace la carga inicial: sin onMount aparte.)
 	$effect(() => {
 		filtroCategoria; filtroDesde; filtroHasta;
 		cargar();
@@ -76,8 +72,9 @@
 	function resetForm() {
 		editandoId = null;
 		periodoTocado = false;
-		fecha = hoy.toISOString().slice(0, 10);
-		monto = null;
+		// La fecha NO se resetea: si cargaste o editaste un ingreso, la próxima
+		// carga arranca con esa misma fecha. Al abrir la página, arranca en hoy.
+		monto = '';
 		moneda = 'ARS';
 		categoria = 'Ingreso Principal';
 		tipo = 'Sueldo';
@@ -89,7 +86,7 @@
 		editandoId = i.id;
 		periodoTocado = false; // respeta el período guardado hasta que toque fecha/cat
 		fecha = i.fecha;
-		monto = i.monto;
+		monto = formatNum(i.monto);
 		moneda = i.moneda;
 		categoria = i.categoria;
 		tipo = i.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
@@ -101,11 +98,12 @@
 
 	async function guardar() {
 		mensaje = '';
-		const m = Number(monto);
+		const m = parseNum(monto);
 		if (!fecha) return (mensaje = 'Falta la fecha');
-		if (!m || m <= 0) return (mensaje = 'Monto inválido');
+		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!periodoIngreso) return (mensaje = 'Falta el período');
-		// tipo solo aplica a Ingreso Principal; en el resto va NULL
+		// tipo se guarda para todas las categorías; solo los Ingreso Principal
+		// con tipo Regular (Sueldo) marcan los cortes de período.
 		const t = tipo;
 		const det = detalle.trim() || null;
 		try {
@@ -132,7 +130,7 @@
 	async function borrar(id: number) {
 		if (!confirm('¿Borrar este ingreso?')) return;
 		if (editandoId === id) resetForm();
-		await query('DELETE FROM ingreso WHERE id=?', [id]);
+		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
 		await cargar();
 	}
 
@@ -162,7 +160,7 @@
 <div class="form">
 	{#if editandoId}<p class="editando">✏️ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} onchange={() => (periodoTocado = true)} /></label>
-	<label>Monto<input type="number" min="0" bind:value={monto} /></label>
+	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={moneda}><option>ARS</option><option>USD</option></select></label>
 
 	<label>Categoría
@@ -241,7 +239,10 @@
 
 	/* Filtros de la lista */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
-	.filtros label { flex: 1; min-width: 110px; }
+	.filtros label { flex: 1 1 140px; min-width: 0; }
+	/* El input ocupa el 100% de su columna: los campos de fecha tienen ancho
+	   mínimo propio y sin esto desbordan y se superponen en el celular. */
+	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 

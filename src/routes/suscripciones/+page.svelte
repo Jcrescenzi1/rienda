@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
 
-	const hoy = new Date();
-	let periodo = $state(hoy.toISOString().slice(0, 7));
+	let periodo = $state(mesActual());
 
 	let subs = $state<any[]>([]);
 	let categorias = $state<any[]>([]);
@@ -12,13 +12,13 @@
 	let presupApps = $state(0);
 
 	let disparando = $state<number | null>(null);
-	let dMonto = $state<number | null>(null);
+	let dMonto = $state('');
 	let dFecha = $state('');
 
 	// Form unificado (alta + edición). editId null = alta, número = edición.
 	let editId = $state<number | null>(null);
 	let fNombre = $state('');
-	let fMonto = $state<number | null>(null);
+	let fMonto = $state('');
 	let fMoneda = $state('ARS');
 	let fCatId = $state<number | null>(null);
 	let fTarjetaId = $state<number | null>(null);
@@ -60,7 +60,7 @@
 	function resetForm() {
 		editId = null;
 		fNombre = '';
-		fMonto = null;
+		fMonto = '';
 		fMoneda = 'ARS';
 		fCatId = catPorDefecto();
 		fTarjetaId = null;
@@ -69,7 +69,7 @@
 	function iniciarEdit(s: any) {
 		editId = s.id;
 		fNombre = s.nombre;
-		fMonto = s.monto;
+		fMonto = formatNum(s.monto);
 		fMoneda = s.moneda;
 		fCatId = s.categoria_id;
 		fTarjetaId = s.tarjeta_id;
@@ -79,9 +79,9 @@
 
 	async function guardar() {
 		mensaje = '';
-		const m = Number(fMonto);
+		const m = parseNum(fMonto);
 		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
-		if (!m || m <= 0) return (mensaje = 'Monto inválido');
+		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!fCatId) return (mensaje = 'Elegí categoría');
 		try {
 			if (editId) {
@@ -102,19 +102,22 @@
 
 	async function eliminar(s: any) {
 		if (!confirm(`¿Eliminar la suscripción "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
+		// Primero sus registros de "ya disparada este mes" (no toca los gastos),
+		// para no dejar filas huérfanas apuntando a una suscripción inexistente.
+		await query('DELETE FROM suscripcion_registro WHERE suscripcion_id=?', [s.id]);
 		await query('DELETE FROM suscripcion WHERE id=? AND perfil_id=1', [s.id]);
 		if (editId === s.id) resetForm();
 		await cargar();
 	}
 
 	function iniciarDisparo(s: any) {
-		disparando = s.id; dMonto = s.monto;
-		dFecha = periodo === hoy.toISOString().slice(0, 7) ? hoy.toISOString().slice(0, 10) : periodo + '-01';
+		disparando = s.id; dMonto = formatNum(s.monto);
+		dFecha = periodo === mesActual() ? hoyISO() : periodo + '-01';
 		mensaje = '';
 	}
 	async function confirmarDisparo(s: any) {
-		const m = Number(dMonto);
-		if (!m || m <= 0) return (mensaje = 'Monto inválido');
+		const m = parseNum(dMonto);
+		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!dFecha) return (mensaje = 'Falta la fecha');
 		try {
 			const g = (await query("INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,'debito',1) RETURNING id",
@@ -155,7 +158,7 @@
 					<span class="ok">Registrada ✓</span>
 				{:else if disparando === s.id}
 					<span class="draft">
-						<input type="number" min="0" bind:value={dMonto} class="mini" />
+						<input type="text" inputmode="decimal" use:soloNum bind:value={dMonto} class="mini" />
 						<input type="date" bind:value={dFecha} class="mini" />
 						<button onclick={() => confirmarDisparo(s)}>Confirmar</button>
 						<button class="sec" onclick={() => (disparando = null)}>Cancelar</button>
@@ -174,7 +177,7 @@
 <div class="form" class:edit={editando}>
 	{#if editando}<p class="editando">✏️ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Netflix" /></label>
-	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="number" min="0" bind:value={fMonto} /></label>
+	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 	<label>Categoría<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
 	<label>Tarjeta (opcional, solo referencia)
