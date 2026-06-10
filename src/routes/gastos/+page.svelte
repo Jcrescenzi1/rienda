@@ -154,6 +154,9 @@
 
     async function eliminar(id: number) {
         if (!confirm('¿Eliminar este gasto? No se puede deshacer.')) return;
+        // Si el gasto nació de una suscripción disparada, borro primero esa
+        // anotación: la suscripción vuelve a figurar como pendiente ese mes.
+        await query('DELETE FROM suscripcion_registro WHERE gasto_id=?', [id]);
         await query('DELETE FROM gasto WHERE id=? AND perfil_id=1', [id]);
         if (editandoId === id) resetForm();
         await cargarUltimos();

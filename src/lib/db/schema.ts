@@ -190,4 +190,12 @@ CREATE TABLE IF NOT EXISTS meta (
   clave TEXT PRIMARY KEY,
   valor TEXT
 );
+
+-- Índices para que las consultas frecuentes no recorran tablas enteras
+-- cuando haya años de datos. IF NOT EXISTS: seguro para bases existentes.
+CREATE INDEX IF NOT EXISTS idx_gasto_fecha       ON gasto(perfil_id, fecha);
+CREATE INDEX IF NOT EXISTS idx_gasto_detalle     ON gasto(perfil_id, detalle);
+CREATE INDEX IF NOT EXISTS idx_tx_activo         ON transaccion(perfil_id, activo_id, fecha);
+CREATE INDEX IF NOT EXISTS idx_ingreso_periodo   ON ingreso(perfil_id, periodo);
+CREATE INDEX IF NOT EXISTS idx_screg_periodo     ON suscripcion_registro(periodo);
 `;

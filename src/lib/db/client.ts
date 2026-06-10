@@ -28,3 +28,14 @@ export function query(sql: string, bind: unknown[] = []): Promise<any[]> {
     getWorker().postMessage({ id, sql, bind });
   });
 }
+
+// Ejecuta MUCHAS sentencias en un solo viaje al worker, dentro de una
+// transacción atómica (o entra todo o nada). Para operaciones masivas:
+// importar backup, resetear base, actualizar cotizaciones.
+export function queryBatch(stmts: { sql: string; bind?: unknown[] }[]): Promise<void> {
+  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    pendientes.set(id, { resolve, reject });
+    getWorker().postMessage({ id, batch: stmts });
+  });
+}

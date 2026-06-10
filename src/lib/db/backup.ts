@@ -2,7 +2,7 @@
 // Exporta toda la base a un archivo JSON e importa de vuelta.
 // Modelo: volcado completo + reemplazar todo.
 
-import { query } from './client';
+import { query, queryBatch } from './client';
 import { hoyISO } from '../format';
 import { setMeta } from './meta';
 
@@ -115,28 +115,31 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 
 	const tablas = backup.tablas as Record<string, any[]>;
 
-	await query('BEGIN');
+	// Todo en UN lote atómico (un solo viaje al worker, transacción incluida).
+	// FK apagadas durante el import para tolerar backups viejos con huérfanos;
+	// se reactivan siempre al final.
+	const stmts: { sql: string; bind?: unknown[] }[] = [];
+	for (const t of [...TABLAS].reverse()) {
+		stmts.push({ sql: `DELETE FROM ${t}` }); // hijas primero
+	}
+	for (const t of TABLAS) {
+		const filas = tablas[t];
+		if (!Array.isArray(filas) || filas.length === 0) continue;
+		for (const fila of filas) {
+			const cols = Object.keys(fila);
+			if (cols.length === 0) continue;
+			const placeholders = cols.map(() => '?').join(', ');
+			stmts.push({ sql: `INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`, bind: cols.map((c) => fila[c]) });
+		}
+	}
+
+	await query('PRAGMA foreign_keys=OFF');
 	try {
-		// Borrar en orden inverso (hijas primero)
-		for (const t of [...TABLAS].reverse()) {
-			await query(`DELETE FROM ${t}`);
-		}
-		// Insertar en orden directo (padres primero)
-		for (const t of TABLAS) {
-			const filas = tablas[t];
-			if (!Array.isArray(filas) || filas.length === 0) continue;
-			for (const fila of filas) {
-				const cols = Object.keys(fila);
-				if (cols.length === 0) continue;
-				const placeholders = cols.map(() => '?').join(', ');
-				const valores = cols.map((c) => fila[c]);
-				await query(`INSERT INTO ${t} (${cols.join(', ')}) VALUES (${placeholders})`, valores);
-			}
-		}
-		await query('COMMIT');
+		await queryBatch(stmts);
 	} catch (err: any) {
-		await query('ROLLBACK');
 		throw new Error('Falló la importación, no se modificó nada: ' + (err?.message ?? err));
+	} finally {
+		await query('PRAGMA foreign_keys=ON');
 	}
 }
 
@@ -147,21 +150,17 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 // Mismo patrón transaccional que importarDatos (borra hijas primero), por eso
 // NO necesita tocar PRAGMA foreign_keys (que sería no-op dentro de la transacción).
 export async function resetearBase(): Promise<void> {
-	await query('BEGIN');
+	// Un solo lote atómico: borra hijas primero, igual que el import.
+	const stmts: { sql: string }[] = [...TABLAS].reverse().map((t) => ({ sql: `DELETE FROM ${t}` }));
+	// Reinicia los contadores AUTOINCREMENT para que arranque como recién instalada.
+	// sqlite_sequence solo existe si hay alguna tabla con AUTOINCREMENT.
+	const seq = (await query(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'`
+	)) as any[];
+	if (seq.length) stmts.push({ sql: 'DELETE FROM sqlite_sequence' });
 	try {
-		// Borrar en orden inverso (hijas primero), igual que el import.
-		for (const t of [...TABLAS].reverse()) {
-			await query(`DELETE FROM ${t}`);
-		}
-		// Reinicia los contadores AUTOINCREMENT para que arranque como recién instalada.
-		// sqlite_sequence solo existe si hay alguna tabla con AUTOINCREMENT.
-		const seq = (await query(
-			`SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'`
-		)) as any[];
-		if (seq.length) await query('DELETE FROM sqlite_sequence');
-		await query('COMMIT');
+		await queryBatch(stmts);
 	} catch (err: any) {
-		await query('ROLLBACK');
 		throw new Error('Falló el borrado, no se modificó nada: ' + (err?.message ?? err));
 	}
 }

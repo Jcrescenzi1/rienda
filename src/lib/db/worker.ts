@@ -25,19 +25,29 @@ function tablaAfectada(sql: string): string | null {
 	return m ? m[1] : null;
 }
 
+// Clave de meta que corresponde a un SQL de escritura (o null si es neutro).
+function claveEdicion(sql: string): string | null {
+	const tabla = tablaAfectada(sql);
+	if (!tabla) return null;
+	if (TABLAS_FINANZAS.has(tabla)) return 'ultima_edicion_finanzas';
+	if (TABLAS_INVERSIONES.has(tabla)) return 'ultima_edicion_inversiones';
+	return null; // tabla neutra
+}
+
+function escribirClaves(claves: Set<string>) {
+	const ahora = new Date().toISOString();
+	for (const clave of claves) {
+		db.exec({
+			sql: "INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+			bind: [clave, ahora]
+		});
+	}
+}
+
 // Registra la última edición del módulo correspondiente (si aplica).
 function registrarEdicion(sql: string) {
-	const tabla = tablaAfectada(sql);
-	if (!tabla) return;
-	let clave: string | null = null;
-	if (TABLAS_FINANZAS.has(tabla)) clave = 'ultima_edicion_finanzas';
-	else if (TABLAS_INVERSIONES.has(tabla)) clave = 'ultima_edicion_inversiones';
-	if (!clave) return; // tabla neutra
-	const ahora = new Date().toISOString();
-	db.exec({
-		sql: "INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
-		bind: [clave, ahora]
-	});
+	const clave = claveEdicion(sql);
+	if (clave) escribirClaves(new Set([clave]));
 }
 
 async function init() {
@@ -135,14 +145,42 @@ async function init() {
 			db.exec(SEED_MACRO);
 		}
 	}
+
+	// Integridad referencial: la base rechaza datos huérfanos (un gasto apuntando
+	// a una categoría inexistente, etc.). Se activa DESPUÉS de las migraciones.
+	// El import la apaga temporalmente para tolerar backups viejos con huérfanos.
+	db.exec('PRAGMA foreign_keys=ON');
 }
 
 const ready = init();
 
 self.onmessage = async (e: MessageEvent) => {
-	const { id, sql, bind } = e.data;
+	const { id, sql, bind, batch } = e.data;
 	try {
 		await ready;
+
+		// Lote: muchas sentencias en UN solo mensaje, dentro de una transacción
+		// atómica (o entra todo o no entra nada). Usado por import, reset y
+		// actualización de cotizaciones para no pagar un viaje por fila.
+		if (batch) {
+			db.exec('BEGIN');
+			try {
+				for (const s of batch) db.exec({ sql: s.sql, bind: s.bind ?? [] });
+				db.exec('COMMIT');
+			} catch (err) {
+				try { db.exec('ROLLBACK'); } catch { /* ya revertida */ }
+				throw err;
+			}
+			// Una sola marca de edición por módulo afectado (no una por fila)
+			try {
+				const claves = new Set<string>();
+				for (const s of batch) { const c = claveEdicion(s.sql); if (c) claves.add(c); }
+				escribirClaves(claves);
+			} catch { /* no romper el lote por esto */ }
+			self.postMessage({ id, rows: [] });
+			return;
+		}
+
 		const rows = db.exec({ sql, bind, rowMode: 'object', returnValue: 'resultRows' });
 		// Registrar última edición por módulo (después de ejecutar, si fue escritura)
 		try { registrarEdicion(sql); } catch { /* no romper la query principal por esto */ }

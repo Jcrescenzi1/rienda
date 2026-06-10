@@ -42,7 +42,8 @@
 
 		categorias = (await query(`
 			SELECT c.id, c.nombre,
-				(SELECT COUNT(*) FROM gasto g WHERE g.categoria_id = c.id) AS usos
+				(SELECT COUNT(*) FROM gasto g WHERE g.categoria_id = c.id)
+				+ (SELECT COUNT(*) FROM suscripcion s WHERE s.categoria_id = c.id) AS usos
 			FROM categoria c WHERE c.perfil_id=1 ORDER BY c.nombre
 		`)) as any[];
 
@@ -125,7 +126,14 @@
 	async function borrarSub(s:any){
 		if(s.usos>0){ alert(`No se puede eliminar "${s.nombre}": está usada en ${s.usos} regla(s)/gasto(s).`); return; }
 		if(!confirm(`¿Eliminar la subcategoría "${s.nombre}"?`)) return;
-		try { await query('DELETE FROM subcategoria WHERE id=? AND perfil_id=1',[s.id]); await cargar(); flash('Subcategoría eliminada ✅'); }
+		try {
+			// El presupuesto de una subcategoría eliminada no tiene sentido: se borra junto.
+			await query('DELETE FROM presupuesto WHERE subcategoria_id=? AND perfil_id=1',[s.id]);
+			// Si era la subcategoría macro de los disparos de suscripciones, vuelve a "automática".
+			await query("DELETE FROM meta WHERE clave='susc_subcat_id' AND valor=?",[String(s.id)]);
+			await query('DELETE FROM subcategoria WHERE id=? AND perfil_id=1',[s.id]);
+			await cargar(); flash('Subcategoría eliminada ✅');
+		}
 		catch(e:any){ flash('Error: '+(e?.message??e)); }
 	}
 

@@ -2,7 +2,7 @@
 // Trae cotizaciones del dólar e índices de inflación desde ArgentinaDatos
 // y los guarda en las tablas locales (reemplazando el histórico).
 
-import { query } from './client';
+import { queryBatch } from './client';
 
 const URL_DOLARES = 'https://api.argentinadatos.com/v1/cotizaciones/dolares';
 const URL_INFLACION = 'https://api.argentinadatos.com/v1/finanzas/indices/inflacion';
@@ -50,32 +50,27 @@ export async function actualizarCotizaciones(): Promise<string> {
 		.filter((x) => x.fecha && typeof x.valor === 'number')
 		.map((x) => ({ periodo: x.fecha.slice(0, 7), valor: x.valor / 100 }));
 
-	// ===== 3) GUARDAR (reemplazo limpio, todo en una transacción) =====
-	await query('BEGIN');
+	// ===== 3) GUARDAR (reemplazo limpio, un solo lote atómico al worker) =====
+	const stmts: { sql: string; bind?: unknown[] }[] = [];
+	for (const casa of CASAS) {
+		stmts.push({ sql: 'DELETE FROM cotizacion_dolar WHERE perfil_id=1 AND casa=?', bind: [casa] });
+	}
+	for (const d of filtrados) {
+		stmts.push({
+			sql: 'INSERT OR IGNORE INTO cotizacion_dolar (perfil_id, casa, fecha, valor) VALUES (1, ?, ?, ?)',
+			bind: [d.casa, d.fecha, d.venta]
+		});
+	}
+	stmts.push({ sql: 'DELETE FROM inflacion WHERE perfil_id=1' });
+	for (const i of inflFiltrada) {
+		stmts.push({
+			sql: 'INSERT OR IGNORE INTO inflacion (perfil_id, periodo, valor) VALUES (1, ?, ?)',
+			bind: [i.periodo, i.valor]
+		});
+	}
 	try {
-		// Dólar: borrar e insertar histórico de las casas elegidas
-		for (const casa of CASAS) {
-			await query('DELETE FROM cotizacion_dolar WHERE perfil_id=1 AND casa=?', [casa]);
-		}
-		for (const d of filtrados) {
-			await query(
-				'INSERT OR IGNORE INTO cotizacion_dolar (perfil_id, casa, fecha, valor) VALUES (1, ?, ?, ?)',
-				[d.casa, d.fecha, d.venta]
-			);
-		}
-
-		// Inflación: reemplazo completo del histórico
-		await query('DELETE FROM inflacion WHERE perfil_id=1');
-		for (const i of inflFiltrada) {
-			await query(
-				'INSERT OR IGNORE INTO inflacion (perfil_id, periodo, valor) VALUES (1, ?, ?)',
-				[i.periodo, i.valor]
-			);
-		}
-
-		await query('COMMIT');
+		await queryBatch(stmts);
 	} catch (e: any) {
-		await query('ROLLBACK');
 		throw new Error('Falló al guardar, no se modificó nada: ' + (e?.message ?? e));
 	}
 
