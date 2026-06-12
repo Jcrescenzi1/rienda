@@ -152,8 +152,8 @@
 			<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim() || !modoNuevo}>{creando ? 'Creando…' : 'Empezar'}</button>
 			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
 			<div class="separador"><span>o</span></div>
-			<p class="sub">¿Ya tenés un backup de Rienda?</p>
-			<button class="importar-b" onclick={() => importInputBienvenida?.click()}>⬆ Importar backup</button>
+			<p class="sub">¿Ya tenés una copia de seguridad de Rienda?</p>
+			<button class="importar-b" onclick={() => importInputBienvenida?.click()}>⬆ Restaurar copia de seguridad</button>
 			<input type="file" accept="application/json" bind:this={importInputBienvenida} onchange={onImportarBienvenida} style="display:none" />
 		</div>
 	</div>

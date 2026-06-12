@@ -275,9 +275,9 @@
 
 {#if avisoBackup !== null}
     <div class="aviso-backup">
-        <span>{avisoBackup === -1 ? 'Nunca exportaste un backup de tus datos.' : `Hace ${avisoBackup} días que no exportás un backup.`} Tus datos viven solo en este dispositivo.</span>
+        <span>{avisoBackup === -1 ? 'Nunca creaste una copia de seguridad de tus datos.' : `Hace ${avisoBackup} días que no creás una copia de seguridad.`} Tus datos viven solo en este dispositivo.</span>
         <span class="aviso-acc">
-            <button onclick={exportarAhora}>Exportar ahora</button>
+            <button onclick={exportarAhora}>Crear copia ahora</button>
             <button class="sec" onclick={backupMasTarde}>Más tarde</button>
         </span>
     </div>

@@ -9,7 +9,17 @@
 import { query, queryBatch } from './client';
 import { parseNum, formatNum, fechaISO } from '../format';
 
-export type ResultadoImport = { filas: number; creados: string[] };
+export type ResultadoImport = { filas: number; creados: string[]; omitidas: number; cancelado?: boolean };
+
+// Si hay duplicadas, el usuario decide: importar solo las nuevas, o cancelar la hoja.
+// Devuelve true si hay que seguir adelante.
+function confirmarDuplicadas(hoja: string, criterio: string, omitidas: number, total: number, nuevas: number): boolean {
+	if (omitidas === 0 || nuevas === 0) return true; // nada que preguntar
+	return confirm(
+		`${hoja}: ${omitidas} de ${total} fila(s) ya parecen cargadas (${criterio}) y se omitirán.\n` +
+		`¿Importar las ${nuevas} restantes?`
+	);
+}
 type Fila = Record<string, string>;
 
 const BOM = '﻿'; // para que Excel abra el CSV exportado como UTF-8 (acentos OK)
@@ -97,6 +107,19 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 	});
 	lanzarErrores(errores);
 
+	// Anti-duplicados: omite filas idénticas a gastos YA cargados en la base
+	// (misma fecha + monto + detalle). No compara entre filas del archivo:
+	// dos compras iguales el mismo día en tu planilla entran ambas.
+	const existentes = (await query('SELECT fecha, monto, detalle FROM gasto WHERE perfil_id=1')) as any[];
+	const setExist = new Set(existentes.map((g) => `${g.fecha}|${g.monto.toFixed(2)}|${g.detalle.toLowerCase()}`));
+	const total = ok.length;
+	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.monto.toFixed(2)}|${f.detalle.toLowerCase()}`));
+	const omitidas = total - nuevos.length;
+	if (!confirmarDuplicadas('Gastos', 'misma fecha, monto y detalle', omitidas, total, nuevos.length))
+		return { filas: 0, creados: [], omitidas, cancelado: true };
+	ok.length = 0;
+	ok.push(...nuevos);
+
 	// Alta de catálogos faltantes (pocas filas: viajes individuales con RETURNING)
 	for (const f of ok) {
 		const ck = f.cat.toLowerCase();
@@ -138,7 +161,7 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 		}
 	}
 	await queryBatch(stmts);
-	return { filas: ok.length, creados };
+	return { filas: ok.length, creados, omitidas };
 }
 
 // ---------- Importar INGRESOS ----------
@@ -147,7 +170,8 @@ const CATS_INGRESO = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
 
 export async function importarIngresosFilas(filas: Fila[]): Promise<ResultadoImport> {
 	const errores: string[] = [];
-	const stmts: { sql: string; bind?: unknown[] }[] = [];
+	type FilaOK = { fecha: string; monto: number; moneda: string; cat: string; tipo: string | null; detalle: string | null; periodo: string | null };
+	const ok: FilaOK[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2;
@@ -178,15 +202,26 @@ export async function importarIngresosFilas(filas: Fila[]): Promise<ResultadoImp
 		}
 
 		if (fecha && Number.isFinite(monto) && monto > 0 && cat && tipo !== undefined) {
-			stmts.push({
-				sql: 'INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)',
-				bind: [fecha, monto, moneda, cat, tipo, (f['detalle'] ?? '').trim() || null, periodo]
-			});
+			ok.push({ fecha, monto, moneda, cat, tipo, detalle: (f['detalle'] ?? '').trim() || null, periodo });
 		}
 	});
 	lanzarErrores(errores);
+
+	// Anti-duplicados: omite filas idénticas a ingresos ya cargados
+	// (misma fecha + monto + categoría).
+	const existentes = (await query('SELECT fecha, monto, categoria FROM ingreso WHERE perfil_id=1')) as any[];
+	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.monto.toFixed(2)}|${r.categoria}`));
+	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.monto.toFixed(2)}|${f.cat}`));
+	const omitidas = ok.length - nuevos.length;
+	if (!confirmarDuplicadas('Ingresos', 'misma fecha, monto y categoría', omitidas, ok.length, nuevos.length))
+		return { filas: 0, creados: [], omitidas, cancelado: true };
+
+	const stmts = nuevos.map((f) => ({
+		sql: 'INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)',
+		bind: [f.fecha, f.monto, f.moneda, f.cat, f.tipo, f.detalle, f.periodo]
+	}));
 	await queryBatch(stmts);
-	return { filas: stmts.length, creados: [] };
+	return { filas: nuevos.length, creados: [], omitidas };
 }
 
 // ---------- Importar INVERSIONES ----------
@@ -241,6 +276,19 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 	});
 	lanzarErrores(errores);
 
+	// Anti-duplicados: omite filas idénticas a operaciones ya cargadas
+	// (misma fecha + operación + ticker + unidades).
+	const existentes = (await query(
+		'SELECT t.fecha, t.operacion, a.ticker, t.unidades FROM transaccion t JOIN activo a ON a.id = t.activo_id WHERE t.perfil_id=1'
+	)) as any[];
+	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.operacion}|${r.ticker.toLowerCase()}|${r.unidades.toFixed(4)}`));
+	const nuevosInv = ok.filter((f) => !setExist.has(`${f.fecha}|${f.operacion}|${f.ticker.toLowerCase()}|${f.unidades.toFixed(4)}`));
+	const omitidas = ok.length - nuevosInv.length;
+	if (!confirmarDuplicadas('Inversiones', 'misma fecha, operación, ticker y unidades', omitidas, ok.length, nuevosInv.length))
+		return { filas: 0, creados: [], omitidas, cancelado: true };
+	ok.length = 0;
+	ok.push(...nuevosInv);
+
 	// Alta de cuentas y activos nuevos
 	for (const f of ok) {
 		const ck = f.cuenta.toLowerCase();
@@ -279,7 +327,7 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 		}
 	}
 
-	return { filas: ok.length, creados };
+	return { filas: ok.length, creados, omitidas };
 }
 
 // ---------- Importar EXCEL único (hojas Gastos / Ingresos / Inversiones) ----------
@@ -318,7 +366,15 @@ export async function importarExcel(file: File): Promise<string> {
 		if (!filas.length) continue;
 		try {
 			const res = await importar(filas);
-			partes.push(`${nombre}: ${res.filas} fila(s)` + (res.creados.length ? ` · creados: ${res.creados.join(', ')}` : ''));
+			if (res.cancelado) {
+				partes.push(`${nombre}: cancelada por vos (${res.omitidas} duplicadas detectadas)`);
+				continue;
+			}
+			partes.push(
+				`${nombre}: ${res.filas} fila(s)` +
+				(res.omitidas ? ` · ${res.omitidas} omitida(s) por duplicado` : '') +
+				(res.creados.length ? ` · creados: ${res.creados.join(', ')}` : '')
+			);
 		} catch (err: any) {
 			const previo = partes.length ? 'Ya importado: ' + partes.join(' | ') + '\n\n' : '';
 			throw new Error(previo + `Hoja ${nombre}: ` + (err?.message ?? String(err)));

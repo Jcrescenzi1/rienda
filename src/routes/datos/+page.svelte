@@ -136,28 +136,29 @@
 
 <div class="titulo-guia">
 	<h1>Datos</h1>
-	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Exportá backups seguido y guardalos en otro lado: son tu única red de seguridad." />
+	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Creá copias de seguridad seguido y guardalas en otro lado: son tu única red. Las planillas Excel/CSV son para traer o sacar datos; la copia de seguridad, para restaurar todo." />
 </div>
 
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<h2>Backup completo (JSON)</h2>
+	<h2>Copia de seguridad</h2>
 	<p class="nota">
-		Tu <strong>resguardo total</strong>: exportá un archivo con TODO (datos, configuración y perfil) para
-		guardarlo a salvo, restaurar o mudarte de dispositivo. Importar <strong>reemplaza todo</strong> lo que haya en la app.
+		Tu <strong>resguardo total</strong>: un archivo con TODO (datos, configuración y perfil) para
+		guardar a salvo o mudarte de dispositivo. Restaurar <strong>reemplaza todo</strong> lo que haya
+		en la app y vuelve exactamente a ese punto.
 	</p>
 	<div class="acciones">
-		<button class="exp" onclick={onExportar}>⬇ Exportar backup</button>
-		<button class="imp" onclick={() => importInput?.click()}>⬆ Importar backup</button>
+		<button class="exp" onclick={onExportar}>⬇ Crear copia de seguridad</button>
+		<button class="imp" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
 		<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
 	</div>
 
 	{#if comparando && fechasBackup}
 		<div class="comparacion">
-			<h2>Comparación antes de importar</h2>
+			<h2>Comparación antes de restaurar</h2>
 			<table>
-				<thead><tr><th></th><th>Tu base actual</th><th>El backup</th></tr></thead>
+				<thead><tr><th></th><th>Tu base actual</th><th>La copia</th></tr></thead>
 				<tbody>
 					<tr>
 						<td>Edición de Finanzas</td>
@@ -177,17 +178,17 @@
 			</table>
 
 			{#if !fechasBackup.tieneMeta}
-				<p class="aviso">Este backup es de una versión anterior y no tiene información de fechas, así que no se puede comparar. Revisá bien antes de continuar.</p>
+				<p class="aviso">Esta copia es de una versión anterior y no tiene información de fechas, así que no se puede comparar. Revisá bien antes de continuar.</p>
 			{:else if masViejo(meta.ultima_edicion_finanzas, fechasBackup.edicion_finanzas) || masViejo(meta.ultima_edicion_inversiones, fechasBackup.edicion_inversiones)}
-				<p class="aviso rojo">⚠️ El backup tiene datos más viejos que tu base actual (en rojo). Si importás, perdés lo que cargaste después de esa fecha en este dispositivo.</p>
+				<p class="aviso rojo">⚠️ La copia tiene datos más viejos que tu base actual (en rojo). Si restaurás, perdés lo que cargaste después de esa fecha en este dispositivo.</p>
 			{:else}
-				<p class="aviso ok">El backup está al día o es más reciente que tu base actual.</p>
+				<p class="aviso ok">La copia está al día o es más reciente que tu base actual.</p>
 			{/if}
 
-			<p class="recordatorio">Importar <strong>reemplaza TODOS</strong> los datos de este dispositivo por los del backup.</p>
+			<p class="recordatorio">Restaurar <strong>reemplaza TODOS</strong> los datos de este dispositivo por los de la copia.</p>
 			<div class="botones">
 				<button class="cancelar" onclick={cancelarImport}>Cancelar</button>
-				<button class="confirmar" onclick={confirmarImport}>Importar de todos modos</button>
+				<button class="confirmar" onclick={confirmarImport}>Restaurar de todos modos</button>
 			</div>
 		</div>
 	{/if}
@@ -199,13 +200,15 @@
 		desplegables con los valores válidos). Al subirla se importa lo que tenga datos; si una hoja tiene
 		errores, ese bloque no entra y te decimos qué corregir. Categorías, tarjetas, activos y cuentas
 		que no existan se crean solas.<br />
+		<strong>Importar siempre AGREGA</strong>: no pisa ni borra lo que ya tenés, y las filas idénticas
+		a registros existentes se omiten solas (podés resubir un archivo sin miedo a duplicar).
 		<strong>Exportar CSV:</strong> tus datos en formato planilla, para analizarlos en Excel u otra herramienta.
 	</p>
 	<div class="precarga">
 		<div class="prow destacada">
 			<span>Precargar</span>
 			<a class="plant" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
-			<button class="subir" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar Excel</button>
+			<button class="subir" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar datos (agrega)</button>
 			<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
 		</div>
 		<div class="prow">
@@ -240,7 +243,7 @@
 				Vas a borrar <strong>todo</strong>: gastos, ingresos, inversiones, configuración y perfil.
 				No se puede deshacer. Si todavía no tenés una copia, exportala ahora.
 			</p>
-			<button class="exp exp-reset" onclick={onExportar}>⬇ Exportar backup primero</button>
+			<button class="exp exp-reset" onclick={onExportar}>⬇ Crear copia de seguridad primero</button>
 			<label class="lbl-confirm" for="confirm-borrar">Escribí <strong>BORRAR</strong> para confirmar:</label>
 			<input
 				id="confirm-borrar"
