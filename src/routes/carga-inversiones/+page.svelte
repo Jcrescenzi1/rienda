@@ -106,10 +106,16 @@
 					const neto = (await query("SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?", [activoId])) as any[];
 					if (neto[0].n + 1e-9 < u) return (fMsg = `No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
 				}
-				const precio = monto / u;
-				if (fPago !== monA && (!Number.isFinite(vdN) || vdN <= 0)) return (fMsg = 'Valor dólar inválido');
-				let montoPago = monto;
-				if (fPago !== monA) montoPago = monA === 'USD' && fPago === 'ARS' ? monto * vdN : monto / vdN;
+				// El monto se carga en la moneda en que pagaste/cobraste (fPago).
+				// Si difiere de la moneda del activo, se convierte con el valor dólar
+				// para derivar el precio: nunca tenés que convertir de cabeza.
+				const montoPago = monto; // en fPago
+				let montoActivo = monto; // en la moneda del activo
+				if (fPago !== monA) {
+					if (!Number.isFinite(vdN) || vdN <= 0) return (fMsg = 'Valor dólar inválido');
+					montoActivo = monA === 'USD' ? monto / vdN : monto * vdN;
+				}
+				const precio = montoActivo / u;
 				await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
 					[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago]);
 				// Actualiza el precio de mercado SOLO si esta operación es igual o más
@@ -197,10 +203,18 @@
 			</div>
 		{/if}
 		<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
-		<label>Monto en {monedaActivo} (define precio)<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
-		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} con<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
-		<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
-		{#if uN > 0 && mN > 0}<p class="hint">Precio: {money(mN / uN, monedaActivo, 4)} · {fAccion === 'Compra' ? 'sale' : 'entra'} de Líquido {fPago}</p>{/if}
+		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} en<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
+		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+		<!-- Se oculta solo cuando activo y pago son USD (ahí no aporta nada).
+		     Para activos en ARS siempre se pide: convierte la operación a USD
+		     para calcular tus ganancias en dólares. -->
+		{#if fPago !== monedaActivo || monedaActivo === 'ARS'}
+			<label>Valor dólar del día<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
+		{/if}
+		{#if uN > 0 && mN > 0 && (fPago === monedaActivo || vdN > 0)}
+			{@const montoActivo = fPago === monedaActivo ? mN : monedaActivo === 'USD' ? mN / vdN : mN * vdN}
+			<p class="hint">Precio: {money(montoActivo / uN, monedaActivo, 4)} · {fAccion === 'Compra' ? 'sale' : 'entra'} {money(mN, fPago, 2)} de Líquido {fPago}</p>
+		{/if}
 	{:else if fAccion === 'Ingreso' || fAccion === 'Retiro'}
 		<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>

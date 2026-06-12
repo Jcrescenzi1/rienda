@@ -10,6 +10,8 @@
 	let realizadoAnioActual = $state(0);
 	let noRealizadoTotal = $state(0);
 	let buckets = $state<any[]>([]);
+	// Detalle del mix: cada activo (y el líquido) con su renta, tipo y % del total
+	let detalleMix = $state<any[]>([]);
 	let dolar = $state(1);
 	let totalUSD = $state(0);
 	let liqSaldos = $state<Record<string, number>>({ ARS: 0, USD: 0 });
@@ -66,9 +68,26 @@
 		}
 
 		for (const h of hold) h.peso = tUSD ? h.mercadoUSD / tUSD : 0;
-		hold.sort((x, y) => y.mercadoUSD - x.mercadoUSD);
+		hold.sort((x, y) => y.mercadoUSD - x.mercadoUSD); // la tabla sigue ordenada por mix
 		cartera = hold; totalUSD = tUSD;
 		buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
+
+		// Detalle del mix: activos + líquido, agrupados por renta (mismo orden que las barras)
+		const liqRows = ['ARS', 'USD']
+			.map((mon) => {
+				const saldo = bal[mon] ?? 0;
+				const valUSD = mon === 'USD' ? saldo : saldo / dolar;
+				return { renta: 'Liquido', tipo: 'Caja', nombre: 'Líquido ' + mon, mercadoUSD: valUSD };
+			})
+			.filter((r) => r.mercadoUSD > 0);
+		const filasMix = [
+			...hold.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD })),
+			...liqRows
+		];
+		const ordenRenta: Record<string, number> = {};
+		buckets.forEach((b, i) => (ordenRenta[b.renta] = i));
+		filasMix.sort((a, b) => (ordenRenta[a.renta] ?? 99) - (ordenRenta[b.renta] ?? 99) || b.mercadoUSD - a.mercadoUSD);
+		detalleMix = filasMix.map((r) => ({ ...r, pct: tUSD ? r.mercadoUSD / tUSD : 0 }));
 
 		cargando = false;
 	}
@@ -171,12 +190,12 @@
 
 	<h2>Cartera actual</h2>
 	<table>
-		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Mix</th>
+		<thead><tr><th>Tipo</th><th>Activo</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Resultado</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr>
-					<td>{h.tipo}</td><td>{h.nombre}</td><td class="pctcol">{(h.peso * 100).toFixed(1)}%</td>
+					<td>{h.tipo}</td><td>{h.nombre}</td>
 					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
 					<td class="num precioedit">
 						{#if editId === h.id}
@@ -187,7 +206,7 @@
 					<td class="num hl {h.resultado >= 0 ? 'pos' : 'neg'}">{money(h.resultado, h.moneda)} ({pct(h.pctRes)})</td>
 				</tr>
 			{/each}
-			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 
@@ -199,6 +218,22 @@
 				<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
 		{/each}
 	</div>
+
+	<h2>Detalle del mix</h2>
+	<table class="mix">
+		<thead><tr><th>Renta</th><th>Tipo</th><th>Activo</th><th class="num">% del total</th></tr></thead>
+		<tbody>
+			{#each detalleMix as d, i (d.renta + d.nombre)}
+				<tr class:grupo={i === 0 || detalleMix[i - 1].renta !== d.renta}>
+					<td class="renta" style="color:{colorRenta[d.renta]}">{i === 0 || detalleMix[i - 1].renta !== d.renta ? d.renta : ''}</td>
+					<td>{d.tipo}</td>
+					<td>{d.nombre}</td>
+					<td class="num">{(d.pct * 100).toFixed(1)}%</td>
+				</tr>
+			{/each}
+			{#if detalleMix.length === 0}<tr><td colspan="4" class="vacio">Sin posiciones todavía.</td></tr>{/if}
+		</tbody>
+	</table>
 
 	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). "Guardar Cartera" toma una foto del valor actual para la pantalla de Evolución.</p>
 {/if}
@@ -235,8 +270,12 @@
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
-	td.pctcol { text-align: center; }
 	th.num { text-align: center; }
+
+	/* Detalle del mix */
+	table.mix { max-width: 640px; margin-top: 6px; }
+	table.mix td.renta { font-weight: 700; white-space: nowrap; }
+	table.mix tr.grupo td { border-top: 2px solid var(--border) !important; }
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.lapiz { background: none; border: none; cursor: pointer; font-size: 0.8rem; opacity: 0.5; }
