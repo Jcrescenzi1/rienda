@@ -27,7 +27,7 @@
 	let modoNuevo = $state<ModoPeriodo | null>(null);
 	let creando = $state(false);
 	let bienvenidaMsg = $state('');
-	let importInputBienvenida: HTMLInputElement;
+	let importInputBienvenida: HTMLInputElement | undefined = $state();
 
 	const explicacionModo: Record<ModoPeriodo, string> = {
 		sueldo: 'Un cobro define tu mes financiero (sueldo, jubilación, una renta fija). Tu mes de gastos e ingresos arranca el día que lo cobrás.',
@@ -153,7 +153,7 @@
 			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
 			<div class="separador"><span>o</span></div>
 			<p class="sub">¿Ya tenés un backup de Rienda?</p>
-			<button class="importar-b" onclick={() => importInputBienvenida.click()}>⬆ Importar backup</button>
+			<button class="importar-b" onclick={() => importInputBienvenida?.click()}>⬆ Importar backup</button>
 			<input type="file" accept="application/json" bind:this={importInputBienvenida} onchange={onImportarBienvenida} style="display:none" />
 		</div>
 	</div>

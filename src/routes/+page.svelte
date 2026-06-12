@@ -303,7 +303,11 @@
 {:else}
     <div class="resumen">
         <div class="card"><span>Ingresos principales</span><strong>{peso(ingresosPpalMes)}</strong></div>
-        <div class="card"><span>Presupuesto</span><strong>{peso(totales.presup)}</strong></div>
+        <!-- Semáforo: el presupuesto se compara contra los ingresos principales del período -->
+        <div class="card" class:ok={ingresosPpalMes > 0 && totales.presup <= ingresosPpalMes} class:bad={ingresosPpalMes > 0 && totales.presup > ingresosPpalMes}
+            title={ingresosPpalMes > 0 ? (totales.presup <= ingresosPpalMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período'}>
+            <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
+        </div>
         <div class="card" class:ok={totales.real <= totales.presup} class:bad={totales.real > totales.presup}>
             <span>Gasto total</span><strong>{peso(totales.real)}</strong>
         </div>

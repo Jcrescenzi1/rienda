@@ -2,11 +2,16 @@
 	import { onMount } from 'svelte';
 	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
+	import {
+		descargarArchivo, importarExcel,
+		exportarGastosCSV, exportarIngresosCSV, exportarInversionesCSV
+	} from '$lib/db/precarga';
+	import { hoyISO } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 
 	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, backup_aviso_hasta: null });
 	let cargando = $state(true);
-	let importInput: HTMLInputElement;
+	let importInput: HTMLInputElement | undefined = $state();
 
 	// Estado de la comparación previa al importar
 	let comparando = $state(false);
@@ -78,6 +83,32 @@
 		backupPendiente = null;
 	}
 
+	// ----- Planillas: precarga Excel + exportación CSV -----
+	let excelInput: HTMLInputElement | undefined = $state();
+	let importandoCSV = $state(false);
+
+	async function onImportarExcel(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		importandoCSV = true;
+		try {
+			const resumen = await importarExcel(file);
+			alert('Importación completa ✅\n' + resumen);
+		} catch (err: any) {
+			alert(err?.message ?? String(err));
+		} finally {
+			input.value = '';
+			importandoCSV = false;
+		}
+	}
+
+	async function onExportarCSV(nombre: string, exportar: () => Promise<string>) {
+		try {
+			descargarArchivo(`rienda-${nombre}-${hoyISO()}.csv`, await exportar());
+		} catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
+	}
+
 	// ----- Borrado total -----
 	function abrirReset() {
 		textoConfirm = '';
@@ -111,9 +142,14 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
+	<h2>Backup completo (JSON)</h2>
+	<p class="nota">
+		Tu <strong>resguardo total</strong>: exportá un archivo con TODO (datos, configuración y perfil) para
+		guardarlo a salvo, restaurar o mudarte de dispositivo. Importar <strong>reemplaza todo</strong> lo que haya en la app.
+	</p>
 	<div class="acciones">
 		<button class="exp" onclick={onExportar}>⬇ Exportar backup</button>
-		<button class="imp" onclick={() => importInput.click()}>⬆ Importar backup</button>
+		<button class="imp" onclick={() => importInput?.click()}>⬆ Importar backup</button>
 		<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
 	</div>
 
@@ -155,6 +191,30 @@
 			</div>
 		</div>
 	{/if}
+
+	<h2>Planillas (Excel / CSV)</h2>
+	<p class="nota">
+		<strong>Precarga histórica:</strong> ¿venís de una planilla? Bajá la plantilla Excel y completá
+		solo las hojas que quieras (Gastos / Ingresos / Inversiones — adentro tenés instrucciones y
+		desplegables con los valores válidos). Al subirla se importa lo que tenga datos; si una hoja tiene
+		errores, ese bloque no entra y te decimos qué corregir. Categorías, tarjetas, activos y cuentas
+		que no existan se crean solas.<br />
+		<strong>Exportar CSV:</strong> tus datos en formato planilla, para analizarlos en Excel u otra herramienta.
+	</p>
+	<div class="precarga">
+		<div class="prow destacada">
+			<span>Precargar</span>
+			<a class="plant" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
+			<button class="subir" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar Excel</button>
+			<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
+		</div>
+		<div class="prow">
+			<span>Exportar</span>
+			<button class="expcsv" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ Gastos</button>
+			<button class="expcsv" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ Ingresos</button>
+			<button class="expcsv" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ Inversiones</button>
+		</div>
+	</div>
 
 	<h2>Estado de tus datos</h2>
 	<table>
@@ -226,6 +286,20 @@
 	.confirmar { background: var(--neg); color: #fff; border: none; border-radius: 6px; padding: 9px 16px; cursor: pointer; font-weight: 600; }
 	.confirmar:disabled { opacity: 0.5; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; max-width: 560px; line-height: 1.5; }
+	.nota strong { color: var(--text); }
+
+	/* Planillas (precarga + exportación) */
+	.precarga { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-width: 620px; }
+	.prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+	.prow span { font-weight: 600; font-size: 0.9rem; width: 90px; }
+	.prow.destacada { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: rgba(91, 157, 255, 0.06); margin-bottom: 4px; }
+	.plant, .subir, .expcsv { border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 0.85rem; text-decoration: none; display: inline-block; }
+	.plant { background: var(--surface-2); color: var(--text); }
+	.plant:hover { border-color: var(--accent); }
+	.subir { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+	.subir:disabled { opacity: 0.6; cursor: default; }
+	.expcsv { background: var(--surface-2); color: var(--text-dim); }
+	.expcsv:hover { border-color: var(--accent); color: var(--text); }
 
 	/* Zona peligrosa */
 	.peligro { border: 1px solid var(--neg); border-radius: 8px; padding: 14px; margin-top: 32px; max-width: 560px; box-sizing: border-box; }
