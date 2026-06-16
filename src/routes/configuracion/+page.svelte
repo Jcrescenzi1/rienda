@@ -27,6 +27,7 @@
 	let editCatNombre = $state('');
 	let editTarId = $state<number | null>(null);
 	let editTarNombre = $state('');
+	let editTarProveedor = $state('Visa');
 	let editSubId = $state<number | null>(null);
 	let editSubNombre = $state('');
 
@@ -143,10 +144,10 @@
 		try { await query('INSERT INTO tarjeta (perfil_id, nombre, proveedor, tipo) VALUES (1, ?, ?, ?)', [n, ntProveedor, ntTipo]); ntNombre=''; await cargar(); flash('Tarjeta creada ✅'); }
 		catch (e:any) { flash(esUnique(e)?'Ya existe esa tarjeta.':'Error: '+(e?.message??e)); }
 	}
-	function abrirEditTar(t:any){ editTarId=t.id; editTarNombre=t.nombre; }
+	function abrirEditTar(t:any){ editTarId=t.id; editTarNombre=t.nombre; editTarProveedor=t.proveedor ?? 'Visa'; }
 	async function guardarTar(){
 		const n=editTarNombre.trim(); if(editTarId==null||!n){editTarId=null;return;}
-		try { await query('UPDATE tarjeta SET nombre=? WHERE id=? AND perfil_id=1',[n,editTarId]); editTarId=null; await cargar(); flash('Tarjeta renombrada ✅'); }
+		try { await query('UPDATE tarjeta SET nombre=?, proveedor=? WHERE id=? AND perfil_id=1',[n,editTarProveedor,editTarId]); editTarId=null; await cargar(); flash('Tarjeta actualizada ✅'); }
 		catch(e:any){ flash(esUnique(e)?'Ya existe esa tarjeta.':'Error: '+(e?.message??e)); }
 	}
 	async function borrarTar(t:any){
@@ -217,7 +218,11 @@
 							<button class="cancp" onclick={() => (editTarId = null)}>✕</button>
 						{:else}{t.nombre}{/if}
 					</td>
-					<td>{t.proveedor ?? '—'}</td>
+					<td>
+						{#if editTarId === t.id}
+							<select class="edit" bind:value={editTarProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
+						{:else}{t.proveedor ?? '—'}{/if}
+					</td>
 					<td>{t.tipo === 'credito' ? 'Crédito' : 'Débito'}</td>
 					<td class="num">{t.usos}</td>
 					<td class="acciones">
