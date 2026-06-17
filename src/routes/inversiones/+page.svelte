@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
-	import { dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
+	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
 
 	let cargando = $state(true);
@@ -38,6 +38,36 @@
 			.filter(([mes]) => mes.startsWith(anioActual))
 			.reduce((s, [, v]) => s + v, 0);
 
+		// Agregados por activo para el resultado de la tabla, acotados a la POSICIÓN
+		// ABIERTA ACTUAL: recorro las transacciones en orden y, cada vez que la tenencia
+		// vuelve a cero (cierre total), reinicio los acumuladores. Así un ciclo viejo
+		// ya cerrado no contamina el PPC/PPV de la posición que tenés hoy; las ventas
+		// parciales dentro de la posición abierta sí cuentan. No usa FIFO.
+		const txAgg = (await query(
+			'SELECT activo_id AS aid, operacion AS op, unidades AS u, precio AS p, valor_dolar AS vd FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id'
+		)) as any[];
+		type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
+		const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
+		const agg: Record<number, Agg> = {};
+		const heldRun: Record<number, number> = {};
+		for (const t of txAgg) {
+			const a = aMap[t.aid];
+			if (!a) continue;
+			agg[t.aid] ??= nuevoAgg();
+			heldRun[t.aid] ??= 0;
+			const nat = t.u * t.p;
+			const enUSD = aUSD(t.p, a.moneda, t.vd) * t.u;
+			if (t.op === 'Compra') {
+				heldRun[t.aid] += t.u;
+				agg[t.aid].compU += t.u; agg[t.aid].inv += nat; agg[t.aid].invUSD += enUSD;
+			} else {
+				heldRun[t.aid] -= t.u;
+				agg[t.aid].rec += nat; agg[t.aid].recUSD += enUSD;
+				// Cierre total: la posición vuelve a cero -> arranca un episodio nuevo.
+				if (heldRun[t.aid] <= 1e-9) { heldRun[t.aid] = 0; agg[t.aid] = nuevoAgg(); }
+			}
+		}
+
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
 		let tUSD = 0; let noRealUSD = 0;
@@ -45,15 +75,21 @@
 			const u = q.reduce((s, l) => s + l.u, 0);
 			if (u < 1e-6) continue;
 			const a = aMap[Number(aid)];
-			const costo = q.reduce((s, l) => s + l.u * l.pNat, 0);
-			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);
-			const ppc = costo / u; const pa = a.precio_actual ?? ppc; const mercado = u * pa;
+			const costoNat = q.reduce((s, l) => s + l.u * l.pNat, 0);  // costo de lo que queda (fallback)
+			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);  // costo USD de lo que queda (para "no realizado")
+			// Agregado del activo (total comprado/vendido). Fallback al remanente si faltara.
+			const g = agg[Number(aid)] ?? { compU: u, inv: costoNat, invUSD: costoUSD, rec: 0, recUSD: 0 };
+			const ppc = g.compU ? g.inv / g.compU : 0;                 // promedio de compra sobre TODO lo comprado
+			const pa = a.precio_actual ?? ppc; const mercado = u * pa;
 			const mercadoUSD = a.moneda === 'USD' ? mercado : mercado / dolar;
+			// PPV ponderado: lo recuperado en ventas + la tenencia a precio actual, sobre el total comprado.
+			const ppv = g.compU ? (g.rec + mercado) / g.compU : pa;
+			const gananciaUSD = (g.recUSD + mercadoUSD) - g.invUSD;                      // ganancia real ≈USD (realizada + no realizada)
 			noRealUSD += mercadoUSD - costoUSD;
 			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
 			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
-				monto: costo, unidades: u, ppc, ppv: pa, precioActual: pa, mercado,
-				resultado: mercado - costo, pctRes: costo ? (mercado - costo) / costo : 0, mercadoUSD });
+				unidades: u, ppc, ppv, precioActual: pa, mercado,
+				gananciaUSD, mercadoUSD });
 		}
 		noRealizadoTotal = noRealUSD;
 
@@ -94,6 +130,21 @@
 
 	onMount(cargarTodo);
 
+	// Exposición por moneda de denominación (USD vs ARS), ≈USD. Suma el valor de
+	// mercado de cada activo según la moneda con la que cotiza, más la liquidez en
+	// cada moneda. En Argentina, la porción en USD es la defensa real ante inflación.
+	let exposicion = $derived.by(() => {
+		let usd = 0, ars = 0;
+		for (const h of cartera) {
+			if (h.moneda === 'USD') usd += h.mercadoUSD;
+			else ars += h.mercadoUSD;
+		}
+		usd += liqSaldos.USD ?? 0;
+		ars += (liqSaldos.ARS ?? 0) / dolar;
+		const tot = usd + ars;
+		return { usd, ars, tot, pctUsd: tot ? usd / tot : 0, pctArs: tot ? ars / tot : 0 };
+	});
+
 	function abrirEdit(h: any) { editId = h.id; editPrecio = formatNum(h.precioActual, 2); }
 	async function guardarPrecio() {
 		const p = parseNum(editPrecio);
@@ -133,7 +184,6 @@
 
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-	const pct = (n: number) => (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + '%';
 	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
 </script>
@@ -192,24 +242,40 @@
 	<h2>Cartera actual</h2>
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th>
-			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Resultado</th></tr></thead>
+			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Result. Real</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr>
 					<td>{h.tipo}</td><td>{h.nombre}</td>
-					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl">{money(h.ppv, h.moneda, 2)}</td>
+					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl {h.ppv >= h.ppc ? 'pos' : 'neg'}">{money(h.ppv, h.moneda, 2)}</td>
 					<td class="num precioedit">
 						{#if editId === h.id}
 							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
 							<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
 						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏️</button>{/if}
 					</td>
-					<td class="num hl {h.resultado >= 0 ? 'pos' : 'neg'}">{money(h.resultado, h.moneda)} ({pct(h.pctRes)})</td>
+					<td class="num hl {h.gananciaUSD >= 0 ? 'pos' : 'neg'}">{usd(h.gananciaUSD)}</td>
 				</tr>
 			{/each}
 			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
+	<p class="nota">Sobre tu <strong>posición abierta actual</strong> (se reinicia cuando cerrás del todo y volvés a abrir). PPC = promedio de compra. PPV = precio de salida ponderado (lo recuperado en ventas + tu tenencia a precio actual): <strong>verde si está por encima del PPC</strong> (ganás en la moneda del activo), rojo si por debajo. Resultado = tu <strong>ganancia/pérdida real ≈USD</strong> (realizada de ventas parciales + no realizada). La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.</p>
+
+	<h2>Exposición por moneda (≈USD)</h2>
+	{#if exposicion.tot > 0}
+		<div class="bars">
+			<div class="barrow"><span class="lbl">USD</span>
+				<div class="track"><div class="bar" style="width:{exposicion.pctUsd * 100}%; background:var(--accent)"></div></div>
+				<span class="val">{usd(exposicion.usd)} · {(exposicion.pctUsd * 100).toFixed(0)}%</span></div>
+			<div class="barrow"><span class="lbl">ARS</span>
+				<div class="track"><div class="bar" style="width:{exposicion.pctArs * 100}%; background:#e8975b"></div></div>
+				<span class="val">{usd(exposicion.ars)} · {(exposicion.pctArs * 100).toFixed(0)}%</span></div>
+		</div>
+		<p class="nota">Cuánto de tu patrimonio invertido está denominado en dólares vs pesos (incluye liquidez). En Argentina, la porción en USD es tu defensa real ante la inflación.</p>
+	{:else}
+		<p class="nota">Sin posiciones todavía.</p>
+	{/if}
 
 	<h2>Estructura de renta (≈USD)</h2>
 	<div class="bars">
