@@ -120,6 +120,12 @@
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
 		}
+		// Pide almacenamiento persistente: sin esto, el navegador puede desalojar
+		// el OPFS bajo presión de espacio. Crítico en iOS, donde Safari borra los
+		// datos creados por script tras 7 días sin abrir la app (las apps agregadas
+		// a la pantalla de inicio quedan exentas). Best-effort: si no está soportado
+		// o lo rechaza, la app sigue igual.
+		try { navigator.storage?.persist?.(); } catch { /* no soportado */ }
 		window.addEventListener('scroll', alScrollear, { passive: true });
 		return () => window.removeEventListener('scroll', alScrollear);
 	});
@@ -180,7 +186,6 @@
 			<div class="grupo">
 				<span class="gtit">Activos</span>
 				<button class="item" class:activo={actual === '/inversiones'} onclick={() => irA('/inversiones')}>Inversiones</button>
-				<button class="item" class:activo={actual === '/evolucion'} onclick={() => irA('/evolucion')}>Evolución de Cartera</button>
 			</div>
 
 			<div class="grupo">

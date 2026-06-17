@@ -1,0 +1,296 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { query } from '$lib/db/client';
+	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+	import {
+		cargarDolarSerie,
+		cargarIPC,
+		convertir,
+		fmtMoneda,
+		type DolarSerie,
+		type IPC
+	} from '$lib/moneda';
+	import { moneda } from '$lib/moneda.svelte';
+	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
+	import Guia from '$lib/Guia.svelte';
+
+	type Gasto = {
+		fecha: string;
+		monto: number;
+		moneda: string;
+		categoria_id: number;
+		categoria: string;
+		detalle: string;
+	};
+
+	let cargando = $state(true);
+	let gastos = $state<Gasto[]>([]);
+	let categorias = $state<{ id: number; nombre: string }[]>([]);
+	let dolarSerie = $state<DolarSerie>([]);
+	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
+	let asignar = $state<(fecha: string) => string | null>(() => null);
+	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+
+	// Filtros
+	let filtroDesde = $state('');
+	let filtroHasta = $state('');
+	let filtroCategoria = $state<number | null>(null);
+	let filtroTexto = $state('');
+
+	onMount(async () => {
+		await moneda.cargar();
+		modoPeriodo = await cargarModo();
+		const cortes = modoPeriodo === 'sueldo' ? await cargarCortes() : [];
+		asignar = crearAsignador(modoPeriodo, cortes);
+		dolarSerie = await cargarDolarSerie();
+		ipc = await cargarIPC();
+		categorias = (await query(
+			'SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'
+		)) as any[];
+		gastos = (await query(
+			`SELECT g.fecha, g.monto, g.moneda, g.categoria_id, c.nombre AS categoria, g.detalle
+			 FROM gasto g JOIN categoria c ON c.id = g.categoria_id
+			 WHERE g.perfil_id = 1 ORDER BY g.fecha`
+		)) as any[];
+		cargando = false;
+	});
+
+	// Gastos que pasan los filtros (por fecha de compra).
+	let filtrados = $derived.by(() => {
+		const txt = filtroTexto.trim().toLowerCase();
+		return gastos.filter((g) => {
+			if (filtroDesde && g.fecha < filtroDesde) return false;
+			if (filtroHasta && g.fecha > filtroHasta) return false;
+			if (filtroCategoria != null && g.categoria_id !== filtroCategoria) return false;
+			if (txt && !(g.detalle ?? '').toLowerCase().includes(txt)) return false;
+			return true;
+		});
+	});
+
+	// Total por período (en el modo de moneda elegido), ordenado.
+	let serie = $derived.by(() => {
+		const acc: Record<string, number> = {};
+		for (const g of filtrados) {
+			const per = asignar(g.fecha);
+			if (!per) continue;
+			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+			if (v == null) continue;
+			acc[per] = (acc[per] ?? 0) + v;
+		}
+		return Object.keys(acc)
+			.sort()
+			.map((p) => ({ periodo: p, total: acc[p] }));
+	});
+
+	let totalRango = $derived(serie.reduce((s, x) => s + x.total, 0));
+	let promedio = $derived(serie.length ? totalRango / serie.length : 0);
+
+	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+	const mesCorto = (p: string) => {
+		const [y, m] = p.split('-');
+		return MESES[+m] + " '" + y.slice(2);
+	};
+
+	// ===== Gráfico de área =====
+	const W = 720, H = 300, P = { l: 56, r: 16, t: 16, b: 28 };
+	let chart = $derived.by(() => {
+		if (serie.length < 2) return null;
+		const vals = serie.map((s) => s.total);
+		const n = serie.length;
+		let minY = Math.min(0, ...vals);
+		let maxY = Math.max(...vals, 1);
+		const padY = (maxY - minY) * 0.1 || 1;
+		maxY += padY;
+		const px = (i: number) => P.l + (i / (n - 1)) * (W - P.l - P.r);
+		const py = (y: number) => H - P.b - ((y - minY) / (maxY - minY || 1)) * (H - P.t - P.b);
+		const pts = serie.map((s, i) => ({ x: px(i), y: py(s.total) }));
+		const line = pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
+		const area = line + ` L${pts[n - 1].x.toFixed(1)},${py(0).toFixed(1)} L${pts[0].x.toFixed(1)},${py(0).toFixed(1)} Z`;
+		const yticks = Array.from({ length: 4 }, (_, k) => {
+			const v = minY + ((maxY - minY) * k) / 3;
+			return { y: py(v), label: fmtNum(v) };
+		});
+		const step = Math.max(1, Math.floor(n / 8));
+		const xticks = serie
+			.map((s, i) => ({ i, p: s.periodo }))
+			.filter((_, i) => i % step === 0)
+			.map((o) => ({ x: px(o.i), label: mesCorto(o.p) }));
+		return { line, area, pts, yticks, xticks };
+	});
+
+	// Etiquetas de eje Y compactas (12.345 -> "12k", 1.200.000 -> "1.2M").
+	function fmtNum(v: number): string {
+		const a = Math.abs(v);
+		if (a >= 1_000_000) return (v / 1_000_000).toFixed(1).replace('.0', '') + 'M';
+		if (a >= 1000) return Math.round(v / 1000) + 'k';
+		return Math.round(v).toString();
+	}
+
+	// ===== Dona por categoría =====
+	const PALETA = ['#5b9dff', '#e8975b', '#4ade80', '#f87171', '#c084fc', '#fbbf24', '#38bdf8', '#fb7185', '#a3e635', '#94a0b8'];
+	let dona = $derived.by(() => {
+		const acc: Record<string, number> = {};
+		for (const g of filtrados) {
+			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+			if (v == null || v <= 0) continue;
+			acc[g.categoria] = (acc[g.categoria] ?? 0) + v;
+		}
+		const items = Object.entries(acc)
+			.map(([cat, val]) => ({ cat, val }))
+			.sort((a, b) => b.val - a.val);
+		const total = items.reduce((s, x) => s + x.val, 0);
+		if (total <= 0) return null;
+
+		const cx = 90, cy = 90, r = 78, rIn = 46;
+
+		// Una sola categoría (o una que es ~100%): el arco degenera en un punto y no
+		// dibuja. Lo renderizamos como anillo completo (un <circle> con borde grueso).
+		if (items.length === 1 || items[0].val / total >= 0.9999) {
+			const it = items[0];
+			return {
+				cx, cy, total,
+				anillo: { color: PALETA[0], rMid: (r + rIn) / 2, grosor: r - rIn },
+				arcos: [{ d: '', color: PALETA[0], cat: it.cat, val: it.val, frac: 1 }]
+			};
+		}
+
+		let ang = -Math.PI / 2; // arrancar arriba
+		const arcos = items.map((it, i) => {
+			const frac = it.val / total;
+			const a0 = ang;
+			const a1 = ang + frac * Math.PI * 2;
+			ang = a1;
+			const large = a1 - a0 > Math.PI ? 1 : 0;
+			const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
+			const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
+			const xi0 = cx + rIn * Math.cos(a1), yi0 = cy + rIn * Math.sin(a1);
+			const xi1 = cx + rIn * Math.cos(a0), yi1 = cy + rIn * Math.sin(a0);
+			const d = `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} L${xi0.toFixed(1)},${yi0.toFixed(1)} A${rIn},${rIn} 0 ${large} 0 ${xi1.toFixed(1)},${yi1.toFixed(1)} Z`;
+			return { d, color: PALETA[i % PALETA.length], cat: it.cat, val: it.val, frac };
+		});
+		return { arcos, total, cx, cy, anillo: null as null | { color: string; rMid: number; grosor: number } };
+	});
+
+	function limpiar() {
+		filtroDesde = '';
+		filtroHasta = '';
+		filtroCategoria = null;
+		filtroTexto = '';
+	}
+</script>
+
+<div class="titulo-guia">
+	<h1>Evolución de Gastos</h1>
+	<Guia clave="gastos-evolucion" texto="Cómo evolucionó tu gasto período a período, con la composición por categoría. Filtrá por fecha, categoría o detalle para enfocar el análisis. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
+</div>
+
+<a href="/" class="btn-volver">← Volver</a>
+
+{#if cargando}
+	<p>Cargando…</p>
+{:else}
+	<div class="filtros">
+		<label>Desde <input type="date" bind:value={filtroDesde} /></label>
+		<label>Hasta <input type="date" bind:value={filtroHasta} /></label>
+		<label>Categoría
+			<select bind:value={filtroCategoria}>
+				<option value={null}>Todas</option>
+				{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
+			</select>
+		</label>
+		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
+		<button class="limpiar" onclick={limpiar}>Limpiar</button>
+	</div>
+
+	<ToggleMoneda />
+
+	<div class="resumen">
+		<div class="card"><span>Total del rango</span><strong>{fmtMoneda(totalRango, moneda.modo)}</strong></div>
+		<div class="card"><span>Promedio por período</span><strong>{fmtMoneda(promedio, moneda.modo)}</strong></div>
+		<div class="card"><span>Períodos</span><strong>{serie.length}</strong></div>
+	</div>
+
+	<div class="leyenda">
+		<span class="aclara">
+			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
+			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
+		</span>
+	</div>
+
+	{#if chart}
+		<svg viewBox="0 0 {W} {H}" class="chart">
+			<defs>
+				<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+					<stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02" />
+				</linearGradient>
+			</defs>
+			{#each chart.yticks as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
+			{/each}
+			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			<path d={chart.area} fill="url(#areaGrad)" />
+			<path d={chart.line} class="line-area" />
+			{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
+		</svg>
+	{:else}
+		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
+	{/if}
+
+	<h2>Composición por categoría</h2>
+	{#if dona}
+		<div class="dona-wrap">
+			<svg viewBox="0 0 180 180" class="dona">
+				{#if dona.anillo}
+					<circle cx={dona.cx} cy={dona.cy} r={dona.anillo.rMid} fill="none" stroke={dona.anillo.color} stroke-width={dona.anillo.grosor} />
+				{:else}
+					{#each dona.arcos as a}<path d={a.d} fill={a.color} />{/each}
+				{/if}
+			</svg>
+			<ul class="dona-leyenda">
+				{#each dona.arcos as a}
+					<li>
+						<span class="sw" style="background:{a.color}"></span>
+						<span class="cat">{a.cat}</span>
+						<span class="val">{fmtMoneda(a.val, moneda.modo)}</span>
+						<span class="pct">{(a.frac * 100).toFixed(1)}%</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{:else}
+		<p class="nota">No hay gastos en el rango filtrado.</p>
+	{/if}
+{/if}
+
+<style>
+	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
+	h2 { font-size: 1.05rem; margin-top: 24px; }
+	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 0 0 12px; }
+	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
+	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
+	.filtros input, .filtros select { padding: 6px 8px; font-size: 0.85rem; }
+	.limpiar { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 0.8rem; height: 33px; }
+	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; flex: 1; min-width: 140px; }
+	.card span { font-size: 0.72rem; color: var(--text-dim); }
+	.card strong { font-size: 1.05rem; }
+	.leyenda { font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
+	.aclara { color: var(--text-dim); }
+	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+	.grid { stroke: var(--border); stroke-width: 1; }
+	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
+	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
+	.line-area { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+	.dot-area { fill: var(--accent); }
+	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
+	.dona-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+	.dona { width: 180px; height: 180px; flex-shrink: 0; }
+	.dona-leyenda { list-style: none; padding: 0; margin: 0; flex: 1; min-width: 220px; font-size: 0.85rem; }
+	.dona-leyenda li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+	.dona-leyenda .sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+	.dona-leyenda .cat { flex: 1; }
+	.dona-leyenda .val { color: var(--text-dim); }
+	.dona-leyenda .pct { width: 52px; text-align: right; font-weight: 600; }
+</style>

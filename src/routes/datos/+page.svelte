@@ -193,6 +193,32 @@
 		</div>
 	{/if}
 
+	<h2>Instalá la app (recomendado)</h2>
+	<p class="nota">
+		Instalar Rienda en tu dispositivo protege tus datos y la abre como una app propia.
+		<strong>En iPhone/iPad es clave:</strong> si la usás como pestaña de Safari, el sistema borra
+		tus datos tras 7 días sin abrirla; instalada en la pantalla de inicio, no.
+	</p>
+	<div class="instalar">
+		<div class="inst-card">
+			<strong>📱 iPhone / iPad (Safari)</strong>
+			<ol>
+				<li>Abrí Rienda en <strong>Safari</strong>.</li>
+				<li>Tocá el botón <strong>Compartir</strong> (el cuadrado con la flecha ↑).</li>
+				<li>Elegí <strong>"Agregar a inicio"</strong>.</li>
+				<li>Abrila siempre desde el ícono de la pantalla de inicio.</li>
+			</ol>
+		</div>
+		<div class="inst-card">
+			<strong>🖥️ Windows (Chrome / Edge)</strong>
+			<ol>
+				<li>Abrí Rienda en <strong>Chrome</strong> o <strong>Edge</strong>.</li>
+				<li>En la barra de direcciones, clic en el ícono de <strong>instalar</strong> (un monitor con ↓), o menú <strong>⋮ → "Instalar Rienda"</strong>.</li>
+				<li>Se abre como app propia, con su ícono en el escritorio.</li>
+			</ol>
+		</div>
+	</div>
+
 	<h2>Planillas (Excel / CSV)</h2>
 	<p class="nota">
 		<strong>Precarga histórica:</strong> ¿venís de una planilla? Bajá la plantilla Excel y completá
@@ -290,6 +316,13 @@
 	.confirmar:disabled { opacity: 0.5; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; max-width: 560px; line-height: 1.5; }
 	.nota strong { color: var(--text); }
+
+	/* Instalación PWA */
+	.instalar { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
+	.inst-card { flex: 1; min-width: 250px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; }
+	.inst-card strong { font-size: 0.92rem; }
+	.inst-card ol { margin: 8px 0 0; padding-left: 20px; font-size: 0.83rem; color: var(--text-dim); line-height: 1.6; }
+	.inst-card ol strong { color: var(--text); font-size: inherit; }
 
 	/* Planillas (precarga + exportación) */
 	.precarga { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-width: 620px; }

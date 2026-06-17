@@ -285,6 +285,7 @@
 
 <div class="accesos">
     <a href="/gastos" class="btn-carga">➕ Cargar gasto</a>
+    <a href="/gastos-evolucion" class="btn-carga sec">📈 Evolución de Gastos</a>
     <a href="/credito" class="btn-carga sec">Gastos en Crédito</a>
     <a href="/suscripciones" class="btn-carga sec">Ver Suscripciones</a>
 </div>

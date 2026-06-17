@@ -149,6 +149,7 @@
 	<div class="topbar">
 		<a href="/carga-inversiones" class="nueva">➕ Cargar movimiento</a>
 		<button class="guardarcart" onclick={prepararFoto}>📸 Guardar Cartera</button>
+		<a href="/evolucion" class="evol">📈 Evolución de Cartera</a>
 	</div>
 	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
 
@@ -245,6 +246,7 @@
 	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
 	.nueva { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
 	.guardarcart { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.evol { display: inline-block; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
 	.form { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input { padding: 6px; font-size: 0.95rem; }
