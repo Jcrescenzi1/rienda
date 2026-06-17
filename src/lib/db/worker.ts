@@ -29,6 +29,9 @@ function tablaAfectada(sql: string): string | null {
 function claveEdicion(sql: string): string | null {
 	const tabla = tablaAfectada(sql);
 	if (!tabla) return null;
+	// Las actualizaciones de precio (mark de mercado, manual o automático) no son
+	// edición de datos del usuario: no deben marcar "cambios sin respaldar".
+	if (tabla === 'activo' && /^\s*update\s+activo\s+set\s+precio_actual\b/i.test(sql)) return null;
 	if (TABLAS_FINANZAS.has(tabla)) return 'ultima_edicion_finanzas';
 	if (TABLAS_INVERSIONES.has(tabla)) return 'ultima_edicion_inversiones';
 	return null; // tabla neutra
@@ -69,6 +72,13 @@ async function init() {
 	}
 	if (!tcols.some((c: any) => c.name === 'monto_pago')) {
 		db.exec('ALTER TABLE transaccion ADD COLUMN monto_pago REAL');
+	}
+
+	// Columna simbolo_cotizacion en activo: el símbolo exacto de data912 para
+	// auto-actualizar el precio (p.ej. 'DICP', 'MELID'). NULL = solo manual.
+	const acols = db.exec({ sql: 'PRAGMA table_info(activo)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!acols.some((c: any) => c.name === 'simbolo_cotizacion')) {
+		db.exec('ALTER TABLE activo ADD COLUMN simbolo_cotizacion TEXT');
 	}
 
 	// Columna modo_periodo en perfil (sueldo | calendario). Default 'sueldo'

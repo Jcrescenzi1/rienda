@@ -38,7 +38,7 @@
 		try { perfilListo = await hayPerfil(); }
 		catch { perfilListo = false; }
 		finally { chequeando = false; }
-		if (perfilListo) autoCotizaciones(); // en segundo plano, no bloquea la app
+		if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
 	}
 
 	// Actualiza dólar/inflación solo si la última cotización tiene más de 3 días.
@@ -51,6 +51,23 @@
 			if (ult && ult >= hace3dias) return; // está fresca
 			await actualizarCotizaciones();
 		} catch { /* sin conexión o API caída: no molestar */ }
+	}
+
+	// Actualiza precios de activos desde data912 al abrir, solo en horario de mercado
+	// (días hábiles, ~11–18 ART) y si pasó más de 1h del último refresh. Silencioso.
+	async function autoPrecios() {
+		try {
+			const ahora = new Date();
+			const dia = ahora.getDay();
+			if (dia === 0 || dia === 6) return;        // fin de semana
+			const hora = ahora.getHours();
+			if (hora < 11 || hora >= 18) return;       // fuera de horario de mercado
+			const r = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
+			const ult = r[0]?.valor;
+			if (ult && Date.now() - new Date(ult).getTime() < 60 * 60 * 1000) return; // refrescado hace <1h
+			const { actualizarPrecios } = await import('$lib/db/precios');
+			await actualizarPrecios();
+		} catch { /* sin conexión, API caída o sin símbolos configurados: no molestar */ }
 	}
 
 	async function onCrearPerfil() {

@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
+	import { actualizarPrecios } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
 
 	let cargando = $state(true);
@@ -21,6 +22,11 @@
 	let editLiq = $state<string | null>(null);
 	let editSaldo = $state('');
 
+	// Auto-actualización de precios
+	let actualizandoPrecios = $state(false);
+	let preciosMsg = $state('');
+	let preciosActualizadosEn = $state<string | null>(null);
+
 	// Guardar Cartera (foto)
 	let showFoto = $state(false);
 	let fFlujo = $state(''); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
@@ -31,6 +37,9 @@
 
 	async function cargarTodo() {
 		dolar = await dolarActual();
+
+		const mp = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
+		preciosActualizadosEn = mp[0]?.valor ?? null;
 
 		// FIFO compartido con Evolución (una sola implementación)
 		const { lotes, realPorMes, aMap } = await calcularFIFO();
@@ -149,9 +158,23 @@
 	async function guardarPrecio() {
 		const p = parseNum(editPrecio);
 		if (editId == null || !Number.isFinite(p) || p <= 0) { editId = null; return; }
-		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, hoyISO(), editId]);
+		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, new Date().toISOString(), editId]);
 		editId = null; editPrecio = ''; await cargarTodo();
 	}
+
+	// Actualiza precios desde data912 (botón manual). El auto al abrir vive en el layout.
+	async function onActualizarPrecios() {
+		actualizandoPrecios = true; preciosMsg = '';
+		try { preciosMsg = await actualizarPrecios(); await cargarTodo(); }
+		catch (e: any) { preciosMsg = 'Error: ' + (e?.message ?? e); }
+		actualizandoPrecios = false;
+	}
+
+	const fmtFechaHora = (iso: string | null): string => {
+		if (!iso) return 'nunca';
+		const d = new Date(iso);
+		return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+	};
 	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 2); }
 	async function guardarLiq() {
 		const s = parseNum(editSaldo);
@@ -240,6 +263,11 @@
 	</div>
 
 	<h2>Cartera actual</h2>
+	<div class="preciosbar">
+		<button class="precios" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
+		<a href="/config-tickers" class="evol">🎯 Tickers</a>
+		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · {preciosMsg}{/if}</span>
+	</div>
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Result. Real</th></tr></thead>
@@ -313,6 +341,12 @@
 	.nueva { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
 	.guardarcart { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 	.evol { display: inline-block; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
+	.precios { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+	.precios:hover { border-color: var(--accent); }
+	.precios:disabled { opacity: 0.6; cursor: default; }
+	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
+	.preciostamp strong { color: var(--text); }
 	.form { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input { padding: 6px; font-size: 0.95rem; }
