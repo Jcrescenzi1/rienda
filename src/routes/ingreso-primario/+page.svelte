@@ -159,7 +159,7 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Evolución Ingreso Primario</h1>
+	<h1>Poder adquisitivo</h1>
 	<Guia clave="ingreso-primario" texto="Tu ingreso primario regular contra la inflación y contra el dólar bolsa. Si la línea de ingreso va por encima de la inflación, le ganás; si en USD cae mientras el dólar sube, el golpe vino del tipo de cambio." />
 </div>
 

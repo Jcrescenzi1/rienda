@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
 	import {
 		cargarDolarSerie,
 		cargarIPC,
@@ -14,74 +13,62 @@
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
 
-	type Gasto = {
+	type Ingreso = {
 		fecha: string;
 		monto: number;
 		moneda: string;
-		categoria_id: number;
 		categoria: string;
-		detalle: string;
-		scid: number | null;
+		tipo: string | null;
+		detalle: string | null;
+		periodo: string;
 	};
 
 	let cargando = $state(true);
-	let gastos = $state<Gasto[]>([]);
-	let categorias = $state<{ id: number; nombre: string }[]>([]);
-	let subcategorias = $state<{ id: number; nombre: string }[]>([]);
+	let ingresos = $state<Ingreso[]>([]);
 	let dolarSerie = $state<DolarSerie>([]);
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
-	let asignar = $state<(fecha: string) => string | null>(() => null);
-	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+
+	const CATEGORIAS = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
+	// Valor interno (DB) -> etiqueta visible. La lógica de períodos depende del valor
+	// 'Sueldo', así que solo cambiamos lo que ve el usuario.
+	const TIPOS = [
+		{ v: 'Sueldo', l: 'Regular' },
+		{ v: 'Aciclico', l: 'Extraordinario' }
+	];
+	const tipoLabel = (t: string | null) => (t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : 'Sin tipo');
 
 	// Ventana de tiempo
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
 	// Filtros dimensionales
-	let filtroCategoria = $state<number | null>(null);
-	let filtroSubcat = $state<number | null>(null);
+	let filtroCategoria = $state('');
+	let filtroTipo = $state('');
 	let filtroTexto = $state('');
 
 	onMount(async () => {
 		await moneda.cargar();
-		modoPeriodo = await cargarModo();
-		const cortes = modoPeriodo === 'sueldo' ? await cargarCortes() : [];
-		asignar = crearAsignador(modoPeriodo, cortes);
 		dolarSerie = await cargarDolarSerie();
 		ipc = await cargarIPC();
-		categorias = (await query(
-			'SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'
-		)) as any[];
-		subcategorias = (await query(
-			'SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre'
-		)) as any[];
-		gastos = (await query(
-			`SELECT g.fecha, g.monto, g.moneda, g.categoria_id, c.nombre AS categoria, g.detalle,
-			        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
-			 FROM gasto g
-			 JOIN categoria c ON c.id = g.categoria_id
-			 LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-			 WHERE g.perfil_id = 1 ORDER BY g.fecha`
+		ingresos = (await query(
+			`SELECT fecha, monto, moneda, categoria, tipo, detalle, periodo
+			 FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL ORDER BY fecha`
 		)) as any[];
 		cargando = false;
 	});
 
-	// Gastos que pasan los filtros dimensionales (categoría / subcategoría / detalle).
+	// Ingresos que pasan los filtros dimensionales (categoría / tipo / detalle).
 	let filtrados = $derived.by(() => {
 		const txt = filtroTexto.trim().toLowerCase();
-		return gastos.filter((g) => {
-			if (filtroCategoria != null && g.categoria_id !== filtroCategoria) return false;
-			if (filtroSubcat != null && g.scid !== filtroSubcat) return false;
-			if (txt && !(g.detalle ?? '').toLowerCase().includes(txt)) return false;
+		return ingresos.filter((i) => {
+			if (filtroCategoria && i.categoria !== filtroCategoria) return false;
+			if (filtroTipo && (i.tipo ?? '') !== filtroTipo) return false;
+			if (txt && !(i.detalle ?? '').toLowerCase().includes(txt)) return false;
 			return true;
 		});
 	});
 
 	// Períodos disponibles y ventana de tiempo elegida (Histórico / Últimos 12 / Año).
-	let periodosTodos = $derived.by(() => {
-		const set = new Set<string>();
-		for (const g of filtrados) { const p = asignar(g.fecha); if (p) set.add(p); }
-		return [...set].sort();
-	});
+	let periodosTodos = $derived([...new Set(filtrados.map((i) => i.periodo))].sort());
 	let anios = $derived([...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort());
 	$effect(() => { if (!anio && anios.length) anio = anios[anios.length - 1]; });
 	let periodosVista = $derived.by(() => {
@@ -94,12 +81,11 @@
 	// Total por período (en el modo de moneda elegido), dentro de la ventana.
 	let serie = $derived.by(() => {
 		const acc: Record<string, number> = {};
-		for (const g of filtrados) {
-			const per = asignar(g.fecha);
-			if (!per || !ventana.has(per)) continue;
-			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+		for (const i of filtrados) {
+			if (!ventana.has(i.periodo)) continue;
+			const v = convertir(i.monto, i.moneda, i.fecha, moneda.modo, dolarSerie, ipc);
 			if (v == null) continue;
-			acc[per] = (acc[per] ?? 0) + v;
+			acc[i.periodo] = (acc[i.periodo] ?? 0) + v;
 		}
 		return periodosVista.map((p) => ({ periodo: p, total: acc[p] ?? 0 }));
 	});
@@ -148,16 +134,16 @@
 		return Math.round(v).toString();
 	}
 
-	// ===== Dona por categoría =====
+	// ===== Dona por tipo (Sueldo / Acíclico) =====
 	const PALETA = ['#5b9dff', '#e8975b', '#4ade80', '#f87171', '#c084fc', '#fbbf24', '#38bdf8', '#fb7185', '#a3e635', '#94a0b8'];
 	let dona = $derived.by(() => {
 		const acc: Record<string, number> = {};
-		for (const g of filtrados) {
-			const per = asignar(g.fecha);
-			if (!per || !ventana.has(per)) continue;
-			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+		for (const i of filtrados) {
+			if (!ventana.has(i.periodo)) continue;
+			const v = convertir(i.monto, i.moneda, i.fecha, moneda.modo, dolarSerie, ipc);
 			if (v == null || v <= 0) continue;
-			acc[g.categoria] = (acc[g.categoria] ?? 0) + v;
+			const key = tipoLabel(i.tipo);
+			acc[key] = (acc[key] ?? 0) + v;
 		}
 		const items = Object.entries(acc)
 			.map(([cat, val]) => ({ cat, val }))
@@ -167,8 +153,7 @@
 
 		const cx = 90, cy = 90, r = 78, rIn = 46;
 
-		// Una sola categoría (o una que es ~100%): el arco degenera en un punto y no
-		// dibuja. Lo renderizamos como anillo completo (un <circle> con borde grueso).
+		// Una sola porción (~100%): el arco degenera; lo dibujamos como anillo completo.
 		if (items.length === 1 || items[0].val / total >= 0.9999) {
 			const it = items[0];
 			return {
@@ -197,18 +182,18 @@
 
 	function limpiar() {
 		vista = 'historico';
-		filtroCategoria = null;
-		filtroSubcat = null;
+		filtroCategoria = '';
+		filtroTipo = '';
 		filtroTexto = '';
 	}
 </script>
 
 <div class="titulo-guia">
-	<h1>Evolución de Gastos</h1>
-	<Guia clave="gastos-evolucion" texto="Cómo evolucionó tu gasto período a período, con la composición por categoría. Filtrá por fecha, categoría o detalle para enfocar el análisis. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
+	<h1>Evolución de Ingresos</h1>
+	<Guia clave="ingresos-evolucion" texto="Cómo evolucionaron tus ingresos período a período, con la composición por tipo (Regular vs Extraordinario). Filtrá por fecha, categoría, tipo o detalle. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
 </div>
 
-<a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
+<a href="/ingresos" class="btn-volver">← Volver a Ingresos</a>
 
 {#if cargando}
 	<p>Cargando…</p>
@@ -224,14 +209,14 @@
 	<div class="filtros">
 		<label>Categoría
 			<select bind:value={filtroCategoria}>
-				<option value={null}>Todas</option>
-				{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
+				<option value="">Todas</option>
+				{#each CATEGORIAS as c}<option value={c}>{c}</option>{/each}
 			</select>
 		</label>
-		<label>Subcategoría
-			<select bind:value={filtroSubcat}>
-				<option value={null}>Todas</option>
-				{#each subcategorias as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
+		<label>Tipo
+			<select bind:value={filtroTipo}>
+				<option value="">Todos</option>
+				{#each TIPOS as t}<option value={t.v}>{t.l}</option>{/each}
 			</select>
 		</label>
 		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
@@ -248,7 +233,7 @@
 
 	<div class="leyenda">
 		<span class="aclara">
-			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
+			Por período de ingreso (el que asignaste a cada cobro).
 			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
 		</span>
 	</div>
@@ -274,7 +259,7 @@
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
 
-	<h2>Composición por categoría</h2>
+	<h2>Composición por tipo</h2>
 	{#if dona}
 		<div class="dona-wrap">
 			<svg viewBox="0 0 180 180" class="dona">
@@ -296,7 +281,7 @@
 			</ul>
 		</div>
 	{:else}
-		<p class="nota">No hay gastos en el rango filtrado.</p>
+		<p class="nota">No hay ingresos en el rango filtrado.</p>
 	{/if}
 {/if}
 

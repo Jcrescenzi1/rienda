@@ -131,12 +131,13 @@
 
 <div class="titulo-guia">
 	<h1>Ingresos</h1>
-	<Guia clave="ingresos" texto="Tus cobros y el balance de ingresos vs gastos por período, en la moneda que elijas. Para el análisis de tu ingreso primario contra la inflación y el dólar, entrá a Evolución Ingreso Primario." />
+	<Guia clave="ingresos" texto="Tus cobros y el balance de ingresos vs gastos por período, en la moneda que elijas. Para ver la evolución de tus ingresos por tipo entrá a Evolución de Ingresos, y para tu ingreso primario contra la inflación y el dólar, a Poder adquisitivo." />
 </div>
 
 <div class="accesos">
 	<a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
-	<a href="/ingreso-primario" class="btn-carga sec">📈 Evolución Ingreso Primario</a>
+	<a href="/ingresos-evolucion" class="btn-carga sec">📈 Evolución de Ingresos</a>
+	<a href="/ingreso-primario" class="btn-carga sec">📈 Poder adquisitivo</a>
 </div>
 
 {#if cargando}
