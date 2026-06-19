@@ -305,11 +305,16 @@
     <div class="resumen">
         <div class="card"><span>Ingresos principales</span><strong>{peso(ingresosPpalMes)}</strong></div>
         <!-- Semáforo: el presupuesto se compara contra los ingresos principales del período -->
-        <div class="card" class:ok={ingresosPpalMes > 0 && totales.presup <= ingresosPpalMes} class:bad={ingresosPpalMes > 0 && totales.presup > ingresosPpalMes}
-            title={ingresosPpalMes > 0 ? (totales.presup <= ingresosPpalMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período'}>
+        <div class="card" class:ok={totales.presup > 0 && ingresosPpalMes > 0 && totales.presup <= ingresosPpalMes} class:bad={ingresosPpalMes > 0 && totales.presup > ingresosPpalMes}
+            title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosPpalMes > 0 ? (totales.presup <= ingresosPpalMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
             <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
         </div>
-        <div class="card" class:ok={totales.real <= totales.presup} class:bad={totales.real > totales.presup}>
+        <!-- Si hay presupuesto, el gasto se compara contra él; si no, contra los
+             ingresos; si no hay ninguno de los dos, queda neutro (sin color). -->
+        <div class="card"
+            class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosPpalMes > 0 && totales.real <= ingresosPpalMes)}
+            class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosPpalMes > 0 && totales.real > ingresosPpalMes)}
+            title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosPpalMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
             <span>Gasto total</span><strong>{peso(totales.real)}</strong>
         </div>
     </div>
