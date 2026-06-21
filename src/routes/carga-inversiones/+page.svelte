@@ -224,7 +224,7 @@
 		<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
 		{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 	{/if}
-	<button class="guardar" onclick={guardar}>Guardar</button>
+	<button class="btn btn-success" onclick={guardar}>Guardar</button>
 	{#if fMsg}<p class="msg">{fMsg}</p>{/if}
 </div>
 
@@ -238,7 +238,7 @@
 			{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}
 		</select>
 	</label>
-	{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
+	{#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
 
@@ -281,16 +281,11 @@
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
-	.btn-volver:hover { text-decoration: underline; }
 	.form { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
 	.acciones { display: flex; gap: 5px; flex-wrap: wrap; }
-	.acciones button { flex: 1; min-width: 70px; padding: 7px 4px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.82rem; }
-	.acciones button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.nuevo { border: 1px dashed var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
-	.guardar { padding: 9px; background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
 
@@ -298,7 +293,6 @@
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { flex: 1 1 140px; min-width: 0; }
 	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
-	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 
 	/* Fichas (libro diario + movimientos de caja) */
@@ -311,7 +305,6 @@
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
 	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
 	.vacio { color: var(--text-dim); font-style: italic; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; }
 	.pos { color: var(--pos); }
 	.neg { color: var(--neg); }
 </style>

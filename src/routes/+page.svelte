@@ -79,24 +79,51 @@
             } else rango = '(sin sueldo cargado para este período)';
         }
 
-        // Traigo TODOS los gastos con subcategoria efectiva y los asigno a período en JS
-        const gastos = (await query(
-            `SELECT g.fecha, g.monto, g.categoria_id,
-                    COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
-             FROM gasto g
-             LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-             WHERE g.perfil_id = 1`
-        )) as any[];
+        // Todas las lecturas independientes en paralelo: una sola tanda al worker
+        // en vez de encadenarlas (más rápido, sobre todo en mobile).
+        const [gastos, hab, subs, cats, presup, cred, ing, dolarUltimo, resv] = (await Promise.all([
+            query(
+                `SELECT g.fecha, g.monto, g.categoria_id,
+                        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
+                 FROM gasto g
+                 LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
+                 WHERE g.perfil_id = 1`
+            ),
+            query(
+                `SELECT scid, categoria_id, COUNT(*) AS c FROM (
+                   SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
+                   FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
+                   WHERE g.perfil_id=1
+                 ) GROUP BY scid, categoria_id`
+            ),
+            query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1'),
+            query('SELECT id, nombre FROM categoria WHERE perfil_id=1'),
+            query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
+            query(
+                `WITH RECURSIVE serie(total, cuotas, n, inicio) AS (
+                    SELECT monto, cuotas, 0, mes_inicio_pago
+                    FROM gasto WHERE perfil_id=1 AND medio='credito'
+                    UNION ALL
+                    SELECT total, cuotas, n+1, inicio FROM serie WHERE n+1 < cuotas
+                )
+                SELECT COALESCE(SUM(total*1.0/cuotas),0) AS t
+                FROM serie WHERE strftime('%Y-%m', date(inicio, '+'||n||' months')) = ?`,
+                [n]
+            ),
+            query(
+                `SELECT i.monto, i.moneda,
+                        (SELECT c.valor FROM cotizacion_dolar c
+                         WHERE c.perfil_id=1 AND c.casa='bolsa' AND c.fecha <= i.fecha
+                         ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia
+                 FROM ingreso i
+                 WHERE i.perfil_id=1 AND i.periodo=?`,
+                [n]
+            ),
+            dolarActual(),
+            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [n])
+        ])) as any[];
 
         // categoría habitual por subcategoría
-        const hab = (await query(
-            `SELECT scid, categoria_id, COUNT(*) AS c FROM (
-               SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
-               FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
-               WHERE g.perfil_id=1
-             ) GROUP BY scid, categoria_id`
-        )) as any[];
-
         const homeCat: Record<string, number | null> = {};
         const bestC: Record<string, number> = {};
         for (const h of hab) {
@@ -104,13 +131,10 @@
             if (bestC[k] === undefined || h.c > bestC[k]) { bestC[k] = h.c; homeCat[k] = h.categoria_id; }
         }
 
-        const subs = (await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1')) as any[];
         const nombreSub: Record<number, string> = {};
         for (const s of subs) nombreSub[s.id] = s.nombre;
-        const cats = (await query('SELECT id, nombre FROM categoria WHERE perfil_id=1')) as any[];
         const nombreCat: Record<number, string> = {};
         for (const c of cats) nombreCat[c.id] = c.nombre;
-        const presup = (await query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'")) as any[];
         const presupMap: Record<number, number> = {};
         const autoMap: Record<number, boolean> = {};
         for (const p of presup) { presupMap[p.subcategoria_id] = p.monto; autoMap[p.subcategoria_id] = !!p.auto; }
@@ -155,18 +179,6 @@
             return { cat, rows, sub };
         });
 
-        // Cuotas de tarjetas que vencen en el mes visible (misma serie que Vista de crédito)
-        const cred = (await query(
-            `WITH RECURSIVE serie(total, cuotas, n, inicio) AS (
-                SELECT monto, cuotas, 0, mes_inicio_pago
-                FROM gasto WHERE perfil_id=1 AND medio='credito'
-                UNION ALL
-                SELECT total, cuotas, n+1, inicio FROM serie WHERE n+1 < cuotas
-            )
-            SELECT COALESCE(SUM(total*1.0/cuotas),0) AS t
-            FROM serie WHERE strftime('%Y-%m', date(inicio, '+'||n||' months')) = ?`,
-            [n]
-        )) as any[];
         creditoMes = cred[0]?.t ?? 0;
 
         // Bloque virtual "Crédito", intercalado alfabéticamente entre las categorías
@@ -180,29 +192,13 @@
         totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
         totales.presup += creditoMes; // la reserva de crédito solo engrosa el presupuesto
 
-        // Tarjeta "Ingresos principales" del período visible, en ARS.
-        // Los ingresos en USD se convierten al dólar del día de cobro (la última
-        // cotización conocida hasta esa fecha); si no hay ninguna, al más reciente.
-        const dolarUltimo = await dolarActual();
-        const ing = (await query(
-            `SELECT i.monto, i.moneda,
-                    (SELECT c.valor FROM cotizacion_dolar c
-                     WHERE c.perfil_id=1 AND c.casa='bolsa' AND c.fecha <= i.fecha
-                     ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia
-             FROM ingreso i
-             WHERE i.perfil_id=1 AND i.periodo=?`,
-            [n]
-        )) as any[];
+        // Ingresos totales del período (USD al dólar del día de cobro; fallback al último)
         ingresosMes = ing.reduce(
-            (s, r) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarUltimo) : r.monto),
+            (s: number, r: any) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarUltimo) : r.monto),
             0
         );
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
-        const resv = (await query(
-            'SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?',
-            [n]
-        )) as any[];
         reservaMes = resv[0]?.t ?? 0;
 
         cargando = false;
@@ -294,17 +290,17 @@
     <div class="aviso-backup">
         <span>{avisoBackup === -1 ? 'Nunca creaste una copia de seguridad de tus datos.' : `Hace ${avisoBackup} días que no creás una copia de seguridad.`} Tus datos viven solo en este dispositivo.</span>
         <span class="aviso-acc">
-            <button onclick={exportarAhora}>Crear copia ahora</button>
-            <button class="sec" onclick={backupMasTarde}>Más tarde</button>
+            <button class="btn btn-primary" onclick={exportarAhora}>Crear copia ahora</button>
+            <button class="btn btn-secondary" onclick={backupMasTarde}>Más tarde</button>
         </span>
     </div>
 {/if}
 
 <div class="accesos">
-    <a href="/gastos" class="btn-carga">➕ Cargar gasto</a>
-    <a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
-    <a href="/credito" class="btn-carga sec">Gastos en Crédito</a>
-    <a href="/suscripciones" class="btn-carga sec">Pagos fijos</a>
+    <a href="/gastos" class="btn btn-primary">➕ Cargar gasto</a>
+    <a href="/carga-ingresos" class="btn btn-primary">➕ Cargar ingreso</a>
+    <a href="/credito" class="btn btn-secondary">Gastos en Crédito</a>
+    <a href="/suscripciones" class="btn btn-secondary">Pagos fijos</a>
 </div>
 
 <label class="sel">{modo === 'calendario' ? 'Mes' : 'Período de sueldo'}: <input type="month" bind:value={periodo} onchange={cargar} /></label>
@@ -483,9 +479,7 @@
         font-size: 0.82rem; color: var(--warn); background: rgba(251, 191, 36, 0.08);
         border: 1px dashed var(--warn); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px;
     }
-    .aviso-acc { display: flex; gap: 6px; flex-shrink: 0; }
-    .aviso-acc button { background: var(--warn); color: #1f1500; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 0.8rem; font-weight: 600; }
-    .aviso-acc button.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); font-weight: 400; }
+    .aviso-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex-shrink: 0; }
     h2 { font-size: 1.05rem; margin-top: 20px; }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
@@ -510,7 +504,5 @@
     td.real.bad { color: var(--neg); }
     td.real.none { color: inherit; font-weight: 400; }
     tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
-    .accesos { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
-    .btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
-    .btn-carga.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+    .accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 14px; }
 </style>

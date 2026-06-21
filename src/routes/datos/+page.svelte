@@ -149,8 +149,8 @@
 		en la app y vuelve exactamente a ese punto.
 	</p>
 	<div class="acciones">
-		<button class="exp" onclick={onExportar}>⬇ Crear copia de seguridad</button>
-		<button class="imp" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
+		<button class="btn btn-primary" onclick={onExportar}>⬇ Crear copia de seguridad</button>
+		<button class="btn btn-secondary" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
 		<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
 	</div>
 
@@ -180,15 +180,15 @@
 			{#if !fechasBackup.tieneMeta}
 				<p class="aviso">Esta copia es de una versión anterior y no tiene información de fechas, así que no se puede comparar. Revisá bien antes de continuar.</p>
 			{:else if masViejo(meta.ultima_edicion_finanzas, fechasBackup.edicion_finanzas) || masViejo(meta.ultima_edicion_inversiones, fechasBackup.edicion_inversiones)}
-				<p class="aviso rojo">⚠️ La copia tiene datos más viejos que tu base actual (en rojo). Si restaurás, perdés lo que cargaste después de esa fecha en este dispositivo.</p>
+				<p class="aviso rojo">⚠ La copia tiene datos más viejos que tu base actual (en rojo). Si restaurás, perdés lo que cargaste después de esa fecha en este dispositivo.</p>
 			{:else}
 				<p class="aviso ok">La copia está al día o es más reciente que tu base actual.</p>
 			{/if}
 
 			<p class="recordatorio">Restaurar <strong>reemplaza TODOS</strong> los datos de este dispositivo por los de la copia.</p>
 			<div class="botones">
-				<button class="cancelar" onclick={cancelarImport}>Cancelar</button>
-				<button class="confirmar" onclick={confirmarImport}>Restaurar de todos modos</button>
+				<button class="btn btn-secondary" onclick={cancelarImport}>Cancelar</button>
+				<button class="btn btn-danger-solid" onclick={confirmarImport}>Restaurar de todos modos</button>
 			</div>
 		</div>
 	{/if}
@@ -210,7 +210,7 @@
 			</ol>
 		</div>
 		<div class="inst-card">
-			<strong>🖥️ Windows (Chrome / Edge)</strong>
+			<strong>🖥 Windows (Chrome / Edge)</strong>
 			<ol>
 				<li>Abrí Rienda en <strong>Chrome</strong> o <strong>Edge</strong>.</li>
 				<li>En la barra de direcciones, clic en el ícono de <strong>instalar</strong> (un monitor con ↓), o menú <strong>⋮ → "Instalar Rienda"</strong>.</li>
@@ -233,15 +233,15 @@
 	<div class="precarga">
 		<div class="prow destacada">
 			<span>Precargar</span>
-			<a class="plant" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
-			<button class="subir" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar datos (agrega)</button>
+			<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
+			<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar datos (agrega)</button>
 			<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
 		</div>
 		<div class="prow">
 			<span>Exportar</span>
-			<button class="expcsv" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ Gastos</button>
-			<button class="expcsv" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ Ingresos</button>
-			<button class="expcsv" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ Inversiones</button>
+			<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ Gastos</button>
+			<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ Ingresos</button>
+			<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ Inversiones</button>
 		</div>
 	</div>
 
@@ -263,13 +263,13 @@
 		<h2>Zona peligrosa</h2>
 		{#if !reseteando}
 			<p class="peligro-desc">Borra todos los datos de este dispositivo y devuelve la app al inicio. Es irreversible.</p>
-			<button class="btn-peligro" onclick={abrirReset}>Borrar todos mis datos</button>
+			<button class="btn btn-danger-outline" onclick={abrirReset}>Borrar todos mis datos</button>
 		{:else}
 			<p class="peligro-desc">
 				Vas a borrar <strong>todo</strong>: gastos, ingresos, inversiones, configuración y perfil.
 				No se puede deshacer. Si todavía no tenés una copia, exportala ahora.
 			</p>
-			<button class="exp exp-reset" onclick={onExportar}>⬇ Crear copia de seguridad primero</button>
+			<button class="btn btn-primary exp-reset" onclick={onExportar}>⬇ Crear copia de seguridad primero</button>
 			<label class="lbl-confirm" for="confirm-borrar">Escribí <strong>BORRAR</strong> para confirmar:</label>
 			<input
 				id="confirm-borrar"
@@ -283,8 +283,8 @@
 				spellcheck="false"
 			/>
 			<div class="botones">
-				<button class="cancelar" onclick={cerrarReset}>Cancelar</button>
-				<button class="confirmar" disabled={!puedeBorrar || borrando} onclick={confirmarReset}>
+				<button class="btn btn-secondary" onclick={cerrarReset}>Cancelar</button>
+				<button class="btn btn-danger-solid" disabled={!puedeBorrar || borrando} onclick={confirmarReset}>
 					{borrando ? 'Borrando…' : 'Borrar todo'}
 				</button>
 			</div>
@@ -296,10 +296,6 @@
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
 	.acciones { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.exp, .imp { border: 1px solid var(--border); border-radius: 6px; padding: 9px 16px; cursor: pointer; font-size: 0.9rem; font-weight: 600; }
-	.exp { background: var(--accent); color: #fff; border-color: var(--accent); }
-	.imp { background: var(--surface-2); color: var(--text); }
-	.imp:hover { border-color: var(--accent); }
 	.comparacion { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; }
 	table { border-collapse: collapse; width: 100%; max-width: 560px; font-size: 0.9rem; }
 	td, th { padding: 8px 10px; text-align: left; }
@@ -311,9 +307,6 @@
 	.aviso.ok { color: var(--pos); }
 	.recordatorio { font-size: 0.82rem; color: var(--text-dim); margin: 6px 0 12px; }
 	.botones { display: flex; gap: 10px; }
-	.cancelar { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px 16px; cursor: pointer; }
-	.confirmar { background: var(--neg); color: #fff; border: none; border-radius: 6px; padding: 9px 16px; cursor: pointer; font-weight: 600; }
-	.confirmar:disabled { opacity: 0.5; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; max-width: 560px; line-height: 1.5; }
 	.nota strong { color: var(--text); }
 
@@ -329,20 +322,11 @@
 	.prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 	.prow span { font-weight: 600; font-size: 0.9rem; width: 90px; }
 	.prow.destacada { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: rgba(91, 157, 255, 0.06); margin-bottom: 4px; }
-	.plant, .subir, .expcsv { border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 0.85rem; text-decoration: none; display: inline-block; }
-	.plant { background: var(--surface-2); color: var(--text); }
-	.plant:hover { border-color: var(--accent); }
-	.subir { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
-	.subir:disabled { opacity: 0.6; cursor: default; }
-	.expcsv { background: var(--surface-2); color: var(--text-dim); }
-	.expcsv:hover { border-color: var(--accent); color: var(--text); }
 
 	/* Zona peligrosa */
 	.peligro { border: 1px solid var(--neg); border-radius: 8px; padding: 14px; margin-top: 32px; max-width: 560px; box-sizing: border-box; }
 	.peligro h2 { margin-top: 0; color: var(--neg); }
 	.peligro-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; margin: 6px 0 12px; }
-	.btn-peligro { background: transparent; color: var(--neg); border: 1px solid var(--neg); border-radius: 6px; padding: 9px 16px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
-	.btn-peligro:hover { background: var(--neg); color: #fff; }
 	.exp-reset { display: inline-block; margin: 0 0 14px; }
 	.lbl-confirm { display: block; font-size: 0.85rem; margin: 4px 0 6px; }
 	.input-confirm { width: 100%; max-width: 240px; box-sizing: border-box; padding: 9px 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); letter-spacing: 0.05em; margin-bottom: 14px; }

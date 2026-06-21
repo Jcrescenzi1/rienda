@@ -87,6 +87,17 @@
 
     onMount(cargarBase);
 
+    // Mes de pago por defecto = mes SIGUIENTE al de la fecha del gasto. Solo en
+    // alta (al editar respeta lo cargado). Se reajusta si cambiás la fecha.
+    function mesSiguiente(f: string): string {
+        const [y, m] = f.slice(0, 7).split('-').map(Number);
+        const d = new Date(y, m, 1);
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    }
+    $effect(() => {
+        if (editandoId === null) mesInicio = mesSiguiente(fecha);
+    });
+
     // Reactividad: al cambiar cualquier filtro, se recarga la lista con un
     // debounce corto (clave para el buscador de texto: 1 consulta al dejar de
     // tipear, no 1 por tecla). También corre al montar: hace la carga inicial.
@@ -133,7 +144,7 @@
         medio = 'debito'; tarjetaId = null; cuotas = 1;
         // La fecha NO se resetea: si cargaste o editaste un gasto, la próxima
         // carga arranca con esa misma fecha. Al abrir la página, arranca en hoy.
-        mesInicio = mesActual();
+        mesInicio = mesSiguiente(fecha);
         moneda = 'ARS'; categoriaId = null;
     }
 
@@ -295,7 +306,7 @@
         {/if}
     {/if}
 
-    <button class="guardar" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
+    <button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
     {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
 
@@ -312,7 +323,7 @@
     <label>Buscar
         <input type="search" bind:value={filtroTexto} placeholder="Ej: super, farmacia…" />
     </label>
-    {#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
+    {#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
 
@@ -341,15 +352,11 @@
     label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
     input, select { padding: 7px; font-size: 1rem; }
     .medio { display: flex; gap: 8px; }
-    .medio button { flex: 1; padding: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; }
-    .medio button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .guardar { padding: 10px; font-size: 1rem; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; margin-top: 4px; }
     .nuevo { border: 1px dashed var(--warn); background: rgba(251, 191, 36, 0.08); padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }
     .aviso-tarjeta { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); border: 1px dashed var(--warn); padding: 10px; border-radius: 6px; margin: 0; line-height: 1.4; }
     .hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
     .msg { font-weight: 600; color: var(--text); }
     .editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-    .link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 
     /* Filtros de la lista */
     .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
@@ -357,7 +364,6 @@
     /* El input ocupa el 100% de su columna: los campos de fecha tienen ancho
        mínimo propio y sin esto desbordan y se superponen en el celular. */
     .filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
-    .filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
     .rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 
     /* Fichas de últimos gastos */
@@ -371,9 +377,4 @@
     .ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
     .ficha-acc { white-space: nowrap; flex-shrink: 0; }
     .vacio { color: var(--text-dim); font-style: italic; }
-    .lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
-    .lapiz:hover { opacity: 1; }
-    .del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
-    .btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
-    .btn-volver:hover { text-decoration: underline; }
 </style>

@@ -188,7 +188,7 @@
 	<p class="hint">Sugerido según tu fecha de cobro. Podés cambiarlo.</p>
 
 	<label>Detalle (opcional)<input bind:value={detalle} placeholder="Ej: Aguinaldo, Cochera, Dólares…" /></label>
-	<button class="guardar" onclick={guardar}>{editandoId ? 'Actualizar ingreso' : 'Guardar ingreso'}</button>
+	<button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar ingreso' : 'Guardar ingreso'}</button>
 	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
 
@@ -204,7 +204,7 @@
 			<option value="Otros">Otros</option>
 		</select>
 	</label>
-	{#if hayFiltro}<button class="limpiar" onclick={limpiarFiltros}>Limpiar</button>{/if}
+	{#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
 
@@ -235,11 +235,8 @@
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
-	button { padding: 6px 12px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	.guardar { padding: 9px; margin-top: 4px; }
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-	.link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 
 	/* Filtros de la lista */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
@@ -247,7 +244,6 @@
 	/* El input ocupa el 100% de su columna: los campos de fecha tienen ancho
 	   mínimo propio y sin esto desbordan y se superponen en el celular. */
 	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
-	.filtros .limpiar { padding: 7px 12px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
 
 	/* Fichas de ingresos cargados */
@@ -262,10 +258,5 @@
 	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
 	.vacio { color: var(--text-dim); font-style: italic; }
-	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
-	.lapiz:hover { opacity: 1; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
 	.msg { font-weight: 600; color: var(--text); }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
-	.btn-volver:hover { text-decoration: underline; }
 </style>

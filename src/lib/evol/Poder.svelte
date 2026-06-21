@@ -28,12 +28,14 @@
 	}
 
 	onMount(async () => {
-		const s = (await query("SELECT periodo, SUM(monto) AS m, MIN(fecha) AS fecha FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND categoria='Ingreso Principal' AND periodo IS NOT NULL GROUP BY periodo")) as any[];
+		const [s, inf, dolDia] = (await Promise.all([
+			query("SELECT periodo, SUM(monto) AS m, MIN(fecha) AS fecha FROM ingreso WHERE perfil_id=1 AND tipo='Sueldo' AND categoria='Ingreso Principal' AND periodo IS NOT NULL GROUP BY periodo"),
+			query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1'),
+			query("SELECT fecha, valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha")
+		])) as any[];
 		for (const x of s) { sueldos[x.periodo] = x.m; sueldoFecha[x.periodo] = x.fecha; }
-		const inf = (await query('SELECT periodo, valor FROM inflacion WHERE perfil_id=1')) as any[];
 		for (const x of inf) infl[x.periodo] = x.valor;
-		const dolDia = (await query("SELECT fecha, valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha")) as any[];
-		dolarSerie = dolDia.map((d) => ({ fecha: d.fecha, valor: d.valor }));
+		dolarSerie = dolDia.map((d: any) => ({ fecha: d.fecha, valor: d.valor }));
 		periodosTodos = Object.keys(sueldos).sort();
 		anios = [...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort();
 		anio = anios[anios.length - 1] ?? '';
@@ -237,15 +239,13 @@
 
 <style>
 	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
-	.card span { font-size: 0.72rem; color: var(--text-dim); }
-	.card strong { font-size: 1.05rem; }
+	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
+	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
 	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.vistas select { padding: 5px 8px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }

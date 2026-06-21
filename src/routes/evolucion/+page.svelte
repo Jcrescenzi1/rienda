@@ -120,7 +120,7 @@
 	<Guia clave="evolucion" texto="La historia de tu cartera, foto a foto. El TWR mide el rendimiento de tu estrategia sin que aportes o retiros lo distorsionen. Sacá una foto por mes para que la curva diga algo." />
 </div>
 
-<button class="foto" onclick={prepararFoto} disabled={calculando}>{calculando ? 'Calculando…' : '📸 Guardar foto'}</button>
+<button class="btn btn-success" onclick={prepararFoto} disabled={calculando}>{calculando ? 'Calculando…' : '📸 Guardar foto'}</button>
 
 {#if showFoto}
 	<div class="fotoform">
@@ -129,7 +129,7 @@
 		<p class="calc">Valor calculado: <strong>{usd(fValorUSD)}</strong> ({ars(fValorARS)} · dólar {fDolar})</p>
 		<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
 		<p class="hint">Calculado de tus Ingresos/Retiros. Editalo si hace falta.</p>
-		<div class="botones"><button class="guardar" onclick={guardarFoto}>Guardar foto</button><button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button></div>
+		<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar foto</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
 		{#if fMsg}<p class="msg">{fMsg}</p>{/if}
 	</div>
 {/if}
@@ -189,28 +189,20 @@
 :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
-	.foto { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 0.95rem; margin-bottom: 10px; }
-	.foto:disabled { opacity: 0.6; }
 	.fotoform { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; max-width: 420px; }
 	.calc { margin: 0; font-size: 0.9rem; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
 	.botones { display: flex; gap: 8px; }
-	.guardar { padding: 8px 14px; background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
-	.cancelar { padding: 8px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 	.msg { font-weight: 600; margin: 0; }
 	.periodos { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
-	.periodos button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.periodos button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }
 	.card.big strong { font-size: 1.5rem; }
 	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
 	.toggle { display: flex; gap: 6px; margin: 8px 0; }
-	.toggle button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-	.toggle button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

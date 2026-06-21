@@ -94,8 +94,8 @@
 </p>
 
 <div class="acciones">
-	<button class="probar" onclick={probar} disabled={probando}>{probando ? 'Probando…' : '🔎 Probar precios'}</button>
-	<button class="actualizar" onclick={actualizarAhora} disabled={actualizando}>{actualizando ? 'Actualizando…' : '⟳ Actualizar precios ahora'}</button>
+	<button class="btn btn-secondary" onclick={probar} disabled={probando}>{probando ? 'Probando…' : '🔎 Probar precios'}</button>
+	<button class="btn btn-primary" onclick={actualizarAhora} disabled={actualizando}>{actualizando ? 'Actualizando…' : '⟳ Actualizar precios ahora'}</button>
 </div>
 
 {#if cargando}
@@ -150,17 +150,11 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 0 0 12px; }
 	.msg { font-weight: 600; color: var(--pos); margin: 6px 0; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin: 10px 0; line-height: 1.5; }
 	.nota strong { color: var(--text); }
 	.nota code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
 	.acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-	.probar, .actualizar { border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; font-size: 0.85rem; border: 1px solid var(--border); }
-	.probar { background: var(--surface-2); color: var(--text); }
-	.probar:hover { border-color: var(--accent); }
-	.actualizar { background: var(--accent); color: #fff; border-color: var(--accent); }
-	.probar:disabled, .actualizar:disabled { opacity: 0.6; cursor: default; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.88rem; margin-bottom: 8px; }
 	th, td { padding: 6px 8px; text-align: left; }
 	td.num, th.num { text-align: right; }

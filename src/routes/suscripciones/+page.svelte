@@ -269,11 +269,11 @@
 						<span class="draft">
 							<input type="text" inputmode="decimal" use:soloNum bind:value={dMonto} class="mini" />
 							<input type="date" bind:value={dFecha} class="mini" />
-							<button onclick={() => confirmarDisparo(s)}>Confirmar</button>
-							<button class="sec" onclick={() => (disparando = null)}>Cancelar</button>
+							<button class="btn btn-primary" onclick={() => confirmarDisparo(s)}>Confirmar</button>
+							<button class="btn btn-secondary" onclick={() => (disparando = null)}>Cancelar</button>
 						</span>
 					{:else}
-						<button onclick={() => iniciarDisparo(s)}>Disparar</button>
+						<button class="btn btn-primary" onclick={() => iniciarDisparo(s)}>Disparar</button>
 					{/if}
 				</div>
 			</div>
@@ -298,8 +298,8 @@
 	<label>Tarjeta (opcional, solo referencia)
 		<select bind:value={fTarjetaId}><option value={null}>— ninguna —</option>{#each tarjetas as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
 	<div class="botones">
-		<button class="guardar" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
-		{#if editando}<button class="sec" onclick={resetForm}>Cancelar</button>{/if}
+		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
+		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
 	</div>
 	<p class="form-nota">La subcategoria define en que linea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
 </div>
@@ -319,13 +319,9 @@
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
 	input.mini { width: 110px; padding: 3px 5px; display: inline-block; }
-	button { padding: 5px 10px; background: var(--accent); color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-	button.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-	button.guardar { padding: 9px; }
 	.botones { display: flex; gap: 8px; margin-top: 4px; }
 	.form-nota { font-size: 0.76rem; color: var(--text-dim); margin: 2px 0 0; line-height: 1.35; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-	.link { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 	.draft { display: inline-flex; gap: 5px; align-items: center; flex-wrap: wrap; }
 	.ok { color: var(--pos); font-weight: 600; font-size: 0.85rem; }
 	.dim { color: var(--text-dim); font-size: 0.85rem; }
@@ -345,9 +341,4 @@
 	.chip { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 0.76rem; }
 	.chip.sin { color: var(--text-dim); border-style: dashed; }
 	.ficha-estado { margin-top: 8px; }
-	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; padding: 2px 4px; }
-	.lapiz:hover { opacity: 1; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); padding: 3px 8px; margin-left: 2px; }
-	.btn-volver { display: block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 8px; }
-	.btn-volver:hover { text-decoration: underline; }
 </style>

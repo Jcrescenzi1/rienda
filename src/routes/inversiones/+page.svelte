@@ -213,16 +213,16 @@
 
 <div class="titulo-guia">
 	<h1>Inversiones</h1>
-	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏️. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Cartera' saca la foto que alimenta Evolución." />
+	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Cartera' saca la foto que alimenta Evolución." />
 </div>
 
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
 	<div class="topbar">
-		<a href="/carga-inversiones" class="nueva">➕ Cargar movimiento</a>
-		<button class="guardarcart" onclick={prepararFoto}>📸 Guardar Cartera</button>
-		<a href="/evolucion" class="evol">📈 Evolución de Cartera</a>
+		<a href="/carga-inversiones" class="btn btn-primary">➕ Cargar movimiento</a>
+		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Cartera</button>
+		<a href="/evolucion" class="btn btn-secondary">📈 Evolución de Cartera</a>
 	</div>
 	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
 
@@ -232,7 +232,7 @@
 			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
 			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {fotoDolar})</p>
 			<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
-			<div class="botones"><button class="guardar" onclick={guardarFoto}>Guardar</button><button class="cancelar" onclick={() => (showFoto = false)}>Cancelar</button></div>
+			<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
 		</div>
 	{/if}
 
@@ -257,7 +257,7 @@
 				{:else}
 					<div class="liqval">
 						<strong>{money(liqSaldos[mon] ?? 0, mon)}</strong>
-						<button class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏️</button>
+						<button class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏</button>
 					</div>
 				{/if}
 			</div>
@@ -266,8 +266,8 @@
 
 	<h2>Cartera actual</h2>
 	<div class="preciosbar">
-		<button class="precios" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
-		<a href="/config-tickers" class="evol">🎯 Tickers</a>
+		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
+		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · {preciosMsg}{/if}</span>
 	</div>
 	<table>
@@ -282,7 +282,7 @@
 						{#if editId === h.id}
 							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
 							<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
-						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏️</button>{/if}
+						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏</button>{/if}
 					</td>
 					<td class="num hl {h.gananciaUSD >= 0 ? 'pos' : 'neg'}">{usd(h.gananciaUSD)}</td>
 				</tr>
@@ -340,12 +340,6 @@
 	h2 { font-size: 1.05rem; margin-top: 20px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
 	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
-	.nueva { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
-	.guardarcart { background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.evol { display: inline-block; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); text-decoration: none; border-radius: 6px; padding: 6px 12px; font-weight: 600; font-size: 0.9rem; }
-	.precios { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-weight: 600; font-size: 0.9rem; }
-	.precios:hover { border-color: var(--accent); }
-	.precios:disabled { opacity: 0.6; cursor: default; }
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
 	.preciostamp strong { color: var(--text); }
@@ -356,21 +350,19 @@
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input { padding: 6px; font-size: 0.95rem; }
 	.botones { display: flex; gap: 8px; }
-	.guardar { padding: 9px; background: var(--pos); color: #06281a; font-weight: 600; border: none; border-radius: 6px; cursor: pointer; }
-	.cancelar { padding: 9px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
-	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 175px; }
-	.card span { font-size: 0.72rem; color: var(--text-dim); }
-	.card strong { font-size: 1.05rem; }
+	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
+	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 
 	/* Franja de liquidez */
-	.liquidez { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
-	.liqcard { border: 1px solid var(--border); background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; gap: 2px; min-width: 175px; }
-	.liqcard span { font-size: 0.72rem; color: var(--text-dim); }
+	.liquidez { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 0 0 12px; }
+	.liqcard { border: 1px solid var(--border); background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.liqcard span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
 	.liqval { display: flex; align-items: center; gap: 6px; }
-	.liqval strong { font-size: 1.05rem; }
+	.liqval strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.liqedit { display: flex; align-items: center; gap: 4px; }
 	.liqedit input { width: 110px; padding: 3px 5px; font-size: 0.95rem; }
 
@@ -385,11 +377,7 @@
 	table.mix tr.grupo td { border-top: 2px solid var(--border) !important; }
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
-	.lapiz { background: none; border: none; cursor: pointer; font-size: 0.8rem; opacity: 0.5; }
-	.lapiz:hover { opacity: 1; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
-	.okp { background: var(--pos); color: #06281a; border: none; border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
-	.cancp { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 1px 6px; margin-left: 2px; }
 	.bars { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; max-width: 640px; }
 	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
 	.lbl { width: 70px; color: var(--text-dim); }

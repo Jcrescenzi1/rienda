@@ -49,20 +49,20 @@
 	let filtroTexto = $state('');
 
 	onMount(async () => {
-		await moneda.cargar();
-		modoPeriodo = await cargarModo();
-		const cortes = modoPeriodo === 'sueldo' ? await cargarCortes() : [];
-		asignar = crearAsignador(modoPeriodo, cortes);
-		dolarSerie = await cargarDolarSerie();
-		ipc = await cargarIPC();
-		categorias = (await query(
-			'SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'
-		)) as any[];
-		subcategorias = (await query(
-			'SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre'
-		)) as any[];
-		tarjetasCredito = (await query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre")) as any[];
-		await cargarGastos();
+		// Lecturas independientes en paralelo (una tanda al worker, no encadenadas).
+		const [, cortes, ds, ic, cat, sub, tc] = await Promise.all([
+			moneda.cargar(),
+			(async () => { modoPeriodo = await cargarModo(); return modoPeriodo === 'sueldo' ? await cargarCortes() : []; })(),
+			cargarDolarSerie(),
+			cargarIPC(),
+			query('SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'),
+			query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre'),
+			query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre"),
+			cargarGastos()
+		]);
+		asignar = crearAsignador(modoPeriodo, cortes as any);
+		dolarSerie = ds; ipc = ic;
+		categorias = cat as any[]; subcategorias = sub as any[]; tarjetasCredito = tc as any[];
 		cargando = false;
 	});
 
@@ -300,7 +300,7 @@
 			</select>
 		</label>
 		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
-		<button class="limpiar" onclick={limpiar}>Limpiar</button>
+		<button class="btn btn-secondary" onclick={limpiar}>Limpiar</button>
 	</div>
 
 	<ToggleMoneda />
@@ -385,8 +385,8 @@
 						{/if}
 					</div>
 					<div class="reg-acc">
-						<button class="ok" onclick={guardarEd}>Guardar</button>
-						<button class="sec" onclick={cancelar}>Cancelar</button>
+						<button class="btn btn-primary" onclick={guardarEd}>Guardar</button>
+						<button class="btn btn-secondary" onclick={cancelar}>Cancelar</button>
 					</div>
 				</div>
 			{:else}
@@ -412,17 +412,14 @@
 <style>
 	h2 { font-size: 1.05rem; margin-top: 24px; }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.vistas select { padding: 5px 8px; }
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
 	.filtros input, .filtros select { padding: 6px 8px; font-size: 0.85rem; }
-	.limpiar { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; cursor: pointer; font-size: 0.8rem; height: 33px; }
-	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; flex: 1; min-width: 140px; }
-	.card span { font-size: 0.72rem; color: var(--text-dim); }
-	.card strong { font-size: 1.05rem; }
+	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
+	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.leyenda { font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.aclara { color: var(--text-dim); }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
@@ -455,11 +452,6 @@
 	.reg-grid label.ancho { flex: 1 1 100%; }
 	.reg-grid input, .reg-grid select { padding: 5px; font-size: 0.9rem; }
 	.reg-acc { display: flex; gap: 8px; margin-top: 8px; }
-	.reg-acc .ok { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.reg-acc .sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
-	.lapiz:hover { opacity: 1; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
 	.msg-ed { font-weight: 600; color: var(--text); }
 	.vacio { color: var(--text-dim); font-style: italic; }
 </style>

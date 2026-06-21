@@ -202,15 +202,13 @@
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
-	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
-	.card span { font-size: 0.72rem; color: var(--text-dim); }
-	.card strong { font-size: 1.05rem; }
+	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
+	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
 	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
-	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.vistas select { padding: 5px 8px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }
@@ -222,8 +220,6 @@
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
-	.tabs button { padding: 7px 14px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.85rem; }
-	.tabs button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.sw-ing { background: var(--pos); }
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }

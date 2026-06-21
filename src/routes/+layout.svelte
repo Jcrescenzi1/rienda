@@ -268,6 +268,77 @@
 	}
 	:global(input::placeholder) { color: var(--text-dim); }
 
+	/* ===== Sistema de botones (jerarquia unica para toda la app) =====
+	   Uso: class="btn btn-primary" | btn-secondary | btn-ghost | btn-danger | btn-success
+	   Tamanos: (normal) | btn-sm | btn-icon. Segmentado: <div class="seg"> con .is-active */
+	:global(.btn) {
+		font: inherit; font-weight: 600; line-height: 1;
+		display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+		padding: 8px 14px; font-size: 0.9rem;
+		border: 1px solid transparent; border-radius: 6px;
+		cursor: pointer; text-decoration: none; white-space: nowrap;
+		transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+	}
+	:global(.btn:disabled), :global(.btn.is-disabled) { opacity: 0.55; cursor: default; pointer-events: none; }
+	:global(.btn-primary) { background: var(--accent); color: #fff; }
+	:global(.btn-primary:hover) { background: var(--accent-hover); }
+	:global(.btn-secondary) { background: var(--surface-2); color: var(--text); border-color: var(--border); }
+	:global(.btn-secondary:hover) { border-color: var(--accent); }
+	:global(.btn-ghost) { background: none; color: var(--accent); border-color: transparent; padding-left: 4px; padding-right: 4px; }
+	:global(.btn-ghost:hover) { text-decoration: underline; }
+	:global(.btn-danger) { background: rgba(248, 113, 113, 0.15); color: var(--neg); }
+	:global(.btn-danger:hover) { background: rgba(248, 113, 113, 0.28); }
+	:global(.btn-success) { background: var(--pos); color: #06281a; }
+	:global(.btn-success:hover) { filter: brightness(1.06); }
+	:global(.btn-danger-solid) { background: var(--neg); color: #fff; }
+	:global(.btn-danger-solid:hover) { filter: brightness(1.06); }
+	:global(.btn-danger-outline) { background: transparent; color: var(--neg); border-color: var(--neg); }
+	:global(.btn-danger-outline:hover) { background: var(--neg); color: #fff; }
+	/* Icono cuadrado, mismo alto que un .btn de texto */
+	:global(.btn-icon) { padding: 0; width: 32px; height: 32px; font-size: 0.95rem; }
+	/* Fila de botones de ancho parejo: columnas iguales, una sola fuente/alto */
+	:global(.btn-row) { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+
+	/* Botones inline / ícono estandarizados (✏ ✕ ✓ 🗑), una sola definición */
+	:global(.lapiz) { background: none; border: none; cursor: pointer; opacity: 0.6; font-size: 0.9rem; padding: 2px 5px; line-height: 1; color: var(--text); }
+	:global(.lapiz:hover) { opacity: 1; }
+	:global(.okp) { background: var(--pos); color: #06281a; border: none; border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; margin-left: 2px; }
+	:global(.cancp) { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; margin-left: 2px; }
+	:global(.del) { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; }
+	:global(.del:hover) { background: rgba(248, 113, 113, 0.28); }
+	:global(.del.off) { opacity: 0.35; cursor: not-allowed; }
+
+	/* Toggles estandarizados (mismas clases que ya usan las pantallas) */
+	:global(.vistas button), :global(.tabs button), :global(.periodos button), :global(.toggle button) {
+		font: inherit; font-weight: 600; font-size: 0.82rem; line-height: 1;
+		padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
+		background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap;
+	}
+	:global(.vistas button.activo), :global(.tabs button.activo), :global(.periodos button.activo), :global(.toggle button.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
+	:global(.modo-btns button), :global(.medio button), :global(.acciones button) {
+		font: inherit; font-weight: 600; font-size: 0.85rem; line-height: 1;
+		flex: 1; padding: 8px 6px; border: 1px solid var(--border); border-radius: 6px;
+		background: var(--surface-2); color: var(--text); cursor: pointer;
+	}
+	:global(.modo-btns button.activo), :global(.medio button.activo), :global(.acciones button.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+	/* Links de navegacion / texto */
+	:global(.btn-volver) { display: inline-block; background: none; border: none; cursor: pointer; padding: 0; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
+	:global(.btn-volver:hover) { text-decoration: underline; }
+	:global(.link) { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
+
+	/* Control segmentado: pestanas / vistas / modo / medio */
+	:global(.seg) { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+	:global(.seg > button), :global(.seg > a) {
+		font: inherit; font-weight: 600; font-size: 0.82rem; line-height: 1;
+		padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
+		background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap; text-decoration: none;
+	}
+	:global(.seg > button.is-active), :global(.seg > a.is-active),
+	:global(.seg > button.activo), :global(.seg > a.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
+	:global(.seg-block) { display: flex; }
+	:global(.seg-block > button) { flex: 1; border-radius: 6px; padding: 8px 6px; }
+
 	:global(.pos) { color: var(--pos) !important; }
 	:global(.neg) { color: var(--neg) !important; }
 	:global(td.ok) { color: var(--pos) !important; }

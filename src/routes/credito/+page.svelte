@@ -140,5 +140,4 @@
 
     .nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; line-height: 1.4; }
     .nota strong { color: var(--text); }
-    .btn-volver { display: block; margin-bottom: 15px; }
 </style>

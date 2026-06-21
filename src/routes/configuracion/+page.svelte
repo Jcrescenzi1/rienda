@@ -237,7 +237,7 @@
 					<input bind:value={ntNombre} placeholder="Nombre de la tarjeta" onkeydown={(e) => e.key === 'Enter' && crearTar()} />
 					<select bind:value={ntProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
 					<select bind:value={ntTipo}><option value="credito">Crédito</option><option value="debito">Débito</option></select>
-					<button class="add" onclick={crearTar}>+ Agregar</button>
+					<button class="btn btn-primary" onclick={crearTar}>+ Agregar</button>
 				</div>
 				<table>
 					<thead><tr><th>Nombre</th><th>Proveedor</th><th>Tipo</th><th class="num">Usos</th><th></th></tr></thead>
@@ -280,7 +280,7 @@
 			<div class="acc-body">
 				<div class="alta">
 					<input bind:value={nuevaCat} placeholder="Nueva categoría" onkeydown={(e) => e.key === 'Enter' && crearCat()} />
-					<button class="add" onclick={crearCat}>+ Agregar</button>
+					<button class="btn btn-primary" onclick={crearCat}>+ Agregar</button>
 				</div>
 				<table>
 					<thead><tr><th>Nombre</th><th class="num">Gastos</th><th></th></tr></thead>
@@ -318,7 +318,7 @@
 			<div class="acc-body">
 				<div class="alta">
 					<input bind:value={nuevaSub} placeholder="Nueva subcategoría" onkeydown={(e) => e.key === 'Enter' && crearSub()} />
-					<button class="add" onclick={crearSub}>+ Agregar</button>
+					<button class="btn btn-primary" onclick={crearSub}>+ Agregar</button>
 				</div>
 				<table>
 					<thead><tr><th>Nombre</th><th class="num">Usos</th><th></th></tr></thead>
@@ -403,7 +403,6 @@
 	.alta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 	.alta input { padding: 7px; flex: 1; min-width: 160px; }
 	.alta select { padding: 7px; }
-	.add { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 7px 14px; cursor: pointer; font-weight: 600; white-space: nowrap; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-bottom: 8px; }
 	th, td { padding: 6px 8px; text-align: left; }
 	td.num, th.num { text-align: right; }
@@ -411,17 +410,8 @@
 	td select { padding: 4px 6px; }
 	.edit { width: 60%; padding: 3px 6px; }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
-	.lapiz { background: none; border: none; cursor: pointer; font-size: 0.85rem; opacity: 0.6; }
-	.lapiz:hover { opacity: 1; }
-	.okp { background: var(--pos); color: #06281a; border: none; border-radius: 4px; cursor: pointer; padding: 1px 7px; margin-left: 2px; }
-	.cancp { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 1px 7px; margin-left: 2px; }
-	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; font-size: 0.85rem; }
-	.del:hover { background: rgba(248, 113, 113, 0.28); }
-	.del.off { opacity: 0.35; cursor: not-allowed; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.modo-btns { display: flex; gap: 8px; margin: 8px 0; }
-	.modo-btns button { flex: 1; max-width: 220px; padding: 8px 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
-	.modo-btns button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.modo-exp { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 4px; line-height: 1.35; }
 
 	.acc { border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; overflow: hidden; background: var(--surface); }
