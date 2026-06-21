@@ -158,11 +158,11 @@
 	<h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
 	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
 </div>
-<a href="/ingresos" class="btn-volver">← Volver a Ingresos</a>
+<a href="/" class="btn-volver">← Volver a Presupuesto</a>
 
 <h2>{editandoId ? 'Editar ingreso' : 'Cargar ingreso'}</h2>
 <div class="form">
-	{#if editandoId}<p class="editando">✏️ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
+	{#if editandoId}<p class="editando">✏ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} onchange={() => (periodoTocado = true)} /></label>
 	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={moneda}><option>ARS</option><option>USD</option></select></label>
@@ -220,7 +220,7 @@
 					{fmtFecha(i.fecha)} · {catLabel(i.categoria)} · {tipoLabel(i.tipo)}{#if periodoDifiere(i)} · período {i.periodo}{/if}
 				</span>
 				<span class="ficha-acc">
-					<button class="lapiz" onclick={() => editar(i)} title="Editar">✏️</button>
+					<button class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
 					<button class="del" onclick={() => borrar(i.id)} title="Borrar">✕</button>
 				</span>
 			</div>

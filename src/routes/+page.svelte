@@ -15,8 +15,16 @@
     // visible. Solo suma al total de PRESUPUESTO (los gastos en crédito ya
     // fueron contados como gasto real el día que se cargaron).
     let creditoMes = $state(0);
-    // Ingresos principales del período visible (USD convertido al dólar actual)
-    let ingresosPpalMes = $state(0);
+    // Ingresos TOTALES del período visible (primario + secundarios + otros),
+    // en ARS (los USD se convierten al dólar del día de cobro).
+    let ingresosMes = $state(0);
+    // Reserva de crédito apartada para el mes visible (plata separada para pagar
+    // tarjetas). Netea el "Ingreso disponible para gasto" del Ítem 1.
+    let reservaMes = $state(0);
+    // Ingreso disponible = ingresos − (vencimiento de tarjeta del mes − reserva).
+    // Concientización de caja: el gasto se cuenta una sola vez (devengado), esto
+    // solo ajusta cuánto te queda libre después de separar para las tarjetas.
+    let ingresoDisponible = $derived(ingresosMes - (creditoMes - reservaMes));
     // Aviso de backup: null = no mostrar; -1 = nunca exportó; >0 = días sin exportar
     let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
@@ -102,9 +110,10 @@
         const cats = (await query('SELECT id, nombre FROM categoria WHERE perfil_id=1')) as any[];
         const nombreCat: Record<number, string> = {};
         for (const c of cats) nombreCat[c.id] = c.nombre;
-        const presup = (await query("SELECT subcategoria_id, monto FROM presupuesto WHERE perfil_id=1 AND periodo='default'")) as any[];
+        const presup = (await query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'")) as any[];
         const presupMap: Record<number, number> = {};
-        for (const p of presup) presupMap[p.subcategoria_id] = p.monto;
+        const autoMap: Record<number, boolean> = {};
+        for (const p of presup) { presupMap[p.subcategoria_id] = p.monto; autoMap[p.subcategoria_id] = !!p.auto; }
 
         // Acumular por subcategoría, solo para los 3 períodos objetivo
         const key = (id: any) => (id == null ? 'null' : String(id));
@@ -133,6 +142,7 @@
                 nombre: a.scid == null ? '(sin subcategoría)' : nombreSub[a.scid] ?? '?',
                 catNombre: catId != null ? nombreCat[catId] ?? '(sin categoría)' : '(sin categoría)',
                 n2: a.n2, n1: a.n1, presup: presupVal, real: a.real,
+                autoPresup: a.scid != null ? (autoMap[a.scid] ?? false) : false,
                 estado: desvio(a.real, presupVal)
             };
         });
@@ -180,13 +190,20 @@
                      WHERE c.perfil_id=1 AND c.casa='bolsa' AND c.fecha <= i.fecha
                      ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia
              FROM ingreso i
-             WHERE i.perfil_id=1 AND i.categoria='Ingreso Principal' AND i.periodo=?`,
+             WHERE i.perfil_id=1 AND i.periodo=?`,
             [n]
         )) as any[];
-        ingresosPpalMes = ing.reduce(
+        ingresosMes = ing.reduce(
             (s, r) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarUltimo) : r.monto),
             0
         );
+
+        // Reserva de crédito apartada para el mes visible (vacío = 0)
+        const resv = (await query(
+            'SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?',
+            [n]
+        )) as any[];
+        reservaMes = resv[0]?.t ?? 0;
 
         cargando = false;
     }
@@ -256,7 +273,7 @@
 </script>
 
 <div class="titulo-guia">
-    <h1>Gastos y Presupuesto</h1>
+    <h1>Presupuesto</h1>
     <Guia clave="home" texto="Tu día a día: cuánto gastaste este período, en qué, y cómo venís contra tu presupuesto. Las dos primeras columnas muestran los meses anteriores para comparar. Tocá el casillero de Presupuesto de cualquier subcategoría para fijar un monto." />
 </div>
 
@@ -285,9 +302,9 @@
 
 <div class="accesos">
     <a href="/gastos" class="btn-carga">➕ Cargar gasto</a>
-    <a href="/gastos-evolucion" class="btn-carga sec">📈 Evolución de Gastos</a>
+    <a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
     <a href="/credito" class="btn-carga sec">Gastos en Crédito</a>
-    <a href="/suscripciones" class="btn-carga sec">Ver Suscripciones</a>
+    <a href="/suscripciones" class="btn-carga sec">Pagos fijos</a>
 </div>
 
 <label class="sel">{modo === 'calendario' ? 'Mes' : 'Período de sueldo'}: <input type="month" bind:value={periodo} onchange={cargar} /></label>
@@ -303,20 +320,41 @@
     <p>Cargando…</p>
 {:else}
     <div class="resumen">
-        <div class="card"><span>Ingresos principales</span><strong>{peso(ingresosPpalMes)}</strong></div>
+        <div class="card"><span>Ingresos totales</span><strong>{peso(ingresosMes)}</strong></div>
         <!-- Semáforo: el presupuesto se compara contra los ingresos principales del período -->
-        <div class="card" class:ok={totales.presup > 0 && ingresosPpalMes > 0 && totales.presup <= ingresosPpalMes} class:bad={ingresosPpalMes > 0 && totales.presup > ingresosPpalMes}
-            title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosPpalMes > 0 ? (totales.presup <= ingresosPpalMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
+        <div class="card" class:ok={totales.presup > 0 && ingresosMes > 0 && totales.presup <= ingresosMes} class:bad={ingresosMes > 0 && totales.presup > ingresosMes}
+            title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosMes > 0 ? (totales.presup <= ingresosMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
             <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
         </div>
         <!-- Si hay presupuesto, el gasto se compara contra él; si no, contra los
              ingresos; si no hay ninguno de los dos, queda neutro (sin color). -->
         <div class="card"
-            class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosPpalMes > 0 && totales.real <= ingresosPpalMes)}
-            class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosPpalMes > 0 && totales.real > ingresosPpalMes)}
-            title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosPpalMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
+            class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosMes > 0 && totales.real <= ingresosMes)}
+            class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosMes > 0 && totales.real > ingresosMes)}
+            title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
             <span>Gasto total</span><strong>{peso(totales.real)}</strong>
         </div>
+    </div>
+
+    <!-- ===== Ingreso disponible (Ítem 1) ===== -->
+    <div class="disponible">
+        <div class="disp-head">
+            <strong>Ingreso disponible para gasto</strong>
+        </div>
+        <table class="disp-tabla">
+            <tbody>
+                <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
+                <tr><td>− Gasto de tarjeta del mes (vencimiento)</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
+                <tr><td>+ Reserva del mes</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
+                <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
+            </tbody>
+        </table>
+        <table class="disp-tabla disp-gasto">
+            <tbody>
+                <tr class="disp-total"><td><strong>Gasto total del mes</strong></td><td class="num"><strong>{peso(totales.real)}</strong></td></tr>
+            </tbody>
+        </table>
+        <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Gastos en Crédito</a> (todavía sin cargar = $0).</p>
     </div>
 
     <h2>Consolidado por categoría</h2>
@@ -369,10 +407,14 @@
                         <td class="num">{peso(f.n2)}</td>
                         <td class="num">{peso(f.n1)}</td>
                         <td class="num">
-                            {#if f.scid != null}
+                            {#if f.scid == null}
+                                —
+                            {:else if f.autoPresup}
+                                <span class="auto-presup" title="Definido por tus pagos fijos. Se edita en Pagos fijos, no acá.">{formatNum(f.presup, 0)} <em>fijo</em></span>
+                            {:else}
                                 <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup, 0) : ''} placeholder="—"
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
-                            {:else}—{/if}
+                            {/if}
                         </td>
                         <td class="num real {claseEstado(f.estado)}" title={f.estado}>{peso(f.real)}</td>
                     </tr>
@@ -399,12 +441,28 @@
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 
     /* Tarjetas de resumen del período */
-    .resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 14px; }
-    .card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; flex: 1; min-width: 140px; }
-    .card span { font-size: 0.72rem; color: var(--text-dim); }
-    .card strong { font-size: 1.1rem; }
+    .resumen { display: flex; gap: 6px; margin: 0 0 14px; }
+    .card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
+    .card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+    .card strong { font-size: clamp(0.82rem, 3.4vw, 1.1rem); white-space: nowrap; }
     .card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
     .card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
+
+    /* Panel Ingreso disponible (borrador, pendiente de revisión) */
+    .disponible {
+        border: 1px solid var(--border); border-left: 3px solid var(--accent);
+        background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px;
+    }
+    .disp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .disp-head strong { font-size: 0.98rem; }
+    .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .disp-tabla td { border: none !important; padding: 4px 2px; }
+    .disp-tabla td.num { text-align: right; white-space: nowrap; }
+    .disp-tabla .disp-total td { border-top: 1px solid var(--border) !important; padding-top: 7px; }
+    .disp-tabla .disp-total td strong { color: var(--accent); font-size: 1.05rem; }
+    .disp-gasto { margin-top: 6px; }
+    .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
+    .disp-nota a { color: var(--accent); }
 
     /* Checklist de primeros pasos */
     .pasos {
@@ -444,6 +502,8 @@
     td.ind { padding-left: 20px; }
     tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); white-space: normal; overflow: visible; }
     input.presup { width: 100%; max-width: 90px; text-align: right; padding: 3px 4px; box-sizing: border-box; }
+    .auto-presup { font-size: 0.82rem; color: var(--text-dim); white-space: nowrap; }
+    .auto-presup em { font-style: normal; font-size: 0.65rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
     td.real { font-weight: 600; }
     td.real.ok { color: var(--pos); }
     td.real.warn { color: var(--warn); }

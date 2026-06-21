@@ -79,6 +79,7 @@ CREATE TABLE IF NOT EXISTS suscripcion (
   id              INTEGER PRIMARY KEY,
   perfil_id       INTEGER NOT NULL REFERENCES perfil(id),
   nombre          TEXT NOT NULL,
+  detalle         TEXT,
   monto           REAL NOT NULL CHECK (monto > 0),
   moneda          TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
   categoria_id    INTEGER NOT NULL REFERENCES categoria(id),
@@ -152,7 +153,19 @@ CREATE TABLE IF NOT EXISTS presupuesto (
   subcategoria_id INTEGER NOT NULL REFERENCES subcategoria(id),
   periodo         TEXT NOT NULL DEFAULT 'default',
   monto           REAL NOT NULL CHECK (monto >= 0),
+  auto            INTEGER NOT NULL DEFAULT 0,
   UNIQUE (perfil_id, subcategoria_id, periodo)
+);
+
+-- Reserva de crédito: plata que el usuario aparta en un mes para pagar el
+-- vencimiento de tarjetas de ESE mes. Netea el "Ingreso disponible para gasto".
+-- Una fila por (perfil, período). Vacío = 0.
+CREATE TABLE IF NOT EXISTS reserva_credito (
+  id              INTEGER PRIMARY KEY,
+  perfil_id       INTEGER NOT NULL REFERENCES perfil(id),
+  periodo         TEXT NOT NULL,
+  monto           REAL NOT NULL DEFAULT 0 CHECK (monto >= 0),
+  UNIQUE (perfil_id, periodo)
 );
 
 CREATE TABLE IF NOT EXISTS snapshot (

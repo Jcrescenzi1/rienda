@@ -195,8 +195,8 @@
 
 			<div class="grupo">
 				<span class="gtit">Finanzas</span>
-				<button class="item" class:activo={actual === '/'} onclick={() => irA('/')}>Gastos y Presupuesto</button>
-				<button class="item" class:activo={actual === '/ingresos'} onclick={() => irA('/ingresos')}>Ingresos</button>
+				<button class="item" class:activo={actual === '/'} onclick={() => irA('/')}>Presupuesto</button>
+				<button class="item" class:activo={actual === '/evolucion-finanzas'} onclick={() => irA('/evolucion-finanzas')}>Evolución</button>
 				<button class="item" class:activo={actual === '/configuracion'} onclick={() => irA('/configuracion')}>Configuración</button>
 			</div>
 

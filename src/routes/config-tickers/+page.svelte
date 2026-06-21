@@ -42,6 +42,15 @@
 		catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
 	}
 
+	// Cambiar el tipo NO afecta el histórico (transacciones, PPC/PPV, FIFO); solo la
+	// etiqueta y el escalado del auto-update (÷100 en Bono/ON). Si se pasa a FCI, el
+	// activo desaparece de esta tabla (los FCI no cotizan en data912).
+	const TIPOS_ACTIVO = ['Bono', 'ON', 'FCI', 'Accion', 'CEDEAR', 'Indice'];
+	async function guardarTipo(a: any) {
+		try { await query('UPDATE activo SET tipo=? WHERE id=? AND perfil_id=1', [a.tipo, a.id]); await cargar(); flash('Tipo actualizado ✅'); }
+		catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
+	}
+
 	async function probar() {
 		probando = true; preview = null;
 		try { preview = await previsualizarPrecios(); flash('Precios traídos de data912 ✅'); }
@@ -101,7 +110,11 @@
 						<input class="nom" bind:value={a.nombre} onchange={() => guardarNombre(a)} onkeydown={(e) => e.key === 'Enter' && guardarNombre(a)} />
 						<span class="tk">{a.ticker}</span>
 					</td>
-					<td>{a.tipo}</td>
+					<td>
+						<select class="mon" bind:value={a.tipo} onchange={() => guardarTipo(a)}>
+							{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}
+						</select>
+					</td>
 					<td>
 						<select class="mon" bind:value={a.moneda} onchange={() => guardarMoneda(a)}>
 							<option value="ARS">ARS</option>

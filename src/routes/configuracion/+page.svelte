@@ -8,10 +8,21 @@
 	let categorias = $state<any[]>([]);
 	let tarjetas = $state<any[]>([]);
 	let subcategorias = $state<any[]>([]);
-	let detalles = $state<any[]>([]);   // diccionario: detalle -> subcategoria
+	// Diccionario enriquecido: cada detalle con su subcat y las categorías
+	// (de gastos reales) bajo las que aparece. Orden alfabético.
+	let dicc = $state<any[]>([]);
 
 	// Modo de período
 	let modo = $state<ModoPeriodo>('sueldo');
+
+	// Acordeón: una sección abierta a la vez. Arranca con la primera.
+	let abierta = $state<string>('tarjetas');
+	function toggle(s: string) { abierta = abierta === s ? '' : s; }
+
+	// Filtros del diccionario
+	let filtroCat = $state('');   // '' = Todas (incluye huérfanos)
+	let buscador = $state('');
+	let editDetalle = $state<string | null>(null);
 
 	// Alta de categoría
 	let nuevaCat = $state('');
@@ -55,7 +66,6 @@
 			FROM tarjeta t WHERE t.perfil_id=1 ORDER BY t.nombre
 		`)) as any[];
 
-		// Subcategorías con conteo de uso (en diccionario + como override en gastos)
 		subcategorias = (await query(`
 			SELECT sc.id, sc.nombre,
 				(SELECT COUNT(*) FROM mapeo_detalle m WHERE m.subcategoria_id = sc.id)
@@ -63,22 +73,46 @@
 			FROM subcategoria sc WHERE sc.perfil_id=1 ORDER BY sc.nombre
 		`)) as any[];
 
-		// Diccionario: todos los detalles que aparecen en gastos O ya están mapeados,
-		// con la subcategoría a la que apuntan hoy (si la hay).
-		detalles = (await query(`
-			SELECT d.detalle, m.subcategoria_id
-			FROM (
-				SELECT DISTINCT detalle FROM gasto WHERE perfil_id=1 AND detalle IS NOT NULL AND detalle <> ''
-				UNION
-				SELECT detalle FROM mapeo_detalle WHERE perfil_id=1
-			) d
-			LEFT JOIN mapeo_detalle m ON m.perfil_id=1 AND m.detalle = d.detalle
-			ORDER BY d.detalle COLLATE NOCASE
-		`)) as any[];
+		// Diccionario: se FILTRA por categoría usando los gastos reales (no se
+		// agrupa: un detalle puede aparecer bajo varias categorías). Los detalles
+		// mapeados sin gasto asociado (huérfanos) entran solo en "Todas".
+		const dg = (await query(
+			"SELECT DISTINCT detalle, categoria_id FROM gasto WHERE perfil_id=1 AND detalle IS NOT NULL AND detalle <> ''"
+		)) as any[];
+		const mp = (await query('SELECT detalle, subcategoria_id FROM mapeo_detalle WHERE perfil_id=1')) as any[];
+		const by = new Map<string, { detalle: string; subcategoria_id: number | null; cats: Set<number> }>();
+		for (const r of dg) {
+			if (!by.has(r.detalle)) by.set(r.detalle, { detalle: r.detalle, subcategoria_id: null, cats: new Set() });
+			by.get(r.detalle)!.cats.add(r.categoria_id);
+		}
+		for (const r of mp) {
+			if (!by.has(r.detalle)) by.set(r.detalle, { detalle: r.detalle, subcategoria_id: null, cats: new Set() });
+			by.get(r.detalle)!.subcategoria_id = r.subcategoria_id;
+		}
+		dicc = [...by.values()]
+			.map((d) => ({ detalle: d.detalle, subcategoria_id: d.subcategoria_id, cats: [...d.cats] }))
+			.sort((a, b) => a.detalle.localeCompare(b.detalle, 'es', { sensitivity: 'base' }));
 
 		cargando = false;
 	}
 	onMount(cargar);
+
+	// Vista filtrada del diccionario (categoría + buscador).
+	let diccFiltrado = $derived.by(() => {
+		const q = buscador.trim().toLowerCase();
+		let arr = dicc;
+		if (filtroCat !== '') {
+			const cid = Number(filtroCat);
+			arr = arr.filter((d) => d.cats.includes(cid));
+		}
+		if (q) arr = arr.filter((d) => d.detalle.toLowerCase().includes(q));
+		return arr;
+	});
+
+	function subNombre(id: number | null): string {
+		if (id == null) return '— sin subcategoría —';
+		return subcategorias.find((s) => s.id === id)?.nombre ?? '?';
+	}
 
 	function flash(t: string) { msg = t; setTimeout(() => (msg = ''), 3000); }
 	function esUnique(e: any) { return e?.message?.includes('UNIQUE'); }
@@ -128,9 +162,7 @@
 		if(s.usos>0){ alert(`No se puede eliminar "${s.nombre}": está usada en ${s.usos} regla(s)/gasto(s).`); return; }
 		if(!confirm(`¿Eliminar la subcategoría "${s.nombre}"?`)) return;
 		try {
-			// El presupuesto de una subcategoría eliminada no tiene sentido: se borra junto.
 			await query('DELETE FROM presupuesto WHERE subcategoria_id=? AND perfil_id=1',[s.id]);
-			// Si era la subcategoría macro de los disparos de suscripciones, vuelve a "automática".
 			await query("DELETE FROM meta WHERE clave='susc_subcat_id' AND valor=?",[String(s.id)]);
 			await query('DELETE FROM subcategoria WHERE id=? AND perfil_id=1',[s.id]);
 			await cargar(); flash('Subcategoría eliminada ✅');
@@ -162,10 +194,8 @@
 		const scid = valor === '' ? null : Number(valor);
 		try {
 			if (scid == null) {
-				// "Sin asignar": borrar la regla si existía
 				await query('DELETE FROM mapeo_detalle WHERE perfil_id=1 AND detalle=?', [detalle]);
 			} else {
-				// Upsert: si existe la regla la actualizo, si no la creo
 				const ex = (await query('SELECT id FROM mapeo_detalle WHERE perfil_id=1 AND detalle=?', [detalle])) as any[];
 				if (ex.length) {
 					await query('UPDATE mapeo_detalle SET subcategoria_id=? WHERE perfil_id=1 AND detalle=?', [scid, detalle]);
@@ -189,7 +219,6 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<!-- ===== MODO DE PERÍODO ===== -->
 	<h2>Modo de período</h2>
 	<p class="sub">Define cómo se agrupan tus gastos e ingresos. Cambiarlo recalcula todo (no borra datos).</p>
 	<div class="modo-btns">
@@ -198,129 +227,172 @@
 	</div>
 	<p class="modo-exp">{explicacionModo[modo]}</p>
 
-	<!-- ===== TARJETAS ===== -->
-	<h2>Tarjetas</h2>
-	<div class="alta">
-		<input bind:value={ntNombre} placeholder="Nombre de la tarjeta" onkeydown={(e) => e.key === 'Enter' && crearTar()} />
-		<select bind:value={ntProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
-		<select bind:value={ntTipo}><option value="credito">Crédito</option><option value="debito">Débito</option></select>
-		<button class="add" onclick={crearTar}>+ Agregar</button>
-	</div>
-	<table>
-		<thead><tr><th>Nombre</th><th>Proveedor</th><th>Tipo</th><th class="num">Usos</th><th></th></tr></thead>
-		<tbody>
-			{#each tarjetas as t (t.id)}
-				<tr>
-					<td>
-						{#if editTarId === t.id}
-							<input class="edit" bind:value={editTarNombre} onkeydown={(e) => e.key === 'Enter' && guardarTar()} />
-							<button class="okp" onclick={guardarTar}>✓</button>
-							<button class="cancp" onclick={() => (editTarId = null)}>✕</button>
-						{:else}{t.nombre}{/if}
-					</td>
-					<td>
-						{#if editTarId === t.id}
-							<select class="edit" bind:value={editTarProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
-						{:else}{t.proveedor ?? '—'}{/if}
-					</td>
-					<td>{t.tipo === 'credito' ? 'Crédito' : 'Débito'}</td>
-					<td class="num">{t.usos}</td>
-					<td class="acciones">
-						{#if editTarId !== t.id}
-							<button class="lapiz" onclick={() => abrirEditTar(t)} title="Renombrar">✏️</button>
-							<button class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>🗑</button>
-						{/if}
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
+	<section class="acc">
+		<button class="acc-h" onclick={() => toggle('tarjetas')}>
+			<span class="flecha">{abierta === 'tarjetas' ? '▾' : '▸'}</span> Edición de Tarjetas
+		</button>
+		{#if abierta === 'tarjetas'}
+			<div class="acc-body">
+				<div class="alta">
+					<input bind:value={ntNombre} placeholder="Nombre de la tarjeta" onkeydown={(e) => e.key === 'Enter' && crearTar()} />
+					<select bind:value={ntProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
+					<select bind:value={ntTipo}><option value="credito">Crédito</option><option value="debito">Débito</option></select>
+					<button class="add" onclick={crearTar}>+ Agregar</button>
+				</div>
+				<table>
+					<thead><tr><th>Nombre</th><th>Proveedor</th><th>Tipo</th><th class="num">Usos</th><th></th></tr></thead>
+					<tbody>
+						{#each tarjetas as t (t.id)}
+							<tr>
+								<td>
+									{#if editTarId === t.id}
+										<input class="edit" bind:value={editTarNombre} onkeydown={(e) => e.key === 'Enter' && guardarTar()} />
+										<button class="okp" onclick={guardarTar}>✓</button>
+										<button class="cancp" onclick={() => (editTarId = null)}>✕</button>
+									{:else}{t.nombre}{/if}
+								</td>
+								<td>
+									{#if editTarId === t.id}
+										<select class="edit" bind:value={editTarProveedor}><option>Visa</option><option>Mastercard</option><option>Amex</option></select>
+									{:else}{t.proveedor ?? '—'}{/if}
+								</td>
+								<td>{t.tipo === 'credito' ? 'Crédito' : 'Débito'}</td>
+								<td class="num">{t.usos}</td>
+								<td class="acciones">
+									{#if editTarId !== t.id}
+										<button class="lapiz" onclick={() => abrirEditTar(t)} title="Renombrar">✏</button>
+										<button class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>🗑</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 
-	<!-- ===== CATEGORÍAS ===== -->
-	<h2>Categorías</h2>
-	<div class="alta">
-		<input bind:value={nuevaCat} placeholder="Nueva categoría" onkeydown={(e) => e.key === 'Enter' && crearCat()} />
-		<button class="add" onclick={crearCat}>+ Agregar</button>
-	</div>
-	<table>
-		<thead><tr><th>Nombre</th><th class="num">Gastos</th><th></th></tr></thead>
-		<tbody>
-			{#each categorias as c (c.id)}
-				<tr>
-					<td>
-						{#if editCatId === c.id}
-							<input class="edit" bind:value={editCatNombre} onkeydown={(e) => e.key === 'Enter' && guardarCat()} />
-							<button class="okp" onclick={guardarCat}>✓</button>
-							<button class="cancp" onclick={() => (editCatId = null)}>✕</button>
-						{:else}{c.nombre}{/if}
-					</td>
-					<td class="num">{c.usos}</td>
-					<td class="acciones">
-						{#if editCatId !== c.id}
-							<button class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏️</button>
-							<button class="del" class:off={c.usos > 0} onclick={() => borrarCat(c)} title={c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
-						{/if}
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
-	<p class="nota">Renombrar no afecta los gastos ya cargados. Solo se puede eliminar lo que no tenga registros asociados.</p>
-	<!-- ===== SUBCATEGORÍAS ===== -->
-	<h2>Subcategorías</h2>
-	<div class="alta">
-		<input bind:value={nuevaSub} placeholder="Nueva subcategoría" onkeydown={(e) => e.key === 'Enter' && crearSub()} />
-		<button class="add" onclick={crearSub}>+ Agregar</button>
-	</div>
-	<table>
-		<thead><tr><th>Nombre</th><th class="num">Usos</th><th></th></tr></thead>
-		<tbody>
-			{#each subcategorias as s (s.id)}
-				<tr>
-					<td>
-						{#if editSubId === s.id}
-							<input class="edit" bind:value={editSubNombre} onkeydown={(e) => e.key === 'Enter' && guardarSub()} />
-							<button class="okp" onclick={guardarSub}>✓</button>
-							<button class="cancp" onclick={() => (editSubId = null)}>✕</button>
-						{:else}{s.nombre}{/if}
-					</td>
-					<td class="num">{s.usos}</td>
-					<td class="acciones">
-						{#if editSubId !== s.id}
-							<button class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏️</button>
-							<button class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>🗑</button>
-						{/if}
-					</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
+	<section class="acc">
+		<button class="acc-h" onclick={() => toggle('categorias')}>
+			<span class="flecha">{abierta === 'categorias' ? '▾' : '▸'}</span> Edición de Categorías
+		</button>
+		{#if abierta === 'categorias'}
+			<div class="acc-body">
+				<div class="alta">
+					<input bind:value={nuevaCat} placeholder="Nueva categoría" onkeydown={(e) => e.key === 'Enter' && crearCat()} />
+					<button class="add" onclick={crearCat}>+ Agregar</button>
+				</div>
+				<table>
+					<thead><tr><th>Nombre</th><th class="num">Gastos</th><th></th></tr></thead>
+					<tbody>
+						{#each categorias as c (c.id)}
+							<tr>
+								<td>
+									{#if editCatId === c.id}
+										<input class="edit" bind:value={editCatNombre} onkeydown={(e) => e.key === 'Enter' && guardarCat()} />
+										<button class="okp" onclick={guardarCat}>✓</button>
+										<button class="cancp" onclick={() => (editCatId = null)}>✕</button>
+									{:else}{c.nombre}{/if}
+								</td>
+								<td class="num">{c.usos}</td>
+								<td class="acciones">
+									{#if editCatId !== c.id}
+										<button class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏</button>
+										<button class="del" class:off={c.usos > 0} onclick={() => borrarCat(c)} title={c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				<p class="nota">Renombrar no afecta los gastos ya cargados. Solo se puede eliminar lo que no tenga registros asociados.</p>
+			</div>
+		{/if}
+	</section>
 
-	<!-- ===== DICCIONARIO DE DETALLES ===== -->
-	<h2>Diccionario de detalles</h2>
-	<p class="sub">Cada detalle que usás en tus gastos, y la subcategoría a la que va. Cambiá el selector para reclasificar todo el historial con ese detalle.</p>
-	<table>
-		<thead><tr><th>Detalle</th><th>Subcategoría</th></tr></thead>
-		<tbody>
-			{#each detalles as d (d.detalle)}
-				<tr>
-					<td>{d.detalle}</td>
-					<td>
-						<select value={d.subcategoria_id ?? ''} onchange={(e) => asignarDetalle(d.detalle, e.currentTarget.value)}>
-							<option value="">— Sin asignar —</option>
-							{#each subcategorias as s (s.id)}
-								<option value={String(s.id)}>{s.nombre}</option>
-							{/each}
-						</select>
-					</td>
-				</tr>
-			{:else}
-				<tr><td colspan="2" class="vacio">Todavía no hay detalles cargados.</td></tr>
-			{/each}
-		</tbody>
-	</table>
+	<section class="acc">
+		<button class="acc-h" onclick={() => toggle('subcategorias')}>
+			<span class="flecha">{abierta === 'subcategorias' ? '▾' : '▸'}</span> Edición de Subcategorías
+		</button>
+		{#if abierta === 'subcategorias'}
+			<div class="acc-body">
+				<div class="alta">
+					<input bind:value={nuevaSub} placeholder="Nueva subcategoría" onkeydown={(e) => e.key === 'Enter' && crearSub()} />
+					<button class="add" onclick={crearSub}>+ Agregar</button>
+				</div>
+				<table>
+					<thead><tr><th>Nombre</th><th class="num">Usos</th><th></th></tr></thead>
+					<tbody>
+						{#each subcategorias as s (s.id)}
+							<tr>
+								<td>
+									{#if editSubId === s.id}
+										<input class="edit" bind:value={editSubNombre} onkeydown={(e) => e.key === 'Enter' && guardarSub()} />
+										<button class="okp" onclick={guardarSub}>✓</button>
+										<button class="cancp" onclick={() => (editSubId = null)}>✕</button>
+									{:else}{s.nombre}{/if}
+								</td>
+								<td class="num">{s.usos}</td>
+								<td class="acciones">
+									{#if editSubId !== s.id}
+										<button class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏</button>
+										<button class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>🗑</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				<p class="nota">Podés crear o renombrar subcategorías aunque todavía no tengan detalle ni gasto.</p>
+			</div>
+		{/if}
+	</section>
 
-	
+	<section class="acc">
+		<button class="acc-h" onclick={() => toggle('diccionario')}>
+			<span class="flecha">{abierta === 'diccionario' ? '▾' : '▸'}</span> Diccionario de detalles
+		</button>
+		{#if abierta === 'diccionario'}
+			<div class="acc-body">
+				<p class="sub">Cada detalle y la subcategoría a la que va. Tocá el chip para reclasificar (cambia todo el historial con ese detalle). El filtro por categoría usa tus gastos reales.</p>
+				<div class="dicc-controls">
+					<select bind:value={filtroCat}>
+						<option value="">Todas (+ huérfanos)</option>
+						{#each categorias as c (c.id)}<option value={String(c.id)}>{c.nombre}</option>{/each}
+					</select>
+					<input placeholder="Buscar detalle…" bind:value={buscador} />
+				</div>
+				<table>
+					<thead><tr><th>Detalle</th><th>Subcategoría</th></tr></thead>
+					<tbody>
+						{#each diccFiltrado as d (d.detalle)}
+							<tr>
+								<td>{d.detalle}</td>
+								<td>
+									{#if editDetalle === d.detalle}
+										<select class="edit" value={d.subcategoria_id ?? ''}
+											onchange={(e) => { asignarDetalle(d.detalle, e.currentTarget.value); editDetalle = null; }}>
+											<option value="">— Sin asignar —</option>
+											{#each subcategorias as s (s.id)}
+												<option value={String(s.id)}>{s.nombre}</option>
+											{/each}
+										</select>
+										<button class="cancp" onclick={() => (editDetalle = null)}>✕</button>
+									{:else}
+										<button class="chip" class:sin={d.subcategoria_id == null} onclick={() => (editDetalle = d.detalle)}>
+											{subNombre(d.subcategoria_id)}
+										</button>
+									{/if}
+								</td>
+							</tr>
+						{:else}
+							<tr><td colspan="2" class="vacio">No hay detalles para este filtro.</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</section>
 {/if}
 
 <style>
@@ -351,4 +423,25 @@
 	.modo-btns button { flex: 1; max-width: 220px; padding: 8px 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 6px; cursor: pointer; font-size: 0.85rem; }
 	.modo-btns button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.modo-exp { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 4px; line-height: 1.35; }
+
+	.acc { border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; overflow: hidden; background: var(--surface); }
+	.acc-h {
+		width: 100%; text-align: left; background: var(--surface-2); color: var(--text);
+		border: none; padding: 11px 14px; font-size: 0.98rem; font-weight: 600; cursor: pointer;
+		display: flex; align-items: center; gap: 8px;
+	}
+	.acc-h:hover { background: var(--surface); }
+	.flecha { color: var(--text-dim); font-size: 0.85rem; width: 14px; display: inline-block; }
+	.acc-body { padding: 12px 14px; }
+	.acc-body table { margin-bottom: 0; }
+
+	.dicc-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
+	.dicc-controls select { padding: 7px; }
+	.dicc-controls input { padding: 7px; flex: 1; min-width: 160px; }
+	.chip {
+		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+		border-radius: 999px; padding: 3px 12px; font-size: 0.82rem; cursor: pointer;
+	}
+	.chip:hover { border-color: var(--accent); }
+	.chip.sin { color: var(--text-dim); border-style: dashed; }
 </style>

@@ -7,7 +7,7 @@ let db: any = null;
 // ===== Clasificación de tablas por módulo (para registrar última edición) =====
 const TABLAS_FINANZAS = new Set([
 	'gasto', 'ingreso', 'categoria', 'subcategoria', 'mapeo_detalle',
-	'tarjeta', 'suscripcion', 'suscripcion_registro', 'presupuesto'
+	'tarjeta', 'suscripcion', 'suscripcion_registro', 'presupuesto', 'reserva_credito'
 ]);
 const TABLAS_INVERSIONES = new Set([
 	'activo', 'transaccion', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja'
@@ -86,6 +86,22 @@ async function init() {
 	const pcols = db.exec({ sql: 'PRAGMA table_info(perfil)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!pcols.some((c: any) => c.name === 'modo_periodo')) {
 		db.exec("ALTER TABLE perfil ADD COLUMN modo_periodo TEXT NOT NULL DEFAULT 'sueldo'");
+	}
+
+	// Columna detalle en suscripcion (Item 2: los pagos fijos aterrizan en su
+	// subcategoria via mapeo_detalle, igual que un gasto). Migra los existentes
+	// usando el nombre como detalle.
+	const scols = db.exec({ sql: 'PRAGMA table_info(suscripcion)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!scols.some((c: any) => c.name === 'detalle')) {
+		db.exec('ALTER TABLE suscripcion ADD COLUMN detalle TEXT');
+		db.exec('UPDATE suscripcion SET detalle = nombre WHERE detalle IS NULL');
+	}
+
+	// Columna auto en presupuesto (Item 2: el presupuesto de una subcat con pago
+	// fijo se autocompleta y no se edita desde la tabla; auto=1 lo marca).
+	const prcols = db.exec({ sql: 'PRAGMA table_info(presupuesto)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!prcols.some((c: any) => c.name === 'auto')) {
+		db.exec('ALTER TABLE presupuesto ADD COLUMN auto INTEGER NOT NULL DEFAULT 0');
 	}
 
 	// Migración: renombrar categorías de ingreso (Salario→Ingreso Principal),

@@ -163,7 +163,6 @@
 	<Guia clave="ingreso-primario" texto="Tu ingreso primario regular contra la inflación y contra el dólar bolsa. Si la línea de ingreso va por encima de la inflación, le ganás; si en USD cae mientras el dólar sube, el golpe vino del tipo de cambio." />
 </div>
 
-<a href="/ingresos" class="btn-volver">← Volver a Ingresos</a>
 
 {#if cargando}
 	<p>Cargando…</p>
@@ -237,9 +236,7 @@
 {/if}
 
 <style>
-	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 0 0 12px; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 150px; }
 	.card span { font-size: 0.72rem; color: var(--text-dim); }

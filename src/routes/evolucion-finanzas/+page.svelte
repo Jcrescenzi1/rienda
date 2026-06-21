@@ -13,6 +13,9 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import Gastos from '$lib/evol/Gastos.svelte';
+	import Ingresos from '$lib/evol/Ingresos.svelte';
+	import Poder from '$lib/evol/Poder.svelte';
 
 	let ingresosRaw = $state<{ periodo: string; fecha: string; monto: number; moneda: string }[]>([]);
 	let gastosRaw = $state<{ fecha: string; monto: number; moneda: string }[]>([]);
@@ -20,6 +23,7 @@
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder'>('resumen');
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
@@ -130,16 +134,18 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Ingresos</h1>
-	<Guia clave="ingresos" texto="Tus cobros y el balance de ingresos vs gastos por período, en la moneda que elijas. Para ver la evolución de tus ingresos por tipo entrá a Evolución de Ingresos, y para tu ingreso primario contra la inflación y el dólar, a Poder adquisitivo." />
+	<h1>Evolución</h1>
+	<Guia clave="evolucion-finanzas" texto="Tu evolución financiera: ingresos vs gastos por período, y adentro la evolución de gastos, de ingresos y tu poder adquisitivo. Las cargas de registros se hacen desde Presupuesto." />
 </div>
 
-<div class="accesos">
-	<a href="/carga-ingresos" class="btn-carga">➕ Cargar ingreso</a>
-	<a href="/ingresos-evolucion" class="btn-carga sec">📈 Evolución de Ingresos</a>
-	<a href="/ingreso-primario" class="btn-carga sec">📈 Poder adquisitivo</a>
+<div class="tabs">
+	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
+	<button class:activo={tab === 'gastos'} onclick={() => (tab = 'gastos')}>Evolución de Gastos</button>
+	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
+	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
 </div>
 
+{#if tab === 'resumen'}
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
@@ -185,6 +191,13 @@
 		<p class="nota">No hay datos para esta ventana.</p>
 	{/if}
 {/if}
+{:else if tab === 'gastos'}
+	<Gastos />
+{:else if tab === 'ingresos'}
+	<Ingresos />
+{:else if tab === 'poder'}
+	<Poder />
+{/if}
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
@@ -208,9 +221,9 @@
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	.accesos { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 12px; }
-	.btn-carga { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; padding: 7px 14px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
-	.btn-carga.sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+	.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+	.tabs button { padding: 7px 14px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.85rem; }
+	.tabs button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
 	.sw-ing { background: var(--pos); }
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }

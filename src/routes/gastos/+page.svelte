@@ -233,10 +233,10 @@
     <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
     <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'). La primera vez que usás un detalle le asignás subcategoría; las próximas veces se clasifica solo. Si pagaste con crédito, indicá tarjeta y cuotas: la app reparte el pago en los meses correspondientes." />
 </div>
-<a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Presupuesto</a>
 
 <div class="form">
-    {#if editandoId}<p class="editando">✏️ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
+    {#if editandoId}<p class="editando">✏ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
     <label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
     <label>Moneda
@@ -326,7 +326,7 @@
             <div class="ficha-bot">
                 <span class="ficha-meta">{fmtFecha(g.fecha)} · {g.categoria} · {g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</span>
                 <span class="ficha-acc">
-                    <button class="lapiz" onclick={() => editar(g)} title="Editar">✏️</button>
+                    <button class="lapiz" onclick={() => editar(g)} title="Editar">✏</button>
                     <button class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
                 </span>
             </div>

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
 	import {
 		cargarDolarSerie,
 		cargarIPC,
@@ -13,75 +12,69 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
 
-	type Gasto = {
+	type Ingreso = {
 		fecha: string;
 		monto: number;
 		moneda: string;
-		categoria_id: number;
 		categoria: string;
-		detalle: string;
-		scid: number | null;
+		tipo: string | null;
+		detalle: string | null;
+		periodo: string;
+		id: number;
 	};
 
 	let cargando = $state(true);
-	let gastos = $state<Gasto[]>([]);
-	let categorias = $state<{ id: number; nombre: string }[]>([]);
-	let subcategorias = $state<{ id: number; nombre: string }[]>([]);
+	let ingresos = $state<Ingreso[]>([]);
 	let dolarSerie = $state<DolarSerie>([]);
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
-	let asignar = $state<(fecha: string) => string | null>(() => null);
-	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+
+	const CATEGORIAS = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
+	// Valor interno (DB) -> etiqueta visible. La lógica de períodos depende del valor
+	// 'Sueldo', así que solo cambiamos lo que ve el usuario.
+	const TIPOS = [
+		{ v: 'Sueldo', l: 'Regular' },
+		{ v: 'Aciclico', l: 'Extraordinario' }
+	];
+	const tipoLabel = (t: string | null) => (t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : 'Sin tipo');
 
 	// Ventana de tiempo
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
 	// Filtros dimensionales
-	let filtroCategoria = $state<number | null>(null);
-	let filtroSubcat = $state<number | null>(null);
+	let filtroCategoria = $state('');
+	let filtroTipo = $state('');
 	let filtroTexto = $state('');
 
 	onMount(async () => {
 		await moneda.cargar();
-		modoPeriodo = await cargarModo();
-		const cortes = modoPeriodo === 'sueldo' ? await cargarCortes() : [];
-		asignar = crearAsignador(modoPeriodo, cortes);
 		dolarSerie = await cargarDolarSerie();
 		ipc = await cargarIPC();
-		categorias = (await query(
-			'SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'
-		)) as any[];
-		subcategorias = (await query(
-			'SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre'
-		)) as any[];
-		gastos = (await query(
-			`SELECT g.fecha, g.monto, g.moneda, g.categoria_id, c.nombre AS categoria, g.detalle,
-			        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
-			 FROM gasto g
-			 JOIN categoria c ON c.id = g.categoria_id
-			 LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-			 WHERE g.perfil_id = 1 ORDER BY g.fecha`
-		)) as any[];
+		await cargarIngresos();
 		cargando = false;
 	});
 
-	// Gastos que pasan los filtros dimensionales (categoría / subcategoría / detalle).
+	async function cargarIngresos() {
+		ingresos = (await query(
+			`SELECT id, fecha, monto, moneda, categoria, tipo, detalle, periodo
+			 FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL ORDER BY fecha`
+		)) as any[];
+	}
+
+	// Ingresos que pasan los filtros dimensionales (categoría / tipo / detalle).
 	let filtrados = $derived.by(() => {
 		const txt = filtroTexto.trim().toLowerCase();
-		return gastos.filter((g) => {
-			if (filtroCategoria != null && g.categoria_id !== filtroCategoria) return false;
-			if (filtroSubcat != null && g.scid !== filtroSubcat) return false;
-			if (txt && !(g.detalle ?? '').toLowerCase().includes(txt)) return false;
+		return ingresos.filter((i) => {
+			if (filtroCategoria && i.categoria !== filtroCategoria) return false;
+			if (filtroTipo && (i.tipo ?? '') !== filtroTipo) return false;
+			if (txt && !(i.detalle ?? '').toLowerCase().includes(txt)) return false;
 			return true;
 		});
 	});
 
 	// Períodos disponibles y ventana de tiempo elegida (Histórico / Últimos 12 / Año).
-	let periodosTodos = $derived.by(() => {
-		const set = new Set<string>();
-		for (const g of filtrados) { const p = asignar(g.fecha); if (p) set.add(p); }
-		return [...set].sort();
-	});
+	let periodosTodos = $derived([...new Set(filtrados.map((i) => i.periodo))].sort());
 	let anios = $derived([...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort());
 	$effect(() => { if (!anio && anios.length) anio = anios[anios.length - 1]; });
 	let periodosVista = $derived.by(() => {
@@ -94,12 +87,11 @@
 	// Total por período (en el modo de moneda elegido), dentro de la ventana.
 	let serie = $derived.by(() => {
 		const acc: Record<string, number> = {};
-		for (const g of filtrados) {
-			const per = asignar(g.fecha);
-			if (!per || !ventana.has(per)) continue;
-			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+		for (const i of filtrados) {
+			if (!ventana.has(i.periodo)) continue;
+			const v = convertir(i.monto, i.moneda, i.fecha, moneda.modo, dolarSerie, ipc);
 			if (v == null) continue;
-			acc[per] = (acc[per] ?? 0) + v;
+			acc[i.periodo] = (acc[i.periodo] ?? 0) + v;
 		}
 		return periodosVista.map((p) => ({ periodo: p, total: acc[p] ?? 0 }));
 	});
@@ -148,16 +140,16 @@
 		return Math.round(v).toString();
 	}
 
-	// ===== Dona por categoría =====
+	// ===== Dona por tipo (Sueldo / Acíclico) =====
 	const PALETA = ['#5b9dff', '#e8975b', '#4ade80', '#f87171', '#c084fc', '#fbbf24', '#38bdf8', '#fb7185', '#a3e635', '#94a0b8'];
 	let dona = $derived.by(() => {
 		const acc: Record<string, number> = {};
-		for (const g of filtrados) {
-			const per = asignar(g.fecha);
-			if (!per || !ventana.has(per)) continue;
-			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
+		for (const i of filtrados) {
+			if (!ventana.has(i.periodo)) continue;
+			const v = convertir(i.monto, i.moneda, i.fecha, moneda.modo, dolarSerie, ipc);
 			if (v == null || v <= 0) continue;
-			acc[g.categoria] = (acc[g.categoria] ?? 0) + v;
+			const key = tipoLabel(i.tipo);
+			acc[key] = (acc[key] ?? 0) + v;
 		}
 		const items = Object.entries(acc)
 			.map(([cat, val]) => ({ cat, val }))
@@ -167,8 +159,7 @@
 
 		const cx = 90, cy = 90, r = 78, rIn = 46;
 
-		// Una sola categoría (o una que es ~100%): el arco degenera en un punto y no
-		// dibuja. Lo renderizamos como anillo completo (un <circle> con borde grueso).
+		// Una sola porción (~100%): el arco degenera; lo dibujamos como anillo completo.
 		if (items.length === 1 || items[0].val / total >= 0.9999) {
 			const it = items[0];
 			return {
@@ -197,18 +188,55 @@
 
 	function limpiar() {
 		vista = 'historico';
-		filtroCategoria = null;
-		filtroSubcat = null;
+		filtroCategoria = '';
+		filtroTipo = '';
 		filtroTexto = '';
+	}
+
+	// ===== Tabla de registros editable (mismos filtros + ventana) =====
+	let registros = $derived(
+		filtrados
+			.filter((i) => ventana.has(i.periodo))
+			.slice()
+			.sort((a, b) => b.fecha.localeCompare(a.fecha))
+	);
+	const orig = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n).toLocaleString('es-AR');
+
+	let editId = $state<number | null>(null);
+	let eFecha = $state(''), eMonto = $state(''), eMoneda = $state('ARS');
+	let eCat = $state('Ingreso Principal'), eTipo = $state(''), eDetalle = $state(''), ePeriodo = $state('');
+	let msgEd = $state('');
+
+	function editar(i: any) {
+		editId = i.id; eFecha = i.fecha; eMonto = formatNum(i.monto); eMoneda = i.moneda;
+		eCat = i.categoria; eTipo = i.tipo ?? ''; eDetalle = i.detalle ?? ''; ePeriodo = i.periodo;
+		msgEd = '';
+	}
+	const cancelar = () => (editId = null);
+	async function guardarEd() {
+		const m = parseNum(eMonto);
+		if (!eFecha) return (msgEd = 'Falta la fecha');
+		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto invalido');
+		if (!ePeriodo) return (msgEd = 'Falta el periodo');
+		try {
+			await query('UPDATE ingreso SET fecha=?, monto=?, moneda=?, categoria=?, tipo=?, detalle=?, periodo=? WHERE id=? AND perfil_id=1',
+				[eFecha, m, eMoneda, eCat, eTipo || null, eDetalle.trim() || null, ePeriodo, editId]);
+			editId = null;
+			await cargarIngresos();
+		} catch (e: any) { msgEd = 'Error: ' + (e?.message ?? e); }
+	}
+	async function eliminar(id: number) {
+		if (!confirm('Eliminar este ingreso? No se puede deshacer.')) return;
+		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
+		await cargarIngresos();
 	}
 </script>
 
 <div class="titulo-guia">
-	<h1>Evolución de Gastos</h1>
-	<Guia clave="gastos-evolucion" texto="Cómo evolucionó tu gasto período a período, con la composición por categoría. Filtrá por fecha, categoría o detalle para enfocar el análisis. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
+	<h1>Evolución de Ingresos</h1>
+	<Guia clave="ingresos-evolucion" texto="Cómo evolucionaron tus ingresos período a período, con la composición por tipo (Regular vs Extraordinario). Filtrá por fecha, categoría, tipo o detalle. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
 </div>
 
-<a href="/" class="btn-volver">← Volver a Gastos y Presupuesto</a>
 
 {#if cargando}
 	<p>Cargando…</p>
@@ -224,14 +252,14 @@
 	<div class="filtros">
 		<label>Categoría
 			<select bind:value={filtroCategoria}>
-				<option value={null}>Todas</option>
-				{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
+				<option value="">Todas</option>
+				{#each CATEGORIAS as c}<option value={c}>{c}</option>{/each}
 			</select>
 		</label>
-		<label>Subcategoría
-			<select bind:value={filtroSubcat}>
-				<option value={null}>Todas</option>
-				{#each subcategorias as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
+		<label>Tipo
+			<select bind:value={filtroTipo}>
+				<option value="">Todos</option>
+				{#each TIPOS as t}<option value={t.v}>{t.l}</option>{/each}
 			</select>
 		</label>
 		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
@@ -248,7 +276,7 @@
 
 	<div class="leyenda">
 		<span class="aclara">
-			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
+			Por período de ingreso (el que asignaste a cada cobro).
 			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
 		</span>
 	</div>
@@ -274,7 +302,7 @@
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
 
-	<h2>Composición por categoría</h2>
+	<h2>Composición por tipo</h2>
 	{#if dona}
 		<div class="dona-wrap">
 			<svg viewBox="0 0 180 180" class="dona">
@@ -296,14 +324,52 @@
 			</ul>
 		</div>
 	{:else}
-		<p class="nota">No hay gastos en el rango filtrado.</p>
+		<p class="nota">No hay ingresos en el rango filtrado.</p>
 	{/if}
+
+	<h2>Registros</h2>
+	<p class="nota">Editas el valor original cargado. El toggle de moneda solo afecta el grafico y la dona.</p>
+	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
+	<div class="regs">
+		{#each registros as i (i.id)}
+			{#if editId === i.id}
+				<div class="reg edit">
+					<div class="reg-grid">
+						<label>Fecha<input type="date" bind:value={eFecha} /></label>
+						<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={eMonto} /></label>
+						<label>Moneda<select bind:value={eMoneda}><option>ARS</option><option>USD</option></select></label>
+						<label>Categoria<select bind:value={eCat}>{#each CATEGORIAS as c}<option value={c}>{c}</option>{/each}</select></label>
+						<label>Tipo<select bind:value={eTipo}><option value="">Sin tipo</option>{#each TIPOS as t}<option value={t.v}>{t.l}</option>{/each}</select></label>
+						<label>Periodo<input type="month" bind:value={ePeriodo} /></label>
+						<label class="ancho">Detalle<input type="text" bind:value={eDetalle} /></label>
+					</div>
+					<div class="reg-acc">
+						<button class="ok" onclick={guardarEd}>Guardar</button>
+						<button class="sec" onclick={cancelar}>Cancelar</button>
+					</div>
+				</div>
+			{:else}
+				<div class="reg">
+					<div class="reg-top">
+						<span class="reg-det">{i.detalle ?? '(sin detalle)'}</span>
+						<span class="reg-monto">{orig(i.monto, i.moneda)}</span>
+					</div>
+					<div class="reg-bot">
+						<span class="reg-meta">{fmtFecha(i.fecha)} · {i.categoria} · {tipoLabel(i.tipo)} · {i.periodo}</span>
+						<span class="reg-accs">
+							<button class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
+							<button class="del" onclick={() => eliminar(i.id)} title="Eliminar">✕</button>
+						</span>
+					</div>
+				</div>
+			{/if}
+		{/each}
+		{#if registros.length === 0}<p class="vacio">Sin registros para los filtros.</p>{/if}
+	</div>
 {/if}
 
 <style>
-	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.btn-volver { display: inline-block; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 0 0 12px; }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
 	.vistas button { padding: 5px 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); border-radius: 20px; cursor: pointer; font-size: 0.82rem; }
 	.vistas button.activo { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -333,4 +399,26 @@
 	.dona-leyenda .cat { flex: 1; }
 	.dona-leyenda .val { color: var(--text-dim); }
 	.dona-leyenda .pct { width: 52px; text-align: right; font-weight: 600; }
+
+	.regs { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+	.reg { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
+	.reg.edit { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+	.reg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+	.reg-det { font-weight: 600; font-size: 0.92rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.reg-monto { font-weight: 700; white-space: nowrap; }
+	.reg-bot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 4px; }
+	.reg-meta { font-size: 0.76rem; color: var(--text-dim); }
+	.reg-accs { white-space: nowrap; flex-shrink: 0; }
+	.reg-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+	.reg-grid label { display: flex; flex-direction: column; font-size: 0.72rem; color: var(--text-dim); gap: 2px; }
+	.reg-grid label.ancho { flex: 1 1 100%; }
+	.reg-grid input, .reg-grid select { padding: 5px; font-size: 0.9rem; }
+	.reg-acc { display: flex; gap: 8px; margin-top: 8px; }
+	.reg-acc .ok { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.reg-acc .sec { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	.lapiz { background: none; border: none; cursor: pointer; opacity: 0.6; }
+	.lapiz:hover { opacity: 1; }
+	.del { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 5px; padding: 2px 8px; cursor: pointer; margin-left: 4px; }
+	.msg-ed { font-weight: 600; color: var(--text); }
+	.vacio { color: var(--text-dim); font-style: italic; }
 </style>
