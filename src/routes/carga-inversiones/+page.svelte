@@ -249,7 +249,7 @@
 				<span class="ficha-nombre">{t.nombre} <span class="ficha-tipo">({t.tipo})</span></span>
 				<span class="ficha-monto">{money(t.unidades * t.precio, t.moneda)}</span>
 				<span class="ficha-acc">
-					<button class="del" onclick={() => borrarTx(t.id)} title="Eliminar">✕</button>
+					<button aria-label="Eliminar" class="del" onclick={() => borrarTx(t.id)} title="Eliminar">✕</button>
 				</span>
 			</div>
 			<div class="ficha-meta">
@@ -268,7 +268,7 @@
 				<span class="ficha-nombre">{m.accion}</span>
 				<span class="ficha-monto {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</span>
 				<span class="ficha-acc">
-					<button class="del" onclick={() => borrarCaja(m)} title="Eliminar">✕</button>
+					<button aria-label="Eliminar" class="del" onclick={() => borrarCaja(m)} title="Eliminar">✕</button>
 				</span>
 			</div>
 			<div class="ficha-meta">{fmtFecha(m.fecha)} · {m.moneda}</div>

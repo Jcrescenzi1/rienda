@@ -270,6 +270,22 @@
 	}
 	:global(input::placeholder) { color: var(--text-dim); }
 
+	/* ===== Accesibilidad: foco visible por teclado (a11y) =====
+	   Solo aparece al navegar con Tab (no al clickear), gracias a :focus-visible. */
+	:global(button:focus-visible), :global(a:focus-visible),
+	:global(input:focus-visible), :global(select:focus-visible),
+	:global([role="group"] button:focus-visible), :global([tabindex]:focus-visible) {
+		outline: 2px solid var(--accent-hover);
+		outline-offset: 2px;
+		border-radius: 6px;
+	}
+	:global(button:focus:not(:focus-visible)) { outline: none; }
+
+	/* Respeta "reducir movimiento": desactiva las view-transitions */
+	@media (prefers-reduced-motion: reduce) {
+		:global(::view-transition-old(root)), :global(::view-transition-new(root)) { animation: none !important; }
+	}
+
 	/* ===== Sistema de botones (jerarquia unica para toda la app) =====
 	   Uso: class="btn btn-primary" | btn-secondary | btn-ghost | btn-danger | btn-success
 	   Tamanos: (normal) | btn-sm | btn-icon. Segmentado: <div class="seg"> con .is-active */

@@ -355,8 +355,8 @@
 					<div class="reg-bot">
 						<span class="reg-meta">{fmtFecha(i.fecha)} · {i.categoria} · {tipoLabel(i.tipo)} · {i.periodo}</span>
 						<span class="reg-accs">
-							<button class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
-							<button class="del" onclick={() => eliminar(i.id)} title="Eliminar">✕</button>
+							<button aria-label="Editar" class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
+							<button aria-label="Eliminar" class="del" onclick={() => eliminar(i.id)} title="Eliminar">✕</button>
 						</span>
 					</div>
 				</div>

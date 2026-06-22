@@ -50,7 +50,7 @@
 		const sc = (await query("SELECT valor FROM meta WHERE clave='susc_subcat_id'")) as any[];
 		dispSubcatId = sc[0]?.valor ?? '';
 		if (fCatId == null) {
-			const f = categorias.find((c: any) => c.nombre === 'Facturas');
+			const f = categorias.find((c: any) => c.nombre === 'Impuestos/Servicios');
 			fCatId = f ? f.id : categorias[0]?.id ?? null;
 		}
 		// Fijos con su subcategoria resuelta por el diccionario (mapeo_detalle).
@@ -124,7 +124,7 @@
 	}
 
 	function catPorDefecto(): number | null {
-		const f = categorias.find((c: any) => c.nombre === 'Facturas');
+		const f = categorias.find((c: any) => c.nombre === 'Impuestos/Servicios');
 		return f ? f.id : categorias[0]?.id ?? null;
 	}
 
@@ -174,11 +174,11 @@
 			if (editId) {
 				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, editId]);
-				mensaje = 'Pago fijo actualizado ✅';
+				mensaje = 'Gasto fijo actualizado ✅';
 			} else {
 				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id) VALUES (1,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId]);
-				mensaje = 'Pago fijo agregado ✅';
+				mensaje = 'Gasto fijo agregado ✅';
 			}
 			// Si se eligio subcategoria, se mapea el detalle (reclasifica historial).
 			if (fSubcatId) {
@@ -195,7 +195,7 @@
 	}
 
 	async function eliminar(s: any) {
-		if (!confirm(`¿Eliminar el pago fijo "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
+		if (!confirm(`¿Eliminar el gasto fijo "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
 		await query('DELETE FROM suscripcion_registro WHERE suscripcion_id=?', [s.id]);
 		await query('DELETE FROM suscripcion WHERE id=? AND perfil_id=1', [s.id]);
 		if (editId === s.id) resetForm();
@@ -229,8 +229,8 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Pagos fijos</h1>
-	<Guia clave="suscripciones" texto="Tus pagos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
+	<h1>Gastos Fijos</h1>
+	<Guia clave="suscripciones" texto="Tus gastos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
 </div>
 
 <a href="/" class="btn-volver">← Volver a Presupuesto</a>
@@ -243,7 +243,7 @@
 	<span class="fijo-nota">suma de todos los fijos activos (USD al MEP)</span>
 </div>
 
-<label class="disparo-subcat">Subcategoría de los pagos registrados:
+<label class="disparo-subcat">Subcategoría de los gastos registrados:
 	<select bind:value={dispSubcatId} onchange={() => setMeta('susc_subcat_id', dispSubcatId)}>
 		<option value="">Automática (según diccionario)</option>
 		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
@@ -259,8 +259,8 @@
 					<span class="ficha-nombre">{s.nombre}</span>
 					<span class="ficha-monto">{peso(s.monto, s.moneda)}</span>
 					<span class="ficha-acc">
-						<button class="lapiz" onclick={() => iniciarEdit(s)} title="Editar">✏</button>
-						<button class="del" onclick={() => eliminar(s)} title="Eliminar">✕</button>
+						<button aria-label="Editar" class="lapiz" onclick={() => iniciarEdit(s)} title="Editar">✏</button>
+						<button aria-label="Eliminar" class="del" onclick={() => eliminar(s)} title="Eliminar">✕</button>
 					</span>
 				</div>
 				<div class="ficha-meta">
@@ -286,11 +286,11 @@
 			</div>
 		{/each}
 	{/each}
-	{#if subs.length === 0}<p class="vacio">No hay pagos fijos. Agrega uno abajo.</p>{/if}
+	{#if subs.length === 0}<p class="vacio">No hay gastos fijos. Agregá uno abajo.</p>{/if}
 </div>
 {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 
-<h2>{editando ? 'Editar pago fijo' : 'Agregar pago fijo'}</h2>
+<h2>{editando ? 'Editar gasto fijo' : 'Agregar gasto fijo'}</h2>
 <div class="form" class:edit={editando}>
 	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Netflix" /></label>

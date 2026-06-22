@@ -251,13 +251,13 @@
 				{#if editLiq === mon}
 					<div class="liqedit">
 						<input type="text" inputmode="decimal" use:soloNum bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
-						<button class="okp" onclick={guardarLiq}>✓</button>
-						<button class="cancp" onclick={() => (editLiq = null)}>✕</button>
+						<button aria-label="Guardar" class="okp" onclick={guardarLiq}>✓</button>
+						<button aria-label="Cancelar" class="cancp" onclick={() => (editLiq = null)}>✕</button>
 					</div>
 				{:else}
 					<div class="liqval">
 						<strong>{money(liqSaldos[mon] ?? 0, mon)}</strong>
-						<button class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏</button>
+						<button aria-label="Editar" class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏</button>
 					</div>
 				{/if}
 			</div>
@@ -281,8 +281,8 @@
 					<td class="num precioedit">
 						{#if editId === h.id}
 							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
-							<button class="okp" onclick={guardarPrecio}>✓</button><button class="cancp" onclick={() => (editId = null)}>✕</button>
-						{:else}{money(h.precioActual, h.moneda, 2)}<button class="lapiz" onclick={() => abrirEdit(h)}>✏</button>{/if}
+							<button aria-label="Guardar" class="okp" onclick={guardarPrecio}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editId = null)}>✕</button>
+						{:else}{money(h.precioActual, h.moneda, 2)}<button aria-label="Editar" class="lapiz" onclick={() => abrirEdit(h)}>✏</button>{/if}
 					</td>
 					<td class="num hl {h.gananciaUSD >= 0 ? 'pos' : 'neg'}">{usd(h.gananciaUSD)}</td>
 				</tr>

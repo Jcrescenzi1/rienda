@@ -220,8 +220,8 @@
 					{fmtFecha(i.fecha)} · {catLabel(i.categoria)} · {tipoLabel(i.tipo)}{#if periodoDifiere(i)} · período {i.periodo}{/if}
 				</span>
 				<span class="ficha-acc">
-					<button class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
-					<button class="del" onclick={() => borrar(i.id)} title="Eliminar">✕</button>
+					<button aria-label="Editar" class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
+					<button aria-label="Eliminar" class="del" onclick={() => borrar(i.id)} title="Eliminar">✕</button>
 				</span>
 			</div>
 		</div>

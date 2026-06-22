@@ -14,6 +14,7 @@
     // visible. Solo suma al total de PRESUPUESTO (los gastos en crédito ya
     // fueron contados como gasto real el día que se cargaron).
     let creditoMes = $state(0);
+    let creditoMesUsd = $state(0);
     // Ingresos TOTALES del período visible (primario + secundarios + otros),
     // en ARS (los USD se convierten al dólar del día de cobro).
     let ingresosMes = $state(0);
@@ -22,6 +23,7 @@
     let reservaMes = $state(0);
     // Item 2: deuda en cuotas que vence el MES SIGUIENTE vs lo reservado para ese mes.
     let deudaSig = $state(0);
+    let deudaSigUsd = $state(0);
     let reservaSig = $state(0);
     let mesSigLabel = $state('');
     // Ingreso disponible = ingresos − (vencimiento de tarjeta del mes − reserva).
@@ -29,6 +31,16 @@
     // solo ajusta cuánto te queda libre después de separar para las tarjetas.
     let ingresoDisponible = $derived(ingresosMes - (creditoMes - reservaMes));
     let descubierto = $derived(deudaSig - reservaSig);
+    // El valor del descubierto se pinta amarillo solo si supera el 10% del disponible.
+    let deudaAlta = $derived(descubierto > 0 && (ingresoDisponible <= 0 || descubierto > ingresoDisponible * 0.10));
+    // Gasto del mes vs disponible: amarillo > 90%, rojo > 100%.
+    let gastoClase = $derived.by(() => {
+        const disp = ingresoDisponible, g = totales.real;
+        if (disp <= 0) return g > 0 ? 'g-rojo' : '';
+        if (g > disp) return 'g-rojo';
+        if (g > disp * 0.90) return 'g-amarillo';
+        return '';
+    });
     // Detalle del Ingreso disponible: colapsable; recuerda la preferencia.
     let detalleAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('disp_detalle') === '1');
     $effect(() => { try { localStorage.setItem('disp_detalle', detalleAbierto ? '1' : '0'); } catch { /* ignore */ } });
@@ -72,8 +84,18 @@
         const objetivo = new Set([n, n1, n2]);
         const mesSig = addMonths(n, 1);
         mesSigLabel = labelMes(mesSig);
-        // Deuda de credito de un mes M: cuotas repartidas; las cuotas en USD se
-        // convierten a ARS al MEP de la FECHA DE COMPRA (deterministico, estable).
+        // Robustez/escala: acotar la carga de gastos del consolidado al rango de
+        // los 3 períodos visibles (no traer todo el historial). Límite inferior =
+        // inicio del período más viejo; en modo sueldo, el corte real (puede caer
+        // antes del día 1 si el sueldo se cobra anticipado).
+        let desdeGastos = `${n2}-01`;
+        if (modo === 'sueldo') {
+            const fch = cortes.filter((c) => c.periodo === n2 || c.periodo === n1 || c.periodo === n).map((c) => c.fecha).sort();
+            if (fch.length) desdeGastos = fch[0];
+        }
+        // Deuda de credito de un mes M: cuotas repartidas. ARS y USD se devuelven
+        // POR SEPARADO (no se convierten: el costo real en pesos de pagar una
+        // compra USD en tarjeta difiere del MEP por impuestos/percepciones).
         const CUOTAS_MES = `
             WITH RECURSIVE serie(total, cuotas, c, inicio, moneda, fecha) AS (
                 SELECT monto, cuotas, 0, mes_inicio_pago, moneda, fecha
@@ -81,11 +103,9 @@
                 UNION ALL
                 SELECT total, cuotas, c+1, inicio, moneda, fecha FROM serie WHERE c+1 < cuotas
             )
-            SELECT COALESCE(SUM(
-                (total*1.0/cuotas) * CASE WHEN moneda='USD'
-                    THEN COALESCE((SELECT cd.valor FROM cotizacion_dolar cd WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha <= serie.fecha ORDER BY cd.fecha DESC LIMIT 1), 0)
-                    ELSE 1 END
-            ),0) AS t
+            SELECT
+                COALESCE(SUM(CASE WHEN moneda='USD' THEN 0 ELSE total*1.0/cuotas END),0) AS ars,
+                COALESCE(SUM(CASE WHEN moneda='USD' THEN total*1.0/cuotas ELSE 0 END),0) AS usd
             FROM serie WHERE strftime('%Y-%m', date(inicio, '+'||c||' months')) = ?`;
 
         // Etiquetas de los encabezados
@@ -117,7 +137,8 @@
                          ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia
                  FROM gasto g
                  LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
-                 WHERE g.perfil_id = 1`
+                 WHERE g.perfil_id = 1 AND g.fecha >= ?`,
+                [desdeGastos]
             ),
             query(
                 `SELECT scid, categoria_id, COUNT(*) AS c FROM (
@@ -206,10 +227,11 @@
             return { cat, rows, sub };
         });
 
-        creditoMes = cred[0]?.t ?? 0;
+        creditoMes = cred[0]?.ars ?? 0;
+        creditoMesUsd = cred[0]?.usd ?? 0;
 
         // Bloque virtual "Crédito", intercalado alfabéticamente entre las categorías
-        if (creditoMes > 0) {
+        if (creditoMes > 0 || creditoMesUsd > 0) {
             gr.push({ cat: 'Crédito', esCredito: true, rows: [], sub: { n2: 0, n1: 0, presup: creditoMes, real: 0 } } as any);
             gr.sort((a, b) => a.cat.localeCompare(b.cat, 'es'));
         }
@@ -227,7 +249,8 @@
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
         reservaMes = resv[0]?.t ?? 0;
-        deudaSig = deudaR[0]?.t ?? 0;
+        deudaSig = deudaR[0]?.ars ?? 0;
+        deudaSigUsd = deudaR[0]?.usd ?? 0;
         reservaSig = reservaR[0]?.t ?? 0;
 
         cargando = false;
@@ -294,6 +317,7 @@
 
     onMount(() => { cargar(); chequearBackup(); cargarPasos(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
+    const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 </script>
 
@@ -328,8 +352,9 @@
 <div class="accesos">
     <a href="/gastos" class="btn btn-primary">➕ Cargar gasto</a>
     <a href="/carga-ingresos" class="btn btn-primary">➕ Cargar ingreso</a>
-    <a href="/credito" class="btn btn-secondary">Gastos en Crédito</a>
-    <a href="/suscripciones" class="btn btn-secondary">Pagos fijos</a>
+    <a href="/suscripciones" class="btn btn-secondary">Gastos Fijos</a>
+    <a href="/ingresos-fijos" class="btn btn-secondary">Ingresos Fijos</a>
+    <a href="/credito" class="btn btn-secondary">Crédito</a>
 </div>
 
 <label class="sel">{modo === 'calendario' ? 'Mes' : 'Período de sueldo'}: <input type="month" bind:value={periodo} onchange={cargar} /></label>
@@ -375,14 +400,18 @@
                     <tr><td>− Pago de tarjeta del mes</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
                     <tr><td>+ Reservado para el mes</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
                     <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
+                    {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
                 </tbody>
             </table>
-            <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Gastos en Crédito</a>.</p>
+            <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Crédito</a>.</p>
         {/if}
         <div class="disp-gastorow">
             <span>Gasto total del mes</span>
-            <strong>{peso(totales.real)}</strong>
+            <strong class={gastoClase}>{peso(totales.real)}</strong>
         </div>
+        {#if creditoMesUsd > 0}
+            <div class="disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
+        {/if}
     </div>
 
     <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
@@ -390,17 +419,18 @@
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
             <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
             <span class="disp-titulo">Crédito del mes que viene</span>
-            <span class="disp-valor">{peso(descubierto)}</span>
+            <span class="disp-valor" class:alta={deudaAlta}>{peso(descubierto)}{#if deudaSigUsd > 0} · {usd(deudaSigUsd)}{/if}</span>
         </button>
         {#if deudaAbierto}
             <table class="disp-tabla disp-detalle">
                 <tbody>
-                    <tr><td>Cuotas a pagar ({mesSigLabel})</td><td class="num">{peso(deudaSig)}</td></tr>
+                    <tr><td>Cuotas a pagar ({mesSigLabel})</td><td class="num">{peso(deudaSig)}{#if deudaSigUsd > 0}<div class="usd">{usd(deudaSigUsd)}</div>{/if}</td></tr>
                     <tr><td>− Reservado para ese mes</td><td class="num">{reservaSig ? '−' + peso(reservaSig) : peso(0)}</td></tr>
-                    <tr class="disp-total"><td><strong>= Cuota Neta de Reservas</strong></td><td class="num"><strong>{peso(descubierto)}</strong></td></tr>
+                    <tr class="disp-total"><td><strong>= Cuota Neta de Reservas</strong></td><td class="num"><strong class:alta={deudaAlta}>{peso(descubierto)}</strong></td></tr>
+                    {#if deudaSigUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(deudaSigUsd)}</td></tr>{/if}
                 </tbody>
             </table>
-            <p class="disp-nota">Reservá plata para el pago de próximos vencimientos desde <a href="/credito">Gastos en Crédito</a>.</p>
+            <p class="disp-nota">Reservá plata para el pago de próximos vencimientos desde <a href="/credito">Crédito</a>.</p>
         {/if}
     </div>
 
@@ -413,7 +443,7 @@
                     <tr>
                         <td title="Se calcula automáticamente con tus gastos cargados en crédito"><strong>Crédito</strong> <span class="auto">· automático</span></td>
                         <td class="num">—</td><td class="num">—</td>
-                        <td class="num">{peso(c.presup)}</td>
+                        <td class="num">{peso(c.presup)}{#if creditoMesUsd > 0}<div class="usd">{usd(creditoMesUsd)}</div>{/if}</td>
                         <td class="num" title="Se calcula automáticamente con tus gastos cargados en crédito">—</td>
                     </tr>
                 {:else}
@@ -441,10 +471,10 @@
                 <tr class="cat"><td colspan="5">{g.cat}{#if g.esCredito} <span class="auto">· se calcula automáticamente</span>{/if}</td></tr>
                 {#if g.esCredito}
                     <tr>
-                        <td class="ind" title="Suma de cuotas de tarjetas que vencen este mes (ver Gastos en Crédito)">Cuotas del mes</td>
+                        <td class="ind" title="Suma de cuotas de tarjetas que vencen este mes (ver Crédito)">Cuotas del mes</td>
                         <td class="num">—</td>
                         <td class="num">—</td>
-                        <td class="num">{peso(creditoMes)}</td>
+                        <td class="num">{peso(creditoMes)}{#if creditoMesUsd > 0}<div class="usd">{usd(creditoMesUsd)}</div>{/if}</td>
                         <td class="num">—</td>
                     </tr>
                 {/if}
@@ -457,7 +487,7 @@
                             {#if f.scid == null}
                                 —
                             {:else if f.autoPresup}
-                                <span class="auto-presup" title="Definido por tus pagos fijos. Se edita en Pagos fijos, no acá.">{formatNum(f.presup, 0)} <em>fijo</em></span>
+                                <span class="auto-presup" title="Definido por tus gastos fijos. Se edita en Gastos Fijos, no acá.">{formatNum(f.presup, 0)} <em>fijo</em></span>
                             {:else}
                                 <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup, 0) : ''} placeholder="—"
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
@@ -474,7 +504,7 @@
                 <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
-    {#if creditoMes > 0}
+    {#if creditoMes > 0 || creditoMesUsd > 0}
         <p class="nota"><strong>Crédito</strong> se calcula automáticamente: suma las cuotas de tus gastos cargados en crédito que vencen este mes (la plata a separar para pagar las tarjetas). Solo engrosa el Presupuesto; el gasto real ya se contó el día que cargaste cada compra.</p>
     {/if}
 {/if}
@@ -518,9 +548,11 @@
     .deuda-panel.ok { border-left-color: var(--pos); }
     .deuda-panel.warn { border-left-color: var(--warn); }
     .deuda-panel.ok .disp-total td strong { color: var(--pos); }
-    .deuda-panel.warn .disp-total td strong { color: var(--warn); }
     .deuda-panel.ok .disp-valor { color: var(--pos); }
-    .deuda-panel.warn .disp-valor { color: var(--warn); }
+    .deuda-panel .disp-total td strong.alta { color: var(--warn); }
+    .deuda-panel .disp-valor.alta { color: var(--warn); }
+    .g-amarillo { color: var(--warn); }
+    .g-rojo { color: var(--neg); }
 
     /* Checklist de primeros pasos */
     .pasos {
@@ -567,4 +599,8 @@
     td.real.none { color: inherit; font-weight: 400; }
     tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
     .accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 14px; }
+    .usd { color: var(--text-dim); font-size: 0.85em; }
+    .disp-usd td { color: var(--text-dim); }
+    .disp-usdrow { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 0.9rem; color: var(--text-dim); }
+    .disp-usdrow strong { color: var(--text); }
 </style>

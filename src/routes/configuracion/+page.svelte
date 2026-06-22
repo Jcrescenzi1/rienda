@@ -247,8 +247,8 @@
 								<td>
 									{#if editTarId === t.id}
 										<input class="edit" bind:value={editTarNombre} onkeydown={(e) => e.key === 'Enter' && guardarTar()} />
-										<button class="okp" onclick={guardarTar}>✓</button>
-										<button class="cancp" onclick={() => (editTarId = null)}>✕</button>
+										<button aria-label="Guardar" class="okp" onclick={guardarTar}>✓</button>
+										<button aria-label="Cancelar" class="cancp" onclick={() => (editTarId = null)}>✕</button>
 									{:else}{t.nombre}{/if}
 								</td>
 								<td>
@@ -260,8 +260,8 @@
 								<td class="num">{t.usos}</td>
 								<td class="acciones">
 									{#if editTarId !== t.id}
-										<button class="lapiz" onclick={() => abrirEditTar(t)} title="Renombrar">✏</button>
-										<button class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>🗑</button>
+										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditTar(t)} title="Renombrar">✏</button>
+										<button aria-label="Eliminar" class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>🗑</button>
 									{/if}
 								</td>
 							</tr>
@@ -290,15 +290,15 @@
 								<td>
 									{#if editCatId === c.id}
 										<input class="edit" bind:value={editCatNombre} onkeydown={(e) => e.key === 'Enter' && guardarCat()} />
-										<button class="okp" onclick={guardarCat}>✓</button>
-										<button class="cancp" onclick={() => (editCatId = null)}>✕</button>
+										<button aria-label="Guardar" class="okp" onclick={guardarCat}>✓</button>
+										<button aria-label="Cancelar" class="cancp" onclick={() => (editCatId = null)}>✕</button>
 									{:else}{c.nombre}{/if}
 								</td>
 								<td class="num">{c.usos}</td>
 								<td class="acciones">
 									{#if editCatId !== c.id}
-										<button class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏</button>
-										<button class="del" class:off={c.usos > 0} onclick={() => borrarCat(c)} title={c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
+										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏</button>
+										<button aria-label="Eliminar" class="del" class:off={c.usos > 0} onclick={() => borrarCat(c)} title={c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
 									{/if}
 								</td>
 							</tr>
@@ -328,15 +328,15 @@
 								<td>
 									{#if editSubId === s.id}
 										<input class="edit" bind:value={editSubNombre} onkeydown={(e) => e.key === 'Enter' && guardarSub()} />
-										<button class="okp" onclick={guardarSub}>✓</button>
-										<button class="cancp" onclick={() => (editSubId = null)}>✕</button>
+										<button aria-label="Guardar" class="okp" onclick={guardarSub}>✓</button>
+										<button aria-label="Cancelar" class="cancp" onclick={() => (editSubId = null)}>✕</button>
 									{:else}{s.nombre}{/if}
 								</td>
 								<td class="num">{s.usos}</td>
 								<td class="acciones">
 									{#if editSubId !== s.id}
-										<button class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏</button>
-										<button class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>🗑</button>
+										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏</button>
+										<button aria-label="Eliminar" class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>🗑</button>
 									{/if}
 								</td>
 							</tr>
@@ -377,7 +377,7 @@
 												<option value={String(s.id)}>{s.nombre}</option>
 											{/each}
 										</select>
-										<button class="cancp" onclick={() => (editDetalle = null)}>✕</button>
+										<button aria-label="Cancelar" class="cancp" onclick={() => (editDetalle = null)}>✕</button>
 									{:else}
 										<button class="chip" class:sin={d.subcategoria_id == null} onclick={() => (editDetalle = d.detalle)}>
 											{subNombre(d.subcategoria_id)}

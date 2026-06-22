@@ -398,8 +398,8 @@
 					<div class="reg-bot">
 						<span class="reg-meta">{fmtFecha(g.fecha)} · {g.categoria} · {g.medio}{g.medio === 'credito' && g.cuotas > 1 ? ` ${g.cuotas}c` : ''}{g.tarjeta ? ` · ${g.tarjeta}` : ''}</span>
 						<span class="reg-accs">
-							<button class="lapiz" onclick={() => editar(g)} title="Editar">✏</button>
-							<button class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
+							<button aria-label="Editar" class="lapiz" onclick={() => editar(g)} title="Editar">✏</button>
+							<button aria-label="Eliminar" class="del" onclick={() => eliminar(g.id)} title="Eliminar">✕</button>
 						</span>
 					</div>
 				</div>

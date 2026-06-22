@@ -4,24 +4,28 @@
     import { parseNum, formatNum, soloNum } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
 
+    type Celda = { ars: number; usd: number };
+
     let meses = $state<string[]>([]);
     let tarjetas = $state<string[]>([]);
-    let matriz = $state<Record<string, Record<string, number>>>({});
-    let totalMes = $state<Record<string, number>>({});
+    let matriz = $state<Record<string, Record<string, Celda>>>({});
+    let totalMes = $state<Record<string, Celda>>({});
     let detallePorMes = $state<Record<string, any[]>>({});
     let reservaMap = $state<Record<string, number>>({});
     let cargando = $state(true);
 
+    // Proyecta cada compra en crédito a sus meses de cuota. Lleva la moneda para
+    // sumar ARS y USD por separado (no se mezclan: distintas unidades).
     const CTE = `
-        WITH RECURSIVE serie(gasto_id, tarjeta_id, detalle, total, cuotas, n, inicio) AS (
-            SELECT id, tarjeta_id, detalle, monto, cuotas, 0, mes_inicio_pago
+        WITH RECURSIVE serie(gasto_id, tarjeta_id, detalle, total, cuotas, n, inicio, moneda) AS (
+            SELECT id, tarjeta_id, detalle, monto, cuotas, 0, mes_inicio_pago, moneda
             FROM gasto WHERE perfil_id=1 AND medio='credito'
             UNION ALL
-            SELECT gasto_id, tarjeta_id, detalle, total, cuotas, n+1, inicio
+            SELECT gasto_id, tarjeta_id, detalle, total, cuotas, n+1, inicio, moneda
             FROM serie WHERE n+1 < cuotas
         )
         SELECT strftime('%Y-%m', date(inicio, '+'||n||' months')) AS mes,
-               t.nombre AS tarjeta, total*1.0/cuotas AS cuota,
+               t.nombre AS tarjeta, total*1.0/cuotas AS cuota, serie.moneda AS moneda,
                serie.detalle, n+1 AS nro, serie.cuotas, serie.gasto_id
         FROM serie JOIN tarjeta t ON t.id = serie.tarjeta_id
         ORDER BY mes, tarjeta`;
@@ -30,15 +34,17 @@
         const filas = (await query(CTE)) as any[];
         const mSet = new Set<string>();
         const tSet = new Set<string>();
-        const mat: Record<string, Record<string, number>> = {};
-        const tot: Record<string, number> = {};
+        const mat: Record<string, Record<string, Celda>> = {};
+        const tot: Record<string, Celda> = {};
         const det: Record<string, any[]> = {};
         for (const f of filas) {
             mSet.add(f.mes);
             tSet.add(f.tarjeta);
             mat[f.mes] ??= {};
-            mat[f.mes][f.tarjeta] = (mat[f.mes][f.tarjeta] ?? 0) + f.cuota;
-            tot[f.mes] = (tot[f.mes] ?? 0) + f.cuota;
+            const cell = (mat[f.mes][f.tarjeta] ??= { ars: 0, usd: 0 });
+            const tcell = (tot[f.mes] ??= { ars: 0, usd: 0 });
+            if (f.moneda === 'USD') { cell.usd += f.cuota; tcell.usd += f.cuota; }
+            else { cell.ars += f.cuota; tcell.ars += f.cuota; }
             (det[f.mes] ??= []).push(f);
         }
         meses = [...mSet].sort();
@@ -68,12 +74,13 @@
     }
 
     let mesAbierto = $state<string | null>(null);
-    const peso = (n: number | undefined) => (n ? '$' + Math.round(n).toLocaleString('es-AR') : '—');
+    const n0 = (n: number) => Math.round(n || 0).toLocaleString('es-AR');
+    const vacia = (c: Celda | undefined) => !c || (!c.ars && !c.usd);
 </script>
 
 <div class="titulo-guia">
-    <h1>Vista de crédito</h1>
-    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. En 'Reservado' anotás cuánta plata ya apartaste para pagar el vencimiento de ese mes: eso suma a tu ingreso disponible en Presupuesto. Tocá un mes para ver el detalle." />
+    <h1>Crédito</h1>
+    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. Los montos en pesos y en dólares se muestran por separado (no se mezclan). En 'Reservado' anotás cuánta plata ya apartaste para pagar el vencimiento de ese mes: eso suma a tu ingreso disponible en Presupuesto. Tocá un mes para ver el detalle." />
 </div>
 <a href="/" class="btn-volver">← Volver a Presupuesto</a>
 
@@ -88,8 +95,20 @@
             {#each meses as m (m)}
                 <tr class="mes" onclick={() => (mesAbierto = mesAbierto === m ? null : m)}>
                     <td>{mesAbierto === m ? '▾' : '▸'} {m}</td>
-                    {#each tarjetas as t}<td class="num">{peso(matriz[m]?.[t])}</td>{/each}
-                    <td class="num total">{peso(totalMes[m])}</td>
+                    {#each tarjetas as t}
+                        <td class="num">
+                            {#if vacia(matriz[m]?.[t])}—{:else}
+                                {#if matriz[m][t].ars}<div>${n0(matriz[m][t].ars)}</div>{/if}
+                                {#if matriz[m][t].usd}<div class="usd">U$D {n0(matriz[m][t].usd)}</div>{/if}
+                            {/if}
+                        </td>
+                    {/each}
+                    <td class="num total">
+                        {#if vacia(totalMes[m])}—{:else}
+                            {#if totalMes[m].ars}<div>${n0(totalMes[m].ars)}</div>{/if}
+                            {#if totalMes[m].usd}<div class="usd">U$D {n0(totalMes[m].usd)}</div>{/if}
+                        {/if}
+                    </td>
                     <td class="num resv" onclick={(e) => e.stopPropagation()}>
                         <input class="reserva" type="text" inputmode="decimal" use:soloNum
                             value={reservaMap[m] ? formatNum(reservaMap[m], 0) : ''} placeholder="—"
@@ -104,7 +123,7 @@
                                 {#each detallePorMes[m].filter(d => d.tarjeta === t) as d (`${d.gasto_id}-${d.nro}`)}
                                     <div class="item">
                                         <span>{d.detalle} ({d.nro}/{d.cuotas})</span>
-                                        <strong>{peso(d.cuota)}</strong>
+                                        <strong>{d.moneda === 'USD' ? 'U$D ' : '$'}{n0(d.cuota)}</strong>
                                     </div>
                                 {/each}
                             </td>
@@ -116,7 +135,7 @@
             {/each}
         </tbody>
     </table>
-    <p class="nota">El monto reservado de cada mes se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Presupuesto: plata que ya separaste no te quita del disponible.</p>
+    <p class="nota">Pesos y dólares se muestran por separado porque son unidades distintas. La <strong>reserva</strong> (en pesos) se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Presupuesto: plata que ya separaste no te quita del disponible.</p>
 {/if}
 
 <style>
@@ -127,6 +146,7 @@
     .mes { cursor: pointer; }
 
     .total { font-weight: bold; }
+    .usd { color: var(--text-dim); font-size: 0.92em; }
 
     .resv { width: 110px; }
     input.reserva { width: 100%; max-width: 100px; text-align: right; padding: 3px 5px; box-sizing: border-box; }

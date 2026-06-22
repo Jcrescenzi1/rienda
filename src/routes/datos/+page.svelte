@@ -249,6 +249,15 @@
 				<li>Se abre como app propia, con su ícono en el escritorio.</li>
 			</ol>
 		</div>
+		<div class="inst-card">
+			<strong>🖥 Mac (Chrome)</strong>
+			<ol>
+				<li>En Mac, <strong>instalá desde Chrome</strong> (no desde Safari): Safari solo permite instalar PWAs en macOS Sonoma o superior, y la opción está escondida.</li>
+				<li>Abrí Rienda en <strong>Chrome</strong>.</li>
+				<li>En la barra de direcciones, clic en el ícono de <strong>instalar</strong> (un monitor con ↓), o menú <strong>⋮ → "Instalar Rienda"</strong>.</li>
+				<li>Se abre como app propia, con su ícono en el Dock.</li>
+			</ol>
+		</div>
 	</div>
 
 	<h2>Planillas (Excel / CSV)</h2>

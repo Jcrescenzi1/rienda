@@ -6,7 +6,7 @@ export const SEED_BASE = `
 -- Categorías genéricas de arranque (el usuario las edita después en Configuración)
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Comidas');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Transporte');
-INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Servicios');
+INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Impuestos/Servicios');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Salidas');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Salud');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Compras');

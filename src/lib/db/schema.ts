@@ -95,6 +95,29 @@ CREATE TABLE IF NOT EXISTS suscripcion_registro (
   UNIQUE (suscripcion_id, periodo)
 );
 
+-- Ingresos fijos: espejo de los gastos fijos (suscripcion) para el lado del
+-- ingreso. Plantilla mensual; "Registrar Ingreso" crea un ingreso real del mes.
+CREATE TABLE IF NOT EXISTS ingreso_fijo (
+  id          INTEGER PRIMARY KEY,
+  perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
+  nombre      TEXT NOT NULL,
+  detalle     TEXT,
+  monto       REAL NOT NULL CHECK (monto > 0),
+  moneda      TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
+  categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros')),
+  tipo        TEXT NOT NULL DEFAULT 'Sueldo' CHECK (tipo IN ('Sueldo','Aciclico')),
+  activa      INTEGER NOT NULL DEFAULT 1
+);
+
+-- Marca qué ingreso fijo ya se registró en qué período (evita duplicar el mes).
+CREATE TABLE IF NOT EXISTS ingreso_fijo_registro (
+  id               INTEGER PRIMARY KEY,
+  ingreso_fijo_id  INTEGER NOT NULL REFERENCES ingreso_fijo(id),
+  ingreso_id       INTEGER NOT NULL REFERENCES ingreso(id),
+  periodo          TEXT NOT NULL,
+  UNIQUE (ingreso_fijo_id, periodo)
+);
+
 CREATE TABLE IF NOT EXISTS cuenta_inversion (
   id          INTEGER PRIMARY KEY,
   perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
