@@ -1,21 +1,20 @@
 // service-worker.js
 // Estrategia "stale-while-revalidate": sirve al instante desde el cache y, en
-// paralelo, baja la version nueva del servidor para la proxima apertura. Asi la
-// app instalada (PWA) abre rapido en mobile y, aun asi, se mantiene actualizada.
-// Los assets con hash (immutable) y el WASM de SQLite quedan cacheados: no se
-// vuelven a bajar en cada arranque (eso era lo que la hacia lenta).
+// paralelo, baja la version nueva del servidor para la proxima apertura.
+//
+// RECORDATORIO DE RELEASE: bumpear CACHE (v3 -> v4 ...) en cada deploy que toque
+// esquema, el worker de la DB o algo breaking. skipWaiting + clients.claim hacen
+// que la version nueva tome control en el primer open (no una sesion tarde).
 
-const CACHE = 'rienda-cache-v2';
+const CACHE = 'rienda-cache-v3';
 
 self.addEventListener('install', () => {
-	// Activa la version nueva del SW de inmediato, sin esperar.
 	self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
 	event.waitUntil(
 		(async () => {
-			// Borra caches de versiones anteriores (incluye el v1 network-first).
 			const keys = await caches.keys();
 			await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
 			await self.clients.claim();
@@ -25,8 +24,6 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
 	const req = event.request;
-
-	// Solo GET y solo mismo origen; el resto pasa directo a la red.
 	if (req.method !== 'GET') return;
 	const url = new URL(req.url);
 	if (url.origin !== self.location.origin) return;
@@ -35,17 +32,12 @@ self.addEventListener('fetch', (event) => {
 		(async () => {
 			const cache = await caches.open(CACHE);
 			const cached = await cache.match(req);
-
-			// Refresco en segundo plano: actualiza el cache para la proxima vez.
 			const red = fetch(req)
 				.then((fresh) => {
 					if (fresh && fresh.status === 200) cache.put(req, fresh.clone());
 					return fresh;
 				})
 				.catch(() => null);
-
-			// Si hay copia en cache, la devolvemos YA (instantaneo) y dejamos que
-			// el refresco corra atras. Si no hay, esperamos a la red.
 			if (cached) return cached;
 			const fresh = await red;
 			if (fresh) return fresh;

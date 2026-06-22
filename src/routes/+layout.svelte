@@ -259,6 +259,8 @@
 	:global(thead tr) { background: var(--surface-2); }
 	:global(tbody tr:nth-child(even)) { background: rgba(255, 255, 255, 0.015); }
 	:global(tfoot td) { border-top: 2px solid var(--border) !important; }
+	/* Item 4: dígitos alineados en columnas de cifras */
+	:global(table), :global(.num), :global(.card strong), :global(.disp-tabla), :global(.reg-monto), :global(.ficha-monto) { font-variant-numeric: tabular-nums; }
 
 	:global(input), :global(select) {
 		background: var(--surface-2);
@@ -300,8 +302,8 @@
 	:global(.btn-row) { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
 
 	/* Botones inline / ícono estandarizados (✏ ✕ ✓ 🗑), una sola definición */
-	:global(.lapiz) { background: none; border: none; cursor: pointer; opacity: 0.6; font-size: 0.9rem; padding: 2px 5px; line-height: 1; color: var(--text); }
-	:global(.lapiz:hover) { opacity: 1; }
+	:global(.lapiz) { background: rgba(91, 157, 255, 0.12); color: var(--accent); border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; line-height: 1; padding: 3px 9px; }
+	:global(.lapiz:hover) { background: rgba(91, 157, 255, 0.22); }
 	:global(.okp) { background: var(--pos); color: #06281a; border: none; border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; margin-left: 2px; }
 	:global(.cancp) { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; margin-left: 2px; }
 	:global(.del) { background: rgba(248, 113, 113, 0.15); color: var(--neg); border: none; border-radius: 6px; cursor: pointer; padding: 3px 9px; font-size: 0.85rem; line-height: 1; }

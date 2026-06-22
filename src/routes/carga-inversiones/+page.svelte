@@ -147,12 +147,12 @@
 	}
 
 	async function borrarTx(id: number) {
-		if (!confirm('¿Borrar esta operación?')) return;
+		if (!confirm('¿Eliminar esta operación?')) return;
 		await query('DELETE FROM transaccion WHERE id=? AND perfil_id=1', [id]);
 		await cargarLedger();
 	}
 	async function borrarCaja(m: any) {
-		if (!confirm('¿Borrar este movimiento de caja?')) return;
+		if (!confirm('¿Eliminar este movimiento de caja?')) return;
 		if (m.grupo) await query('DELETE FROM mov_caja WHERE grupo=? AND perfil_id=1', [m.grupo]);
 		else await query('DELETE FROM mov_caja WHERE id=? AND perfil_id=1', [m.id]);
 		await cargarCaja();
@@ -249,7 +249,7 @@
 				<span class="ficha-nombre">{t.nombre} <span class="ficha-tipo">({t.tipo})</span></span>
 				<span class="ficha-monto">{money(t.unidades * t.precio, t.moneda)}</span>
 				<span class="ficha-acc">
-					<button class="del" onclick={() => borrarTx(t.id)} title="Borrar">✕</button>
+					<button class="del" onclick={() => borrarTx(t.id)} title="Eliminar">✕</button>
 				</span>
 			</div>
 			<div class="ficha-meta">
@@ -268,7 +268,7 @@
 				<span class="ficha-nombre">{m.accion}</span>
 				<span class="ficha-monto {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</span>
 				<span class="ficha-acc">
-					<button class="del" onclick={() => borrarCaja(m)} title="Borrar">✕</button>
+					<button class="del" onclick={() => borrarCaja(m)} title="Eliminar">✕</button>
 				</span>
 			</div>
 			<div class="ficha-meta">{fmtFecha(m.fecha)} · {m.moneda}</div>

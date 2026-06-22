@@ -6,7 +6,7 @@ import { query, queryBatch } from './client';
 import { hoyISO } from '../format';
 import { setMeta } from './meta';
 
-// Tablas ordenadas de "padres" a "hijas" (según foreign keys).
+// Tablas ordenadas de "padres" a "hijas" (segun foreign keys).
 // meta va al final: no tiene dependencias.
 const TABLAS = [
 	'perfil',
@@ -24,42 +24,46 @@ const TABLAS = [
 	'inflacion',
 	'cotizacion_dolar',
 	'presupuesto',
+	'reserva_credito',
 	'snapshot',
 	'liquidez',
 	'mov_caja',
 	'meta'
 ];
 
-// ---------- EXPORTAR ----------
-export async function exportarDatos(): Promise<void> {
+// ---------- SERIALIZAR (volcado completo en memoria) ----------
+// Compartido por la exportacion descargable y por el auto-backup en OPFS.
+export async function serializarBackup(): Promise<{ obj: any; json: string }> {
 	const tablas: Record<string, any[]> = {};
 	for (const t of TABLAS) {
 		tablas[t] = await query(`SELECT * FROM ${t}`);
 	}
-
-	const backup = {
+	const obj = {
 		app: 'rienda',
 		version: 2,
 		exportado_en: new Date().toISOString(),
 		tablas
 	};
+	return { obj, json: JSON.stringify(obj, null, 2) };
+}
 
-	const json = JSON.stringify(backup, null, 2);
+// ---------- EXPORTAR ----------
+export async function exportarDatos(): Promise<void> {
+	const { json } = await serializarBackup();
 	const blob = new Blob([json], { type: 'application/json' });
 	const url = URL.createObjectURL(blob);
 
-	const fecha = hoyISO();
 	const a = document.createElement('a');
 	a.href = url;
-	a.download = `rienda-backup-${fecha}.json`;
+	a.download = `rienda-backup-${hoyISO()}.json`;
 	a.click();
 	URL.revokeObjectURL(url);
 
-	// Registra cuándo se exportó (para el recordatorio de backup en el home)
+	// Registra cuando se exporto (para el recordatorio de backup en el home)
 	await setMeta('ultima_exportacion', new Date().toISOString());
 }
 
-// Tipo para la comparación previa
+// Tipo para la comparacion previa
 export type FechasBackup = {
 	valido: boolean;
 	tieneMeta: boolean;
@@ -69,17 +73,17 @@ export type FechasBackup = {
 };
 
 // ---------- LEER FECHAS DE UN BACKUP (sin importar) ----------
-// Sirve para la comparación previa: leer qué trae el archivo antes de pisar nada.
-export async function leerFechasBackup(file: File): Promise<{ backup: any; fechas: FechasBackup }> {
-	const texto = await file.text();
+// Acepta un File (input) o un string JSON (auto-backups de OPFS).
+export async function leerFechasBackup(src: File | string): Promise<{ backup: any; fechas: FechasBackup }> {
+	const texto = typeof src === 'string' ? src : await src.text();
 	let backup: any;
 	try {
 		backup = JSON.parse(texto);
 	} catch {
-		throw new Error('El archivo no es un JSON válido.');
+		throw new Error('El archivo no es un JSON valido.');
 	}
 	if (backup?.app !== 'rienda' || !backup?.tablas) {
-		throw new Error('El archivo no es un backup válido de Rienda.');
+		throw new Error('El archivo no es un backup valido de Rienda.');
 	}
 
 	const metaRows: any[] = Array.isArray(backup.tablas.meta) ? backup.tablas.meta : [];
@@ -104,19 +108,19 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 	if (fileOrBackup instanceof File) {
 		const texto = await fileOrBackup.text();
 		try { backup = JSON.parse(texto); }
-		catch { throw new Error('El archivo no es un JSON válido.'); }
+		catch { throw new Error('El archivo no es un JSON valido.'); }
 	} else {
 		backup = fileOrBackup;
 	}
 
 	if (backup?.app !== 'rienda' || !backup?.tablas) {
-		throw new Error('El archivo no es un backup válido de Rienda.');
+		throw new Error('El archivo no es un backup valido de Rienda.');
 	}
 
 	const tablas = backup.tablas as Record<string, any[]>;
 
-	// Todo en UN lote atómico (un solo viaje al worker, transacción incluida).
-	// FK apagadas durante el import para tolerar backups viejos con huérfanos;
+	// Todo en UN lote atomico (un solo viaje al worker, transaccion incluida).
+	// FK apagadas durante el import para tolerar backups viejos con huerfanos;
 	// se reactivan siempre al final.
 	const stmts: { sql: string; bind?: unknown[] }[] = [];
 	for (const t of [...TABLAS].reverse()) {
@@ -137,23 +141,15 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 	try {
 		await queryBatch(stmts);
 	} catch (err: any) {
-		throw new Error('Falló la importación, no se modificó nada: ' + (err?.message ?? err));
+		throw new Error('Fallo la importacion, no se modifico nada: ' + (err?.message ?? err));
 	} finally {
 		await query('PRAGMA foreign_keys=ON');
 	}
 }
 
 // ---------- RESETEAR (borrado total / "factory reset") ----------
-// Borra TODOS los datos del dispositivo y deja la base vacía.
-// Reusa TABLAS para no desincronizarse nunca con el backup: si mañana agregás
-// una tabla al export, el reset la contempla solo.
-// Mismo patrón transaccional que importarDatos (borra hijas primero), por eso
-// NO necesita tocar PRAGMA foreign_keys (que sería no-op dentro de la transacción).
 export async function resetearBase(): Promise<void> {
-	// Un solo lote atómico: borra hijas primero, igual que el import.
 	const stmts: { sql: string }[] = [...TABLAS].reverse().map((t) => ({ sql: `DELETE FROM ${t}` }));
-	// Reinicia los contadores AUTOINCREMENT para que arranque como recién instalada.
-	// sqlite_sequence solo existe si hay alguna tabla con AUTOINCREMENT.
 	const seq = (await query(
 		`SELECT name FROM sqlite_master WHERE type='table' AND name='sqlite_sequence'`
 	)) as any[];
@@ -161,6 +157,6 @@ export async function resetearBase(): Promise<void> {
 	try {
 		await queryBatch(stmts);
 	} catch (err: any) {
-		throw new Error('Falló el borrado, no se modificó nada: ' + (err?.message ?? err));
+		throw new Error('Fallo el borrado, no se modifico nada: ' + (err?.message ?? err));
 	}
 }

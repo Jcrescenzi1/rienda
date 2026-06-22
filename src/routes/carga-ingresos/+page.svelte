@@ -129,7 +129,7 @@
 	}
 
 	async function borrar(id: number) {
-		if (!confirm('¿Borrar este ingreso?')) return;
+		if (!confirm('¿Eliminar este ingreso?')) return;
 		if (editandoId === id) resetForm();
 		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
 		await cargar();
@@ -221,7 +221,7 @@
 				</span>
 				<span class="ficha-acc">
 					<button class="lapiz" onclick={() => editar(i)} title="Editar">✏</button>
-					<button class="del" onclick={() => borrar(i.id)} title="Borrar">✕</button>
+					<button class="del" onclick={() => borrar(i.id)} title="Eliminar">✕</button>
 				</span>
 			</div>
 		</div>

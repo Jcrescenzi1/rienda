@@ -214,7 +214,7 @@
 	async function guardarEd() {
 		const m = parseNum(eMonto);
 		if (!eFecha) return (msgEd = 'Falta la fecha');
-		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto invalido');
+		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto inválido');
 		if (!ePeriodo) return (msgEd = 'Falta el periodo');
 		try {
 			await query('UPDATE ingreso SET fecha=?, monto=?, moneda=?, categoria=?, tipo=?, detalle=?, periodo=? WHERE id=? AND perfil_id=1',
@@ -224,7 +224,7 @@
 		} catch (e: any) { msgEd = 'Error: ' + (e?.message ?? e); }
 	}
 	async function eliminar(id: number) {
-		if (!confirm('Eliminar este ingreso? No se puede deshacer.')) return;
+		if (!confirm('¿Eliminar este ingreso? No se puede deshacer.')) return;
 		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
 		await cargarIngresos();
 	}
@@ -326,7 +326,7 @@
 	{/if}
 
 	<h2>Registros</h2>
-	<p class="nota">Editas el valor original cargado. El toggle de moneda solo afecta el grafico y la dona.</p>
+	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico y la dona.</p>
 	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
 	<div class="regs">
 		{#each registros as i (i.id)}

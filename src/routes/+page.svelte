@@ -3,7 +3,6 @@
     import { query } from '$lib/db/client';
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
     import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
-    import { dolarActual } from '$lib/cartera';
     import { leerMeta, setMeta } from '$lib/db/meta';
     import Guia from '$lib/Guia.svelte';
 
@@ -21,10 +20,20 @@
     // Reserva de crédito apartada para el mes visible (plata separada para pagar
     // tarjetas). Netea el "Ingreso disponible para gasto" del Ítem 1.
     let reservaMes = $state(0);
+    // Item 2: deuda en cuotas que vence el MES SIGUIENTE vs lo reservado para ese mes.
+    let deudaSig = $state(0);
+    let reservaSig = $state(0);
+    let mesSigLabel = $state('');
     // Ingreso disponible = ingresos − (vencimiento de tarjeta del mes − reserva).
     // Concientización de caja: el gasto se cuenta una sola vez (devengado), esto
     // solo ajusta cuánto te queda libre después de separar para las tarjetas.
     let ingresoDisponible = $derived(ingresosMes - (creditoMes - reservaMes));
+    let descubierto = $derived(deudaSig - reservaSig);
+    // Detalle del Ingreso disponible: colapsable; recuerda la preferencia.
+    let detalleAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('disp_detalle') === '1');
+    $effect(() => { try { localStorage.setItem('disp_detalle', detalleAbierto ? '1' : '0'); } catch { /* ignore */ } });
+    let deudaAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('deuda_detalle') === '1');
+    $effect(() => { try { localStorage.setItem('deuda_detalle', deudaAbierto ? '1' : '0'); } catch { /* ignore */ } });
     // Aviso de backup: null = no mostrar; -1 = nunca exportó; >0 = días sin exportar
     let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
@@ -61,6 +70,23 @@
         const n1 = addMonths(periodo, -1);
         const n2 = addMonths(periodo, -2);
         const objetivo = new Set([n, n1, n2]);
+        const mesSig = addMonths(n, 1);
+        mesSigLabel = labelMes(mesSig);
+        // Deuda de credito de un mes M: cuotas repartidas; las cuotas en USD se
+        // convierten a ARS al MEP de la FECHA DE COMPRA (deterministico, estable).
+        const CUOTAS_MES = `
+            WITH RECURSIVE serie(total, cuotas, c, inicio, moneda, fecha) AS (
+                SELECT monto, cuotas, 0, mes_inicio_pago, moneda, fecha
+                FROM gasto WHERE perfil_id=1 AND medio='credito'
+                UNION ALL
+                SELECT total, cuotas, c+1, inicio, moneda, fecha FROM serie WHERE c+1 < cuotas
+            )
+            SELECT COALESCE(SUM(
+                (total*1.0/cuotas) * CASE WHEN moneda='USD'
+                    THEN COALESCE((SELECT cd.valor FROM cotizacion_dolar cd WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha <= serie.fecha ORDER BY cd.fecha DESC LIMIT 1), 0)
+                    ELSE 1 END
+            ),0) AS t
+            FROM serie WHERE strftime('%Y-%m', date(inicio, '+'||c||' months')) = ?`;
 
         // Etiquetas de los encabezados
         labN = labelMes(n);
@@ -81,10 +107,14 @@
 
         // Todas las lecturas independientes en paralelo: una sola tanda al worker
         // en vez de encadenarlas (más rápido, sobre todo en mobile).
-        const [gastos, hab, subs, cats, presup, cred, ing, dolarUltimo, resv] = (await Promise.all([
+        const [gastos, hab, subs, cats, presup, cred, ing, dolarBase, resv, deudaR, reservaR] = (await Promise.all([
             query(
-                `SELECT g.fecha, g.monto, g.categoria_id,
-                        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid
+                `SELECT g.fecha, g.monto, g.moneda,
+                        g.categoria_id,
+                        COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid,
+                        (SELECT cd.valor FROM cotizacion_dolar cd
+                         WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha <= g.fecha
+                         ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia
                  FROM gasto g
                  LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
                  WHERE g.perfil_id = 1`
@@ -99,17 +129,7 @@
             query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1'),
             query('SELECT id, nombre FROM categoria WHERE perfil_id=1'),
             query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
-            query(
-                `WITH RECURSIVE serie(total, cuotas, n, inicio) AS (
-                    SELECT monto, cuotas, 0, mes_inicio_pago
-                    FROM gasto WHERE perfil_id=1 AND medio='credito'
-                    UNION ALL
-                    SELECT total, cuotas, n+1, inicio FROM serie WHERE n+1 < cuotas
-                )
-                SELECT COALESCE(SUM(total*1.0/cuotas),0) AS t
-                FROM serie WHERE strftime('%Y-%m', date(inicio, '+'||n||' months')) = ?`,
-                [n]
-            ),
+            query(CUOTAS_MES, [n]),
             query(
                 `SELECT i.monto, i.moneda,
                         (SELECT c.valor FROM cotizacion_dolar c
@@ -119,9 +139,14 @@
                  WHERE i.perfil_id=1 AND i.periodo=?`,
                 [n]
             ),
-            dolarActual(),
-            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [n])
+            query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha ASC LIMIT 1"),
+            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [n]),
+            query(CUOTAS_MES, [mesSig]),
+            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [mesSig])
         ])) as any[];
+        // MEP base determinístico para ingresos USD sin cotización previa
+        // (la más antigua conocida; no cambia con el auto-refresh).
+        const dolarPrimero = dolarBase[0]?.valor ?? 1;
 
         // categoría habitual por subcategoría
         const homeCat: Record<string, number | null> = {};
@@ -147,10 +172,12 @@
             const per = asignar(g.fecha);
             if (!per || !objetivo.has(per)) continue;
             const k = key(g.scid);
+            // Gasto en USD -> ARS al MEP de la fecha de compra (determinístico).
+            const monto = g.moneda === 'USD' ? g.monto * (g.dolar_dia ?? dolarPrimero) : g.monto;
             acc[k] ??= { scid: g.scid, n2: 0, n1: 0, real: 0 };
-            if (per === n2) acc[k].n2 += g.monto;
-            else if (per === n1) acc[k].n1 += g.monto;
-            else if (per === n) acc[k].real += g.monto;
+            if (per === n2) acc[k].n2 += monto;
+            else if (per === n1) acc[k].n1 += monto;
+            else if (per === n) acc[k].real += monto;
         }
 
         for (const p of presup) {
@@ -194,12 +221,14 @@
 
         // Ingresos totales del período (USD al dólar del día de cobro; fallback al último)
         ingresosMes = ing.reduce(
-            (s: number, r: any) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarUltimo) : r.monto),
+            (s: number, r: any) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto),
             0
         );
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
         reservaMes = resv[0]?.t ?? 0;
+        deudaSig = deudaR[0]?.t ?? 0;
+        reservaSig = reservaR[0]?.t ?? 0;
 
         cargando = false;
     }
@@ -334,23 +363,45 @@
 
     <!-- ===== Ingreso disponible (Ítem 1) ===== -->
     <div class="disponible">
-        <div class="disp-head">
-            <strong>Ingreso disponible para gasto</strong>
+        <button class="disp-toggle" onclick={() => (detalleAbierto = !detalleAbierto)} aria-expanded={detalleAbierto} title="Ver/ocultar cómo se calcula">
+            <span class="flecha">{detalleAbierto ? '▾' : '▸'}</span>
+            <span class="disp-titulo">Ingreso disponible</span>
+            <span class="disp-valor">{peso(ingresoDisponible)}</span>
+        </button>
+        {#if detalleAbierto}
+            <table class="disp-tabla disp-detalle">
+                <tbody>
+                    <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
+                    <tr><td>− Pago de tarjeta del mes</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
+                    <tr><td>+ Reservado para el mes</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
+                    <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
+                </tbody>
+            </table>
+            <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Gastos en Crédito</a>.</p>
+        {/if}
+        <div class="disp-gastorow">
+            <span>Gasto total del mes</span>
+            <strong>{peso(totales.real)}</strong>
         </div>
-        <table class="disp-tabla">
-            <tbody>
-                <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
-                <tr><td>− Gasto de tarjeta del mes (vencimiento)</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
-                <tr><td>+ Reserva del mes</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
-                <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
-            </tbody>
-        </table>
-        <table class="disp-tabla disp-gasto">
-            <tbody>
-                <tr class="disp-total"><td><strong>Gasto total del mes</strong></td><td class="num"><strong>{peso(totales.real)}</strong></td></tr>
-            </tbody>
-        </table>
-        <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Gastos en Crédito</a> (todavía sin cargar = $0).</p>
+    </div>
+
+    <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
+    <div class="deuda-panel" class:ok={descubierto <= 0} class:warn={descubierto > 0}>
+        <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
+            <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
+            <span class="disp-titulo">Crédito del mes que viene</span>
+            <span class="disp-valor">{peso(descubierto)}</span>
+        </button>
+        {#if deudaAbierto}
+            <table class="disp-tabla disp-detalle">
+                <tbody>
+                    <tr><td>Cuotas a pagar ({mesSigLabel})</td><td class="num">{peso(deudaSig)}</td></tr>
+                    <tr><td>− Reservado para ese mes</td><td class="num">{reservaSig ? '−' + peso(reservaSig) : peso(0)}</td></tr>
+                    <tr class="disp-total"><td><strong>= Cuota Neta de Reservas</strong></td><td class="num"><strong>{peso(descubierto)}</strong></td></tr>
+                </tbody>
+            </table>
+            <p class="disp-nota">Reservá plata para el pago de próximos vencimientos desde <a href="/credito">Gastos en Crédito</a>.</p>
+        {/if}
     </div>
 
     <h2>Consolidado por categoría</h2>
@@ -449,16 +500,27 @@
         border: 1px solid var(--border); border-left: 3px solid var(--accent);
         background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px;
     }
-    .disp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-    .disp-head strong { font-size: 0.98rem; }
+    .disp-toggle { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 0 0 6px; cursor: pointer; color: var(--text); text-align: left; }
+    .disp-toggle .flecha { color: var(--text-dim); font-size: 0.8rem; width: 12px; display: inline-block; }
+    .disp-toggle .disp-titulo { font-size: 0.98rem; font-weight: 600; }
+    .disp-toggle .disp-valor { margin-left: auto; font-size: 1.1rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
     .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     .disp-tabla td { border: none !important; padding: 4px 2px; }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
     .disp-tabla .disp-total td { border-top: 1px solid var(--border) !important; padding-top: 7px; }
     .disp-tabla .disp-total td strong { color: var(--accent); font-size: 1.05rem; }
-    .disp-gasto { margin-top: 6px; }
+    .disp-gastorow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
+    .disp-gastorow span { font-size: 0.88rem; }
+    .disp-gastorow strong { font-size: 1.05rem; white-space: nowrap; }
     .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
     .disp-nota a { color: var(--accent); }
+    .deuda-panel { border: 1px solid var(--border); border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px; }
+    .deuda-panel.ok { border-left-color: var(--pos); }
+    .deuda-panel.warn { border-left-color: var(--warn); }
+    .deuda-panel.ok .disp-total td strong { color: var(--pos); }
+    .deuda-panel.warn .disp-total td strong { color: var(--warn); }
+    .deuda-panel.ok .disp-valor { color: var(--pos); }
+    .deuda-panel.warn .disp-valor { color: var(--warn); }
 
     /* Checklist de primeros pasos */
     .pasos {

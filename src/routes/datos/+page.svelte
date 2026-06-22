@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
+	import { crearAutobackup, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 	import {
 		descargarArchivo, importarExcel,
@@ -17,6 +18,7 @@
 	let comparando = $state(false);
 	let fechasBackup = $state<FechasBackup | null>(null);
 	let backupPendiente = $state<any>(null);
+	let autobackups = $state<AutobackupItem[]>([]);
 
 	// Estado del borrado total
 	let reseteando = $state(false);
@@ -26,6 +28,7 @@
 
 	async function cargar() {
 		meta = await leerMeta();
+		autobackups = await listarAutobackups();
 		cargando = false;
 	}
 	onMount(cargar);
@@ -67,6 +70,7 @@
 	// Paso 2: confirmar la importación
 	async function confirmarImport() {
 		try {
+			await crearAutobackup(); // red de seguridad antes de pisar
 			await importarDatos(backupPendiente);
 			await setMeta('ultima_importacion', new Date().toISOString());
 			alert('Importación completa. La página se va a recargar.');
@@ -81,6 +85,16 @@
 		comparando = false;
 		fechasBackup = null;
 		backupPendiente = null;
+	}
+
+	// Restaurar una copia automatica: entra al MISMO flujo de comparacion que un import.
+	async function restaurarAuto(nombre: string) {
+		try {
+			const texto = await leerAutobackup(nombre);
+			const { backup, fechas } = await leerFechasBackup(texto);
+			fechasBackup = fechas; backupPendiente = backup; comparando = true;
+			window.scrollTo({ top: 0, behavior: 'smooth' });
+		} catch (err: any) { alert(err?.message ?? String(err)); }
 	}
 
 	// ----- Planillas: precarga Excel + exportación CSV -----
@@ -124,6 +138,7 @@
 		if (!puedeBorrar || borrando) return;
 		borrando = true;
 		try {
+			await crearAutobackup(); // red de seguridad antes de borrar
 			await resetearBase();
 			alert('Listo. Se borraron todos los datos de este dispositivo. La app vuelve al inicio.');
 			location.reload();
@@ -192,6 +207,23 @@
 			</div>
 		</div>
 	{/if}
+
+	<h2>Copias automáticas</h2>
+	<p class="nota">Antes de cada importación o borrado, Rienda guarda sola una copia en este dispositivo (las últimas 5). Si una operación pisó tus datos, restaurá desde acá — usa la misma comparación que una importación.</p>
+	{#if autobackups.length}
+		<ul class="autolist">
+			{#each autobackups as a (a.nombre)}
+				<li>
+					<span class="auto-fecha">{a.fecha}</span>
+					<span class="auto-size">{(a.size / 1024).toFixed(0)} KB</span>
+					<button class="btn btn-secondary" onclick={() => restaurarAuto(a.nombre)}>Restaurar</button>
+				</li>
+			{/each}
+		</ul>
+	{:else}
+		<p class="nota">Todavía no hay copias automáticas (se crean al importar o al borrar).</p>
+	{/if}
+	<p class="nota auto-lim">Estas copias viven en este mismo dispositivo. NO protegen contra "limpiar datos de navegación", desalojo del navegador ni pérdida del equipo. Para eso, descargá la copia de seguridad y guardala en otro lado.</p>
 
 	<h2>Instalá la app (recomendado)</h2>
 	<p class="nota">
@@ -331,4 +363,9 @@
 	.lbl-confirm { display: block; font-size: 0.85rem; margin: 4px 0 6px; }
 	.input-confirm { width: 100%; max-width: 240px; box-sizing: border-box; padding: 9px 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); letter-spacing: 0.05em; margin-bottom: 14px; }
 	.input-confirm:focus { outline: none; border-color: var(--neg); }
+	.autolist { list-style: none; padding: 0; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
+	.autolist li { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 7px 12px; }
+	.auto-fecha { flex: 1; font-size: 0.88rem; }
+	.auto-size { color: var(--text-dim); font-size: 0.8rem; }
+	.auto-lim { font-size: 0.78rem; }
 </style>

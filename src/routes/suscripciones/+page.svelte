@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
-	import { dolarActual } from '$lib/cartera';
 	import { setMeta } from '$lib/db/meta';
 	import Guia from '$lib/Guia.svelte';
 
@@ -36,6 +35,14 @@
 	let mensaje = $state('');
 	const editando = $derived(editId !== null);
 
+	// MEP de referencia del periodo: cotizacion del primer dia del mes corriente.
+	// Es una cotizacion historica fija -> el presupuesto de fijos USD NO flota
+	// intra-mes; se actualiza recien al cambiar de mes (Item 3, ancla deterministica).
+	async function mepDelPeriodo(): Promise<number> {
+		const r = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' AND fecha <= ? ORDER BY fecha DESC LIMIT 1", [mesActual() + '-01'])) as any[];
+		return r[0]?.valor ?? 1;
+	}
+
 	async function cargar() {
 		categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		tarjetas = await query('SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
@@ -64,7 +71,7 @@
 		registradas = r;
 
 		// Dolar MEP para convertir los fijos en USD a ARS.
-		dolar = await dolarActual();
+		dolar = await mepDelPeriodo();
 		fijoMesARS = subs
 			.filter((s: any) => s.activa)
 			.reduce((t: number, s: any) => t + (s.moneda === 'USD' ? s.monto * dolar : s.monto), 0);
@@ -86,7 +93,7 @@
 	// MEP). Se marca auto=1 y NO se edita desde la tabla de presupuesto. Fuente
 	// unica de edicion: esta pantalla. Limpia los auto viejos en cada pasada.
 	async function recalcPresupuestoFijos() {
-		const dol = await dolarActual();
+		const dol = await mepDelPeriodo();
 		const filas = (await query(`
 			SELECT m.subcategoria_id AS scid, s.monto, s.moneda
 			FROM suscripcion s
@@ -160,18 +167,18 @@
 		mensaje = '';
 		const m = parseNum(fMonto);
 		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto invalido');
-		if (!fCatId) return (mensaje = 'Elegi categoria');
+		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
+		if (!fCatId) return (mensaje = 'Elegí categoría');
 		const detalle = (fDetalle.trim() || fNombre.trim());
 		try {
 			if (editId) {
 				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, editId]);
-				mensaje = 'Pago fijo actualizado ✓';
+				mensaje = 'Pago fijo actualizado ✅';
 			} else {
 				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id) VALUES (1,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId]);
-				mensaje = 'Pago fijo agregado ✓';
+				mensaje = 'Pago fijo agregado ✅';
 			}
 			// Si se eligio subcategoria, se mapea el detalle (reclasifica historial).
 			if (fSubcatId) {
@@ -188,7 +195,7 @@
 	}
 
 	async function eliminar(s: any) {
-		if (!confirm(`Eliminar el pago fijo "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
+		if (!confirm(`¿Eliminar el pago fijo "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
 		await query('DELETE FROM suscripcion_registro WHERE suscripcion_id=?', [s.id]);
 		await query('DELETE FROM suscripcion WHERE id=? AND perfil_id=1', [s.id]);
 		if (editId === s.id) resetForm();
@@ -203,7 +210,7 @@
 	}
 	async function confirmarDisparo(s: any) {
 		const m = parseNum(dMonto);
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto invalido');
+		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!dFecha) return (mensaje = 'Falta la fecha');
 		try {
 			// Si hay una subcategoria macro elegida, el gasto sale con ese override;
@@ -213,7 +220,7 @@
 			const g = (await query("INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas,subcategoria_id) VALUES (1,?,?,?,?,?,'debito',1,?) RETURNING id",
 				[dFecha, m, s.moneda, s.categoria_id, det, scid])) as any[];
 			await query('INSERT INTO suscripcion_registro (suscripcion_id,gasto_id,periodo) VALUES (?,?,?)', [s.id, g[0].id, periodo]);
-			disparando = null; mensaje = `"${s.nombre}" registrada en ${periodo} ✓`;
+			disparando = null; mensaje = `"${s.nombre}" registrada en ${periodo} ✅`;
 			await cargar();
 		} catch (e: any) { mensaje = 'Error: ' + (e?.message ?? String(e)); }
 	}
@@ -223,7 +230,7 @@
 
 <div class="titulo-guia">
 	<h1>Pagos fijos</h1>
-	<Guia clave="suscripciones" texto="Tus pagos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagas todos los meses. Cada uno alimenta automaticamente el presupuesto de su subcategoria. 'Disparar' lo convierte en gasto real del mes." />
+	<Guia clave="suscripciones" texto="Tus pagos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
 </div>
 
 <a href="/" class="btn-volver">← Volver a Presupuesto</a>
@@ -236,9 +243,9 @@
 	<span class="fijo-nota">suma de todos los fijos activos (USD al MEP)</span>
 </div>
 
-<label class="disparo-subcat">Subcategoria de los gastos disparados:
+<label class="disparo-subcat">Subcategoría de los pagos registrados:
 	<select bind:value={dispSubcatId} onchange={() => setMeta('susc_subcat_id', dispSubcatId)}>
-		<option value="">Automatica (segun diccionario)</option>
+		<option value="">Automática (según diccionario)</option>
 		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
 	</select>
 </label>
@@ -257,7 +264,7 @@
 					</span>
 				</div>
 				<div class="ficha-meta">
-					<span class="chip" class:sin={s.scid == null}>{s.subcat ?? '— sin subcategoria —'}</span>
+					<span class="chip" class:sin={s.scid == null}>{s.subcat ?? '— sin subcategoría —'}</span>
 					{s.tarjeta ? ` · ${s.tarjeta}` : ''}
 				</div>
 				<div class="ficha-estado">
@@ -273,7 +280,7 @@
 							<button class="btn btn-secondary" onclick={() => (disparando = null)}>Cancelar</button>
 						</span>
 					{:else}
-						<button class="btn btn-primary" onclick={() => iniciarDisparo(s)}>Disparar</button>
+						<button class="btn btn-primary" onclick={() => iniciarDisparo(s)}>Registrar Pago</button>
 					{/if}
 				</div>
 			</div>
@@ -290,8 +297,8 @@
 	<label>Detalle (como aparece en el gasto)<input bind:value={fDetalle} onblur={onDetalleChange} placeholder="Ej: Netflix" /></label>
 	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-	<label>Categoria<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
-	<label>Subcategoria<select bind:value={fSubcatId}>
+	<label>Categoría<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
+	<label>Subcategoría<select bind:value={fSubcatId}>
 		<option value="">— sin asignar —</option>
 		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
 	</select></label>
@@ -301,7 +308,7 @@
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
 		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
 	</div>
-	<p class="form-nota">La subcategoria define en que linea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
+	<p class="form-nota">La subcategoría define en qué línea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
 </div>
 
 <style>

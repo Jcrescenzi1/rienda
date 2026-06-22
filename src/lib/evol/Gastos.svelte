@@ -244,15 +244,15 @@
 	async function guardarEd() {
 		const m = parseNum(eMonto);
 		if (!eFecha) return (msgEd = 'Falta la fecha');
-		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto invalido');
-		if (!eCatId) return (msgEd = 'Elegi categoria');
+		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto inválido');
+		if (!eCatId) return (msgEd = 'Elegí categoría');
 		if (!eDetalle.trim()) return (msgEd = 'Falta el detalle');
 		try {
 			if (eMedio === 'debito') {
 				await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=NULL, cuotas=1, mes_inicio_pago=NULL WHERE id=? AND perfil_id=1',
 					[eFecha, m, eMoneda, eCatId, eDetalle.trim(), 'debito', editId]);
 			} else {
-				if (!eTarjeta) return (msgEd = 'Elegi la tarjeta');
+				if (!eTarjeta) return (msgEd = 'Elegí la tarjeta');
 				if (!eMesInicio) return (msgEd = 'Falta el mes de inicio');
 				await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=?, cuotas=?, mes_inicio_pago=? WHERE id=? AND perfil_id=1',
 					[eFecha, m, eMoneda, eCatId, eDetalle.trim(), 'credito', eTarjeta, eCuotas, eMesInicio + '-01', editId]);
@@ -262,7 +262,7 @@
 		} catch (e: any) { msgEd = 'Error: ' + (e?.message ?? e); }
 	}
 	async function eliminar(id: number) {
-		if (!confirm('Eliminar este gasto? No se puede deshacer.')) return;
+		if (!confirm('¿Eliminar este gasto? No se puede deshacer.')) return;
 		await query('DELETE FROM suscripcion_registro WHERE gasto_id=?', [id]);
 		await query('DELETE FROM gasto WHERE id=? AND perfil_id=1', [id]);
 		await cargarGastos();
@@ -365,7 +365,7 @@
 	{/if}
 
 	<h2>Registros</h2>
-	<p class="nota">Editas el valor original cargado. El toggle de moneda solo afecta el grafico y la dona. Cambiar el detalle reclasifica via diccionario.</p>
+	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico y la dona. Cambiar el detalle reclasifica vía diccionario.</p>
 	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
 	<div class="regs">
 		{#each registros as g (g.id)}
@@ -375,11 +375,11 @@
 						<label>Fecha<input type="date" bind:value={eFecha} /></label>
 						<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={eMonto} /></label>
 						<label>Moneda<select bind:value={eMoneda}><option>ARS</option><option>USD</option></select></label>
-						<label>Categoria<select bind:value={eCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
+						<label>Categoría<select bind:value={eCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
 						<label class="ancho">Detalle<input type="text" bind:value={eDetalle} /></label>
-						<label>Medio<select bind:value={eMedio}><option value="debito">Debito</option><option value="credito">Credito</option></select></label>
+						<label>Medio<select bind:value={eMedio}><option value="debito">Débito</option><option value="credito">Crédito</option></select></label>
 						{#if eMedio === 'credito'}
-							<label>Tarjeta<select bind:value={eTarjeta}><option value={null} disabled>Elegir...</option>{#each tarjetasCredito as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
+							<label>Tarjeta<select bind:value={eTarjeta}><option value={null} disabled>Elegir…</option>{#each tarjetasCredito as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
 							<label>Cuotas<input type="number" min="1" bind:value={eCuotas} /></label>
 							<label>Mes inicio<input type="month" bind:value={eMesInicio} /></label>
 						{/if}
