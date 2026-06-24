@@ -33,14 +33,6 @@
     let descubierto = $derived(deudaSig - reservaSig);
     // El valor del descubierto se pinta amarillo solo si supera el 10% del disponible.
     let deudaAlta = $derived(descubierto > 0 && (ingresoDisponible <= 0 || descubierto > ingresoDisponible * 0.10));
-    // Gasto del mes vs disponible: amarillo > 90%, rojo > 100%.
-    let gastoClase = $derived.by(() => {
-        const disp = ingresoDisponible, g = totales.real;
-        if (disp <= 0) return g > 0 ? 'g-rojo' : '';
-        if (g > disp) return 'g-rojo';
-        if (g > disp * 0.90) return 'g-amarillo';
-        return '';
-    });
     // Detalle del Ingreso disponible: colapsable; recuerda la preferencia.
     let detalleAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('disp_detalle') === '1');
     $effect(() => { try { localStorage.setItem('disp_detalle', detalleAbierto ? '1' : '0'); } catch { /* ignore */ } });
@@ -230,16 +222,9 @@
         creditoMes = cred[0]?.ars ?? 0;
         creditoMesUsd = cred[0]?.usd ?? 0;
 
-        // Bloque virtual "Crédito", intercalado alfabéticamente entre las categorías
-        if (creditoMes > 0 || creditoMesUsd > 0) {
-            gr.push({ cat: 'Crédito', esCredito: true, rows: [], sub: { n2: 0, n1: 0, presup: creditoMes, real: 0 } } as any);
-            gr.sort((a, b) => a.cat.localeCompare(b.cat, 'es'));
-        }
-
         grupos = gr;
-        consolidado = gr.map((g: any) => ({ cat: g.cat, esCredito: g.esCredito ?? false, ...g.sub, estado: g.esCredito ? '' : desvio(g.sub.real, g.sub.presup) }));
+        consolidado = gr.map((g: any) => ({ cat: g.cat, ...g.sub, estado: desvio(g.sub.real, g.sub.presup) }));
         totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
-        totales.presup += creditoMes; // la reserva de crédito solo engrosa el presupuesto
 
         // Ingresos totales del período (USD al dólar del día de cobro; fallback al último)
         ingresosMes = ing.reduce(
@@ -369,22 +354,6 @@
 {#if cargando}
     <p>Cargando…</p>
 {:else}
-    <div class="resumen">
-        <div class="card"><span>Ingresos totales</span><strong>{peso(ingresosMes)}</strong></div>
-        <!-- Semáforo: el presupuesto se compara contra los ingresos principales del período -->
-        <div class="card" class:ok={totales.presup > 0 && ingresosMes > 0 && totales.presup <= ingresosMes} class:bad={ingresosMes > 0 && totales.presup > ingresosMes}
-            title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosMes > 0 ? (totales.presup <= ingresosMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
-            <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
-        </div>
-        <!-- Si hay presupuesto, el gasto se compara contra él; si no, contra los
-             ingresos; si no hay ninguno de los dos, queda neutro (sin color). -->
-        <div class="card"
-            class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosMes > 0 && totales.real <= ingresosMes)}
-            class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosMes > 0 && totales.real > ingresosMes)}
-            title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
-            <span>Gasto total</span><strong>{peso(totales.real)}</strong>
-        </div>
-    </div>
 
     <!-- ===== Ingreso disponible (Ítem 1) ===== -->
     <div class="disponible">
@@ -397,36 +366,46 @@
             <table class="disp-tabla disp-detalle">
                 <tbody>
                     <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
-                    <tr><td>− Pago de tarjeta del mes</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
-                    <tr><td>+ Reservado para el mes</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
+                    <tr><td>− Pago de Tarjetas del Mes Corriente</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
+                    <tr><td>+ Reservado para el Mes Corriente</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
                     <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
                     {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
                 </tbody>
             </table>
             <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Crédito</a>.</p>
         {/if}
-        <div class="disp-gastorow">
-            <span>Gasto total del mes</span>
-            <strong class={gastoClase}>{peso(totales.real)}</strong>
+        <div class="disp-pie">
+            <div class="disp-linea"
+                class:ok={totales.presup > 0 && ingresosMes > 0 && totales.presup <= ingresosMes}
+                class:bad={ingresosMes > 0 && totales.presup > ingresosMes}
+                title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosMes > 0 ? (totales.presup <= ingresosMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
+                <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
+            </div>
+            <div class="disp-linea"
+                class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosMes > 0 && totales.real <= ingresosMes)}
+                class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosMes > 0 && totales.real > ingresosMes)}
+                title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
+                <span>Gasto total del mes</span><strong>{peso(totales.real)}</strong>
+            </div>
+            {#if creditoMesUsd > 0}
+                <div class="disp-linea disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
+            {/if}
         </div>
-        {#if creditoMesUsd > 0}
-            <div class="disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
-        {/if}
     </div>
 
     <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
     <div class="deuda-panel" class:ok={descubierto <= 0} class:warn={descubierto > 0}>
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
             <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
-            <span class="disp-titulo">Crédito del mes que viene</span>
+            <span class="disp-titulo">Crédito Neto del Mes Siguiente</span>
             <span class="disp-valor" class:alta={deudaAlta}>{peso(descubierto)}{#if deudaSigUsd > 0} · {usd(deudaSigUsd)}{/if}</span>
         </button>
         {#if deudaAbierto}
             <table class="disp-tabla disp-detalle">
                 <tbody>
                     <tr><td>Cuotas a pagar ({mesSigLabel})</td><td class="num">{peso(deudaSig)}{#if deudaSigUsd > 0}<div class="usd">{usd(deudaSigUsd)}</div>{/if}</td></tr>
-                    <tr><td>− Reservado para ese mes</td><td class="num">{reservaSig ? '−' + peso(reservaSig) : peso(0)}</td></tr>
-                    <tr class="disp-total"><td><strong>= Cuota Neta de Reservas</strong></td><td class="num"><strong class:alta={deudaAlta}>{peso(descubierto)}</strong></td></tr>
+                    <tr><td>− Reservado para mes siguiente</td><td class="num">{reservaSig ? '−' + peso(reservaSig) : peso(0)}</td></tr>
+                    <tr class="disp-total"><td><strong>= Crédito Neto del Mes Siguiente</strong></td><td class="num"><strong class:alta={deudaAlta}>{peso(descubierto)}</strong></td></tr>
                     {#if deudaSigUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(deudaSigUsd)}</td></tr>{/if}
                 </tbody>
             </table>
@@ -439,21 +418,12 @@
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each consolidado as c (c.cat)}
-                {#if c.esCredito}
-                    <tr>
-                        <td title="Se calcula automáticamente con tus gastos cargados en crédito"><strong>Crédito</strong> <span class="auto">· automático</span></td>
-                        <td class="num">—</td><td class="num">—</td>
-                        <td class="num">{peso(c.presup)}{#if creditoMesUsd > 0}<div class="usd">{usd(creditoMesUsd)}</div>{/if}</td>
-                        <td class="num" title="Se calcula automáticamente con tus gastos cargados en crédito">—</td>
-                    </tr>
-                {:else}
-                    <tr>
-                        <td><strong>{c.cat}</strong></td>
-                        <td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
-                        <td class="num">{peso(c.presup)}</td>
-                        <td class="num real {claseEstado(c.estado)}" title={c.estado}>{peso(c.real)}</td>
-                    </tr>
-                {/if}
+                <tr>
+                    <td><strong>{c.cat}</strong></td>
+                    <td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
+                    <td class="num">{peso(c.presup)}</td>
+                    <td class="num real {claseEstado(c.estado)}" title={c.estado}>{peso(c.real)}</td>
+                </tr>
             {/each}
         </tbody>
         <tfoot>
@@ -468,16 +438,7 @@
         <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each grupos as g (g.cat)}
-                <tr class="cat"><td colspan="5">{g.cat}{#if g.esCredito} <span class="auto">· se calcula automáticamente</span>{/if}</td></tr>
-                {#if g.esCredito}
-                    <tr>
-                        <td class="ind" title="Suma de cuotas de tarjetas que vencen este mes (ver Crédito)">Cuotas del mes</td>
-                        <td class="num">—</td>
-                        <td class="num">—</td>
-                        <td class="num">{peso(creditoMes)}{#if creditoMesUsd > 0}<div class="usd">{usd(creditoMesUsd)}</div>{/if}</td>
-                        <td class="num">—</td>
-                    </tr>
-                {/if}
+                <tr class="cat"><td colspan="5">{g.cat}</td></tr>
                 {#each g.rows as f (f.scid ?? 'null')}
                     <tr>
                         <td class="ind">{f.nombre}</td>
@@ -504,26 +465,15 @@
                 <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
-    {#if creditoMes > 0 || creditoMesUsd > 0}
-        <p class="nota"><strong>Crédito</strong> se calcula automáticamente: suma las cuotas de tus gastos cargados en crédito que vencen este mes (la plata a separar para pagar las tarjetas). Solo engrosa el Presupuesto; el gasto real ya se contó el día que cargaste cada compra.</p>
-    {/if}
 {/if}
 
 <style>
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
     .sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
-    .nota { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 12px; line-height: 1.4; }
-    .nota strong { color: var(--text); }
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 
     /* Tarjetas de resumen del período */
-    .resumen { display: flex; gap: 6px; margin: 0 0 14px; }
-    .card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; flex: 1 1 0; min-width: 0; }
-    .card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
-    .card strong { font-size: clamp(0.82rem, 3.4vw, 1.1rem); white-space: nowrap; }
-    .card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
-    .card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 
     /* Panel Ingreso disponible (borrador, pendiente de revisión) */
     .disponible {
@@ -539,9 +489,13 @@
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
     .disp-tabla .disp-total td { border-top: 1px solid var(--border) !important; padding-top: 7px; }
     .disp-tabla .disp-total td strong { color: var(--accent); font-size: 1.05rem; }
-    .disp-gastorow { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); margin-top: 8px; padding-top: 8px; }
-    .disp-gastorow span { font-size: 0.88rem; }
-    .disp-gastorow strong { font-size: 1.05rem; white-space: nowrap; }
+    .disp-pie { display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: 8px; }
+    .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+    .disp-linea:last-child { border-bottom: none; }
+    .disp-linea span { font-size: 0.88rem; }
+    .disp-linea strong { font-size: 1.05rem; white-space: nowrap; }
+    .disp-linea.ok strong { color: var(--pos); }
+    .disp-linea.bad strong { color: var(--neg); }
     .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
     .disp-nota a { color: var(--accent); }
     .deuda-panel { border: 1px solid var(--border); border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px; }
@@ -551,8 +505,6 @@
     .deuda-panel.ok .disp-valor { color: var(--pos); }
     .deuda-panel .disp-total td strong.alta { color: var(--warn); }
     .deuda-panel .disp-valor.alta { color: var(--warn); }
-    .g-amarillo { color: var(--warn); }
-    .g-rojo { color: var(--neg); }
 
     /* Checklist de primeros pasos */
     .pasos {
@@ -601,6 +553,5 @@
     .accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 14px; }
     .usd { color: var(--text-dim); font-size: 0.85em; }
     .disp-usd td { color: var(--text-dim); }
-    .disp-usdrow { display: flex; justify-content: space-between; align-items: baseline; margin-top: 6px; font-size: 0.9rem; color: var(--text-dim); }
-    .disp-usdrow strong { color: var(--text); }
+    .disp-usdrow span, .disp-usdrow strong { color: var(--text-dim); font-weight: 600; }
 </style>
