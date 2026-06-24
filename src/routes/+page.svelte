@@ -303,6 +303,20 @@
     onMount(() => { cargar(); chequearBackup(); cargarPasos(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
+    // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
+    // disponible, amarillo entre disponible e ingreso total, rojo si supera el total.
+    function semColor(v: number): string {
+        if (ingresosMes <= 0 && ingresoDisponible <= 0) return '';
+        if (v <= ingresoDisponible) return 'ok';
+        if (v <= ingresosMes) return 'warn';
+        return 'bad';
+    }
+    // Gasto: con presupuesto, verde/rojo vs presupuesto; sin presupuesto, semáforo
+    // completo contra el ingreso (igual que Presupuesto).
+    function gastoColor(): string {
+        if (totales.presup > 0) return totales.real <= totales.presup ? 'ok' : 'bad';
+        return semColor(totales.real);
+    }
     const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 </script>
 
@@ -375,16 +389,14 @@
             <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Crédito</a>.</p>
         {/if}
         <div class="disp-pie">
-            <div class="disp-linea"
-                class:ok={totales.presup > 0 && ingresosMes > 0 && totales.presup <= ingresosMes}
-                class:bad={ingresosMes > 0 && totales.presup > ingresosMes}
-                title={totales.presup === 0 ? 'Sin presupuesto cargado' : (ingresosMes > 0 ? (totales.presup <= ingresosMes ? 'Tu presupuesto entra en tus ingresos principales' : 'Tu presupuesto supera tus ingresos principales') : 'Sin ingresos principales cargados este período')}>
-                <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
-            </div>
-            <div class="disp-linea"
-                class:ok={totales.presup > 0 ? totales.real <= totales.presup : (ingresosMes > 0 && totales.real <= ingresosMes)}
-                class:bad={totales.presup > 0 ? totales.real > totales.presup : (ingresosMes > 0 && totales.real > ingresosMes)}
-                title={totales.presup > 0 ? 'Gasto vs presupuesto' : (ingresosMes > 0 ? 'Sin presupuesto: gasto comparado con tus ingresos' : 'Sin presupuesto ni ingresos cargados')}>
+            {#if totales.presup > 0}
+                <div class="disp-linea {semColor(totales.presup)}"
+                    title="Verde: entra en tu ingreso disponible · Amarillo: entre el disponible y tu ingreso total · Rojo: supera tu ingreso total">
+                    <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
+                </div>
+            {/if}
+            <div class="disp-linea {gastoColor()}"
+                title={totales.presup > 0 ? 'Gasto vs presupuesto' : 'Sin presupuesto: verde si entra en tu ingreso disponible · amarillo entre el disponible y el total · rojo si supera tu ingreso total'}>
                 <span>Gasto total del mes</span><strong>{peso(totales.real)}</strong>
             </div>
             {#if creditoMesUsd > 0}
@@ -495,6 +507,7 @@
     .disp-linea span { font-size: 0.88rem; }
     .disp-linea strong { font-size: 1.05rem; white-space: nowrap; }
     .disp-linea.ok strong { color: var(--pos); }
+    .disp-linea.warn strong { color: var(--warn); }
     .disp-linea.bad strong { color: var(--neg); }
     .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
     .disp-nota a { color: var(--accent); }
