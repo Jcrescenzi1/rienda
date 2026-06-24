@@ -67,10 +67,11 @@ const CUOTAS_MES = `
 const exec = (m, sql, ...p) => check(m, () => db.prepare(sql).all(...p));
 exec('Home: gastos consolidado (acotado)',
   `SELECT g.fecha,g.monto,g.moneda,g.categoria_id,COALESCE(g.subcategoria_id,m.subcategoria_id) AS scid,
-    (SELECT cd.valor FROM cotizacion_dolar cd WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha<=g.fecha ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia
+    (SELECT cd.valor FROM cotizacion_dolar cd WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha<=g.fecha ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia,
+    EXISTS(SELECT 1 FROM suscripcion_registro sr WHERE sr.gasto_id=g.id) AS es_fijo
    FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle WHERE g.perfil_id=1 AND g.fecha>=?`, '2026-04-01');
 exec('Home: presupuesto', "SELECT subcategoria_id,monto,auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'");
-exec('Home: ingresos del período', `SELECT i.monto,i.moneda FROM ingreso i WHERE i.perfil_id=1 AND i.periodo=?`, '2026-06');
+exec('Home: ingresos del período', `SELECT i.monto,i.moneda, EXISTS(SELECT 1 FROM ingreso_fijo_registro r WHERE r.ingreso_id=i.id) AS es_fijo FROM ingreso i WHERE i.perfil_id=1 AND i.periodo=?`, '2026-06');
 exec('Home: CUOTAS_MES', CUOTAS_MES, '2026-07');
 exec('Home: reserva del mes', 'SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', '2026-07');
 exec('Pagos fijos: recalc subcats', `SELECT m.subcategoria_id AS scid,s.monto,s.moneda FROM suscripcion s JOIN mapeo_detalle m ON m.perfil_id=1 AND m.detalle=s.detalle WHERE s.perfil_id=1 AND s.activa=1 AND m.subcategoria_id IS NOT NULL`);

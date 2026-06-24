@@ -15,6 +15,9 @@
     // fueron contados como gasto real el día que se cargaron).
     let creditoMes = $state(0);
     let creditoMesUsd = $state(0);
+    let gastoUsdMes = $state(0);   // gastos puntuales USD del período (informativo, sin convertir)
+    let ingresoUsdMes = $state(0); // ingresos puntuales USD del período (informativo, sin convertir)
+    let nombre = $state('');       // nombre del perfil, para el saludo del header
     // Ingresos TOTALES del período visible (primario + secundarios + otros),
     // en ARS (los USD se convierten al dólar del día de cobro).
     let ingresosMes = $state(0);
@@ -126,7 +129,8 @@
                         COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid,
                         (SELECT cd.valor FROM cotizacion_dolar cd
                          WHERE cd.perfil_id=1 AND cd.casa='bolsa' AND cd.fecha <= g.fecha
-                         ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia
+                         ORDER BY cd.fecha DESC LIMIT 1) AS dolar_dia,
+                        EXISTS(SELECT 1 FROM suscripcion_registro sr WHERE sr.gasto_id = g.id) AS es_fijo
                  FROM gasto g
                  LEFT JOIN mapeo_detalle m ON m.perfil_id = g.perfil_id AND m.detalle = g.detalle
                  WHERE g.perfil_id = 1 AND g.fecha >= ?`,
@@ -147,7 +151,8 @@
                 `SELECT i.monto, i.moneda,
                         (SELECT c.valor FROM cotizacion_dolar c
                          WHERE c.perfil_id=1 AND c.casa='bolsa' AND c.fecha <= i.fecha
-                         ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia
+                         ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia,
+                        EXISTS(SELECT 1 FROM ingreso_fijo_registro r WHERE r.ingreso_id = i.id) AS es_fijo
                  FROM ingreso i
                  WHERE i.perfil_id=1 AND i.periodo=?`,
                 [n]
@@ -181,17 +186,25 @@
         const key = (id: any) => (id == null ? 'null' : String(id));
         const acc: Record<string, any> = {};
 
+        let gastoUsdAcc = 0;
         for (const g of gastos) {
             const per = asignar(g.fecha);
             if (!per || !objetivo.has(per)) continue;
+            // Puntual en USD (NO originado en un fijo): sale del stock de dólares,
+            // se aísla del flujo ARS y se muestra informativo (período visible).
+            if (g.moneda === 'USD' && !g.es_fijo) {
+                if (per === n) gastoUsdAcc += g.monto;
+                continue;
+            }
             const k = key(g.scid);
-            // Gasto en USD -> ARS al MEP de la fecha de compra (determinístico).
+            // ARS directo; USD recurrente (fijo) -> ARS al MEP de la fecha de compra.
             const monto = g.moneda === 'USD' ? g.monto * (g.dolar_dia ?? dolarPrimero) : g.monto;
             acc[k] ??= { scid: g.scid, n2: 0, n1: 0, real: 0 };
             if (per === n2) acc[k].n2 += monto;
             else if (per === n1) acc[k].n1 += monto;
             else if (per === n) acc[k].real += monto;
         }
+        gastoUsdMes = gastoUsdAcc;
 
         for (const p of presup) {
             const k = key(p.subcategoria_id);
@@ -226,11 +239,13 @@
         consolidado = gr.map((g: any) => ({ cat: g.cat, ...g.sub, estado: desvio(g.sub.real, g.sub.presup) }));
         totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
 
-        // Ingresos totales del período (USD al dólar del día de cobro; fallback al último)
+        // Ingresos del período en ARS (USD recurrente al MEP del día de cobro,
+        // fallback al último). El USD PUNTUAL se aísla (sale del stock de dólares).
         ingresosMes = ing.reduce(
-            (s: number, r: any) => s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto),
+            (s: number, r: any) => (r.moneda === 'USD' && !r.es_fijo) ? s : s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto),
             0
         );
+        ingresoUsdMes = ing.reduce((s: number, r: any) => (r.moneda === 'USD' && !r.es_fijo) ? s + r.monto : s, 0);
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
         reservaMes = resv[0]?.t ?? 0;
@@ -300,7 +315,11 @@
         pasos = null;
     }
 
-    onMount(() => { cargar(); chequearBackup(); cargarPasos(); });
+    async function cargarNombre() {
+        const r = (await query('SELECT nombre FROM perfil WHERE id=1')) as any[];
+        nombre = r[0]?.nombre ?? '';
+    }
+    onMount(() => { cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
@@ -321,9 +340,10 @@
 </script>
 
 <div class="titulo-guia">
-    <h1>Presupuesto</h1>
+    <h1>Cuenta Corriente</h1>
     <Guia clave="home" texto="Tu día a día: cuánto gastaste este período, en qué, y cómo venís contra tu presupuesto. Las dos primeras columnas muestran los meses anteriores para comparar. Tocá el casillero de Presupuesto de cualquier subcategoría para fijar un monto." />
 </div>
+{#if nombre}<p class="saludo">Hola, {nombre}</p>{/if}
 
 {#if pasos}
     <div class="pasos">
@@ -405,6 +425,13 @@
         </div>
     </div>
 
+    {#if ingresoUsdMes > 0 || gastoUsdMes > 0}
+        <div class="usd-card">
+            {#if ingresoUsdMes > 0}<span class="usd-item">Ingresos en USD no recurrentes <strong>+ {usd(ingresoUsdMes)}</strong></span>{/if}
+            {#if gastoUsdMes > 0}<span class="usd-item">Gastos en USD no recurrentes <strong>{usd(gastoUsdMes)}</strong></span>{/if}
+        </div>
+    {/if}
+
     <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
     <div class="deuda-panel" class:ok={descubierto <= 0} class:warn={descubierto > 0}>
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
@@ -483,6 +510,7 @@
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
     .sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
+    .saludo { font-size: 0.9rem; color: var(--accent); font-weight: 600; margin: 2px 0 14px; }
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 
     /* Tarjetas de resumen del período */
@@ -567,4 +595,7 @@
     .usd { color: var(--text-dim); font-size: 0.85em; }
     .disp-usd td { color: var(--text-dim); }
     .disp-usdrow span, .disp-usdrow strong { color: var(--text-dim); font-weight: 600; }
+    .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
+    .usd-item { white-space: nowrap; }
+    .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
 </style>
