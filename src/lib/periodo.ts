@@ -15,6 +15,16 @@ export function addMonths(ym: string, delta: number): string {
 	return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
 }
 
+// Regla del veinte: período sugerido de un ingreso según su fecha de cobro.
+// Ingreso Principal cobrado el día >= 20 abre el período del mes SIGUIENTE; el
+// resto (y Secundarios/Otros) caen en el mes de la fecha. Parsea el string
+// directo (sin new Date sobre el ISO) para no correr el día por UTC-3.
+export function periodoRegla(fecha: string, categoria: string): string {
+	const [y, m, d] = fecha.split('-').map(Number);
+	const base = `${y}-${String(m).padStart(2, '0')}`;
+	return categoria === 'Ingreso Principal' && d >= 20 ? addMonths(base, 1) : base;
+}
+
 // Lee el modo del perfil. Default 'sueldo' si la columna viniera NULL
 // (p. ej. backup viejo importado antes de la migración).
 export async function cargarModo(): Promise<ModoPeriodo> {

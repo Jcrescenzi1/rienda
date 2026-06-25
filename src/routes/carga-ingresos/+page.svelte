@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { query } from '$lib/db/client';
+	import { query, queryBatch } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
+	import { periodoRegla } from '$lib/periodo';
 
 	let ingresos = $state<any[]>([]);
 	let mensaje = $state('');
@@ -25,15 +26,6 @@
 
 	const esPrincipal = $derived(categoria === 'Ingreso Principal');
 
-	// Período sugerido según la fecha:
-	//  - Ingreso Principal: día < 20 → mes corriente; día >= 20 → mes siguiente.
-	//  - Secundarios / Otros: siempre el mes corriente.
-	function periodoRegla(f: string, cat: string): string {
-		const [y, m, d] = f.split('-').map(Number);
-		const delta = cat === 'Ingreso Principal' && d >= 20 ? 1 : 0;
-		const fechaP = new Date(y, m - 1 + delta, 1);
-		return fechaP.getFullYear() + '-' + String(fechaP.getMonth() + 1).padStart(2, '0');
-	}
 
 	// Recalcula el período sugerido al cambiar fecha o categoría.
 	// En edición solo recalcula si el usuario tocó fecha/categoría (periodoTocado),
@@ -131,7 +123,12 @@
 	async function borrar(id: number) {
 		if (!confirm('¿Eliminar este ingreso?')) return;
 		if (editandoId === id) resetForm();
-		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
+		// Borra el registro de ingreso fijo que lo referencia (si existe) y el
+		// ingreso, en un batch atómico: evita el fallo de FK y el huérfano.
+		await queryBatch([
+			{ sql: 'DELETE FROM ingreso_fijo_registro WHERE ingreso_id=?', bind: [id] },
+			{ sql: 'DELETE FROM ingreso WHERE id=? AND perfil_id=1', bind: [id] }
+		]);
 		await cargar();
 	}
 

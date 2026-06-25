@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { query } from '$lib/db/client';
+	import { query, queryBatch } from '$lib/db/client';
 	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+	import { periodoRegla } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 
 	let periodo = $state(mesActual());
@@ -128,14 +129,20 @@
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!dFecha) return (mensaje = 'Falta la fecha');
 		try {
-			// El ingreso real hereda categoria y tipo del fijo. El periodo es el mes
-			// elegido (igual que la carga manual con periodo explicito); la fecha es la
-			// de cobro. Asi, si es Principal+Regular, define el corte correctamente.
+			// El ingreso hereda categoria y tipo del fijo; su periodo sale de la regla
+			// del veinte sobre la fecha de cobro (misma funcion que la carga manual).
+			// El registro guarda el mes del selector (guard de "Registrado"). Todo en
+			// un batch atomico: si el registro choca con UNIQUE (re-disparo del mismo
+			// mes), se revierte el ingreso y no queda huerfano.
 			const det = s.detalle ?? s.nombre;
-			const g = (await query("INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?) RETURNING id",
-				[dFecha, m, s.moneda, s.categoria, s.tipo, det, periodo])) as any[];
-			await query('INSERT INTO ingreso_fijo_registro (ingreso_fijo_id,ingreso_id,periodo) VALUES (?,?,?)', [s.id, g[0].id, periodo]);
-			registrando = null; mensaje = `"${s.nombre}" registrado en ${periodo} ✅`;
+			const per = periodoRegla(dFecha, s.categoria);
+			await queryBatch([
+				{ sql: "INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)",
+				  bind: [dFecha, m, s.moneda, s.categoria, s.tipo, det, per] },
+				{ sql: "INSERT INTO ingreso_fijo_registro (ingreso_fijo_id,ingreso_id,periodo) VALUES (?, last_insert_rowid(), ?)",
+				  bind: [s.id, periodo] }
+			]);
+			registrando = null; mensaje = `"${s.nombre}" registrado (período ${per}) ✅`;
 			await cargar();
 		} catch (e: any) { mensaje = 'Error: ' + (e?.message ?? String(e)); }
 	}
