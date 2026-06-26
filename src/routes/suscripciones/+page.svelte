@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
 	import Guia from '$lib/Guia.svelte';
 
@@ -205,7 +205,9 @@
 
 	function iniciarDisparo(s: any) {
 		disparando = s.id; dMonto = formatNum(s.monto);
-		dFecha = periodo === mesActual() ? hoyISO() : periodo + '-01';
+		// Default editable: hoy montado sobre el mes del selector. El gasto fijo no
+		// abre corte -> el periodo del registro sigue siendo el del selector (guard).
+		dFecha = fechaCobroDefault(periodo);
 		mensaje = '';
 	}
 	async function confirmarDisparo(s: any) {

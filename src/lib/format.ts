@@ -57,6 +57,20 @@ export function mesActual(): string {
 	return hoyISO().slice(0, 7);
 }
 
+// Default de fecha de cobro para un disparo de fijo: el día de HOY montado sobre
+// el mes/año del selector, clampeado al último día de ese mes. Si el selector es
+// el mes actual, equivale a hoyISO(). Si no (ej. registro de agosto estando en
+// junio), cae dentro del mes del selector y nunca fuerza el día a un mes ajeno.
+// El cálculo de "último día" es aritmética de mes (no toma "ahora"), así que no
+// corre el día por UTC.
+export function fechaCobroDefault(periodo: string): string {
+	const [y, m] = periodo.split('-').map(Number);
+	const diaHoy = Number(hoyISO().slice(8, 10));
+	const ultimoDia = new Date(y, m, 0).getDate(); // día 0 del mes siguiente = último del actual
+	const dia = Math.min(diaHoy, ultimoDia);
+	return `${periodo}-${String(dia).padStart(2, '0')}`;
+}
+
 // "yyyy-mm-dd" -> "dd-mmm" para tablas (ej. "2025-06-05" -> "05-jun").
 // Parsea el string crudo (no new Date) para evitar corrimiento de día por UTC.
 const MESES_AR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];

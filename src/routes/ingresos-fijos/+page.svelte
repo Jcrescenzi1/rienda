@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
-	import { hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { periodoRegla } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 
@@ -16,6 +16,11 @@
 	let registrando = $state<number | null>(null);
 	let dMonto = $state('');
 	let dFecha = $state('');
+	// Período del disparo: se recomienda con la regla del veinte sobre la fecha de
+	// cobro, pero es editable (la decisión final es del usuario). dPeriodoTocado
+	// evita pisar una edición manual al cambiar la fecha.
+	let dPeriodo = $state('');
+	let dPeriodoTocado = $state(false);
 
 	// Form unificado (alta + edicion). editId null = alta, numero = edicion.
 	let editId = $state<number | null>(null);
@@ -121,28 +126,35 @@
 	function iniciarRegistro(s: any) {
 		registrando = s.id;
 		dMonto = formatNum(s.monto);
-		dFecha = periodo === mesActual() ? hoyISO() : periodo + '-01';
+		dFecha = fechaCobroDefault(periodo);
+		dPeriodoTocado = false;
+		dPeriodo = periodoRegla(dFecha, s.categoria);
 		mensaje = '';
+	}
+	// Al cambiar la fecha de cobro, re-sugiere el período por la regla del veinte,
+	// salvo que el usuario ya lo haya editado a mano.
+	function onDFechaChange(s: any) {
+		if (!dPeriodoTocado) dPeriodo = periodoRegla(dFecha, s.categoria);
 	}
 	async function confirmarRegistro(s: any) {
 		const m = parseNum(dMonto);
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!dFecha) return (mensaje = 'Falta la fecha');
+		if (!dPeriodo) return (mensaje = 'Falta el período');
 		try {
-			// El ingreso hereda categoria y tipo del fijo; su periodo sale de la regla
-			// del veinte sobre la fecha de cobro (misma funcion que la carga manual).
-			// El registro guarda el mes del selector (guard de "Registrado"). Todo en
+			// El ingreso hereda categoria y tipo del fijo. El periodo es UNA sola
+			// fuente (dPeriodo, recomendado por la regla del veinte y editable): lo
+			// comparten el ingreso y su registro -> nunca quedan desalineados. Todo en
 			// un batch atomico: si el registro choca con UNIQUE (re-disparo del mismo
-			// mes), se revierte el ingreso y no queda huerfano.
+			// periodo), se revierte el ingreso y no queda huerfano.
 			const det = s.detalle ?? s.nombre;
-			const per = periodoRegla(dFecha, s.categoria);
 			await queryBatch([
 				{ sql: "INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)",
-				  bind: [dFecha, m, s.moneda, s.categoria, s.tipo, det, per] },
+				  bind: [dFecha, m, s.moneda, s.categoria, s.tipo, det, dPeriodo] },
 				{ sql: "INSERT INTO ingreso_fijo_registro (ingreso_fijo_id,ingreso_id,periodo) VALUES (?, last_insert_rowid(), ?)",
-				  bind: [s.id, periodo] }
+				  bind: [s.id, dPeriodo] }
 			]);
-			registrando = null; mensaje = `"${s.nombre}" registrado (período ${per}) ✅`;
+			registrando = null; mensaje = `"${s.nombre}" registrado (período ${dPeriodo}) ✅`;
 			await cargar();
 		} catch (e: any) { mensaje = 'Error: ' + (e?.message ?? String(e)); }
 	}
@@ -188,8 +200,9 @@
 						<span class="ok">Registrado ✓</span>
 					{:else if registrando === s.id}
 						<span class="draft">
-							<input type="text" inputmode="decimal" use:soloNum bind:value={dMonto} class="mini" />
-							<input type="date" bind:value={dFecha} class="mini" />
+							<input type="text" inputmode="decimal" use:soloNum bind:value={dMonto} class="mini" title="Monto" />
+							<input type="date" bind:value={dFecha} onchange={() => onDFechaChange(s)} class="mini" title="Fecha de cobro" />
+							<input type="month" bind:value={dPeriodo} onchange={() => (dPeriodoTocado = true)} class="mini" title="Período (sugerido por la regla del veinte, editable)" />
 							<button class="btn btn-primary" onclick={() => confirmarRegistro(s)}>Confirmar</button>
 							<button class="btn btn-secondary" onclick={() => (registrando = null)}>Cancelar</button>
 						</span>

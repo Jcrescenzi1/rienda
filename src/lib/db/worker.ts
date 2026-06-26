@@ -172,6 +172,30 @@ async function init() {
 		}
 	}
 
+	// Barrido idempotente de registros de ingreso fijo sucios, de disparos viejos
+	// (antes de unificar el período del disparo en una sola fuente):
+	//   1) Huérfanos: registro cuyo ingreso_id ya no existe -> se borran.
+	//   2) Desalineados: registro cuyo período difiere del ingreso referenciado ->
+	//      se realinea al período del ingreso, SOLO si no colisiona con el
+	//      UNIQUE(ingreso_fijo_id, periodo). Deja al ingreso volver a ser borrable
+	//      y arregla el guard "Registrado ✓". En try para no abortar el arranque.
+	try {
+		db.exec('DELETE FROM ingreso_fijo_registro WHERE ingreso_id NOT IN (SELECT id FROM ingreso)');
+		db.exec(`
+			UPDATE ingreso_fijo_registro
+			SET periodo = (SELECT i.periodo FROM ingreso i WHERE i.id = ingreso_fijo_registro.ingreso_id)
+			WHERE EXISTS (
+				SELECT 1 FROM ingreso i
+				WHERE i.id = ingreso_fijo_registro.ingreso_id
+				  AND i.periodo IS NOT NULL AND i.periodo <> ingreso_fijo_registro.periodo)
+			AND NOT EXISTS (
+				SELECT 1 FROM ingreso_fijo_registro r2
+				WHERE r2.ingreso_fijo_id = ingreso_fijo_registro.ingreso_fijo_id
+				  AND r2.id <> ingreso_fijo_registro.id
+				  AND r2.periodo = (SELECT i.periodo FROM ingreso i WHERE i.id = ingreso_fijo_registro.ingreso_id))
+		`);
+	} catch { /* la limpieza no debe bloquear el arranque */ }
+
 	// Integridad referencial: la base rechaza datos huérfanos (un gasto apuntando
 	// a una categoría inexistente, etc.). Se activa DESPUÉS de las migraciones.
 	// El import la apaga temporalmente para tolerar backups viejos con huérfanos.

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { query } from '$lib/db/client';
+	import { query, queryBatch } from '$lib/db/client';
 	import {
 		cargarDolarSerie,
 		cargarIPC,
@@ -225,7 +225,14 @@
 	}
 	async function eliminar(id: number) {
 		if (!confirm('¿Eliminar este ingreso? No se puede deshacer.')) return;
-		await query('DELETE FROM ingreso WHERE id=? AND perfil_id=1', [id]);
+		// Borra el registro de ingreso fijo que lo referencia (si existe) y el
+		// ingreso, en un batch atomico. Sin esto, un ingreso disparado desde un
+		// fijo viola la FK ingreso_fijo_registro.ingreso_id (foreign_keys=ON) y el
+		// DELETE falla en silencio (calca evol/Gastos, que ya lo hacia bien).
+		await queryBatch([
+			{ sql: 'DELETE FROM ingreso_fijo_registro WHERE ingreso_id=?', bind: [id] },
+			{ sql: 'DELETE FROM ingreso WHERE id=? AND perfil_id=1', bind: [id] }
+		]);
 		await cargarIngresos();
 	}
 </script>
