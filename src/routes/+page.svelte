@@ -328,12 +328,15 @@
     async function cargarPasos() {
         const oculto = (await query("SELECT valor FROM meta WHERE clave='primeros_pasos_oculto'")) as any[];
         if (oculto.length) return;
+        // Categorías y tarjeta son recomendaciones de "revisar/editar": se marcan
+        // al tocarlas (flag en meta), no por presencia de datos. La tarjeta ya viene
+        // sembrada (Genérica), así que contar tarjetas siempre daría "hecho".
         const catVisto = (await query("SELECT valor FROM meta WHERE clave='paso_categorias'")) as any[];
+        const tarjVisto = (await query("SELECT valor FROM meta WHERE clave='paso_tarjeta'")) as any[];
         const ng = (await query('SELECT COUNT(*) AS n FROM gasto WHERE perfil_id=1')) as any[];
         const ni = (await query('SELECT COUNT(*) AS n FROM ingreso WHERE perfil_id=1')) as any[];
-        const nt = (await query('SELECT COUNT(*) AS n FROM tarjeta WHERE perfil_id=1')) as any[];
-        const p = { categorias: catVisto.length > 0, tarjeta: nt[0].n > 0, gasto: ng[0].n > 0, ingreso: ni[0].n > 0 };
-        if (p.categorias && p.tarjeta && p.gasto && p.ingreso) return; // todo hecho: no molestar
+        const p = { ingreso: ni[0].n > 0, gasto: ng[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0 };
+        if (p.ingreso && p.gasto && p.categorias && p.tarjeta) return; // todo hecho: no molestar
         pasos = p;
     }
 
@@ -447,10 +450,10 @@
             <strong>Cómo aprovechar la app al máximo</strong>
             <button class="pasos-cerrar" onclick={ocultarPasos} title="Ocultar" aria-label="Ocultar">✕</button>
         </div>
-        <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '①'} Revisá y ajustá tus categorías</a>
-        <a href="/configuracion" class:hecho={pasos.tarjeta}>{pasos.tarjeta ? '✓' : '②'} Si usás crédito, cargá tus tarjetas</a>
-        <a href="/gastos" class:hecho={pasos.gasto}>{pasos.gasto ? '✓' : '③'} Cargá tu primer gasto</a>
-        <a href="/carga-ingresos" class:hecho={pasos.ingreso}>{pasos.ingreso ? '✓' : '④'} Cargá tu primer ingreso</a>
+        <a href="/carga-ingresos" class:hecho={pasos.ingreso}>{pasos.ingreso ? '✓' : '①'} Cargá tu primer ingreso</a>
+        <a href="/gastos" class:hecho={pasos.gasto}>{pasos.gasto ? '✓' : '②'} Cargá tu primer gasto</a>
+        <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '③'} Revisá y ajustá tus categorías</a>
+        <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '④'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
     </div>
 {/if}
 

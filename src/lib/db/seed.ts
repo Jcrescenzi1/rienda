@@ -21,4 +21,8 @@ INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, 'Servicios');
 INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, 'Salud');
 INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, 'Ropa');
 INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, 'Ahorro');
+
+-- Tarjeta genérica de arranque (sin proveedor): habilita el flujo de crédito de
+-- entrada. El usuario la renombra, le elige proveedor o agrega más en Configuración.
+INSERT INTO tarjeta (perfil_id, nombre, tipo) VALUES (1, 'Genérica', 'credito');
 `;
