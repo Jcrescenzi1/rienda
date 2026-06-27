@@ -48,6 +48,17 @@
     let rango = $state('');
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
+    // Navegación de período: límites y secuencia de cortes (fuente: cargarCortes).
+    let primerPeriodo = $state('');   // límite inferior (primer corte / mes más viejo con datos)
+    let ultimoPeriodo = $state('');   // límite superior (último corte abierto / mes actual en calendario)
+    let cortePeriodos = $state<string[]>([]); // periodos de los cortes, en orden (modo sueldo)
+    let mesInput: HTMLInputElement | undefined = $state(); // input month oculto que abre el picker nativo
+    // Caches por montaje: datos que NO dependen del período visible. Evitan recargar
+    // modo/cortes y recomputar la "categoría habitual" (GROUP BY sobre todo el
+    // historial) en cada flecha/cambio de mes. Se recalculan al remontar la Home.
+    let modoCache: ModoPeriodo | null = null;
+    let cortesCache: { fecha: string; periodo: string }[] | null = null;
+    let homeCatCache: Record<string, number | null> | null = null;
 
     // Etiquetas de mes para los encabezados (derivadas del período visible)
     let labN = $state(''); let labN1 = $state(''); let labN2 = $state('');
@@ -57,6 +68,12 @@
     function labelMes(periodo: string): string {
         const [y, m] = periodo.split('-').map(Number);
         return `${MESES[m - 1]} '${String(y).slice(2)}`;
+    }
+    const MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+    // '2026-06' -> "Junio 2026" para el texto central del selector.
+    function labelPeriodo(periodo: string): string {
+        const [y, m] = periodo.split('-').map(Number);
+        return `${MESES_LARGO[m - 1]} ${y}`;
     }
 
     function desvio(real: number, presup: number): string {
@@ -69,8 +86,12 @@
     async function cargar() {
         cargando = true;
 
-        modo = await cargarModo();
-        const cortes = modo === 'sueldo' ? await cargarCortes() : [];
+        // Modo y cortes no cambian dentro de la Home -> se cachean (los setea el
+        // init del selector; acá solo carga si faltara).
+        if (modoCache === null) modoCache = await cargarModo();
+        modo = modoCache;
+        if (cortesCache === null) cortesCache = modo === 'sueldo' ? await cargarCortes() : [];
+        const cortes = cortesCache;
         const asignar = crearAsignador(modo, cortes);
 
         const n = periodo;
@@ -136,13 +157,15 @@
                  WHERE g.perfil_id = 1 AND g.fecha >= ?`,
                 [desdeGastos]
             ),
-            query(
-                `SELECT scid, categoria_id, COUNT(*) AS c FROM (
-                   SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
-                   FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
-                   WHERE g.perfil_id=1
-                 ) GROUP BY scid, categoria_id`
-            ),
+            homeCatCache === null
+                ? query(
+                    `SELECT scid, categoria_id, COUNT(*) AS c FROM (
+                       SELECT COALESCE(g.subcategoria_id, m.subcategoria_id) AS scid, g.categoria_id
+                       FROM gasto g LEFT JOIN mapeo_detalle m ON m.perfil_id=g.perfil_id AND m.detalle=g.detalle
+                       WHERE g.perfil_id=1
+                     ) GROUP BY scid, categoria_id`
+                  )
+                : Promise.resolve(null),
             query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1'),
             query('SELECT id, nombre FROM categoria WHERE perfil_id=1'),
             query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
@@ -166,13 +189,17 @@
         // (la más antigua conocida; no cambia con el auto-refresh).
         const dolarPrimero = dolarBase[0]?.valor ?? 1;
 
-        // categoría habitual por subcategoría
-        const homeCat: Record<string, number | null> = {};
-        const bestC: Record<string, number> = {};
-        for (const h of hab) {
-            const k = h.scid == null ? 'null' : String(h.scid);
-            if (bestC[k] === undefined || h.c > bestC[k]) { bestC[k] = h.c; homeCat[k] = h.categoria_id; }
+        // categoría habitual por subcategoría (no depende del período -> se cachea)
+        if (homeCatCache === null) {
+            const hc: Record<string, number | null> = {};
+            const bestC: Record<string, number> = {};
+            for (const h of hab) {
+                const k = h.scid == null ? 'null' : String(h.scid);
+                if (bestC[k] === undefined || h.c > bestC[k]) { bestC[k] = h.c; hc[k] = h.categoria_id; }
+            }
+            homeCatCache = hc;
         }
+        const homeCat = homeCatCache;
 
         const nombreSub: Record<number, string> = {};
         for (const s of subs) nombreSub[s.id] = s.nombre;
@@ -319,7 +346,76 @@
         const r = (await query('SELECT nombre FROM perfil WHERE id=1')) as any[];
         nombre = r[0]?.nombre ?? '';
     }
-    onMount(() => { cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
+    // ===== Selector de período: sticky de sesión + límites de navegación =====
+    // sessionStorage (NO localStorage): al reabrir la app en una sesión nueva,
+    // arranca en el último período abierto a propósito. Guardamos también el
+    // "último corte" conocido como baseline, para detectar un corte NUEVO.
+    const SS_PERIODO = 'cc_periodo';
+    function guardarSel() {
+        try { sessionStorage.setItem(SS_PERIODO, JSON.stringify({ periodo, ultimoCorte: ultimoPeriodo })); } catch { /* ignore */ }
+    }
+
+    // Resuelve límites + período inicial. Reusa cargarCortes (no reimplementa la
+    // secuencia). Corre una vez al montar, antes del primer cargar().
+    async function resolverPeriodoInicial() {
+        modoCache = await cargarModo();
+        modo = modoCache;
+        cortesCache = modoCache === 'sueldo' ? await cargarCortes() : [];
+        const cortes = cortesCache;
+        cortePeriodos = modo === 'sueldo' ? [...new Set(cortes.map((c) => c.periodo))] : [];
+        // Límite superior: último corte abierto (sueldo) o mes actual (calendario):
+        // no tiene sentido navegar a futuros sin corte.
+        ultimoPeriodo = modo === 'sueldo' ? (cortePeriodos[cortePeriodos.length - 1] ?? mesActual()) : mesActual();
+        // Límite inferior: primer corte (sueldo) o mes más viejo con datos (calendario).
+        if (modo === 'sueldo') {
+            primerPeriodo = cortePeriodos[0] ?? ultimoPeriodo;
+        } else {
+            const r = (await query(
+                "SELECT MIN(f) AS m FROM (SELECT MIN(fecha) AS f FROM gasto WHERE perfil_id=1 UNION ALL SELECT MIN(fecha) AS f FROM ingreso WHERE perfil_id=1)"
+            )) as any[];
+            primerPeriodo = r[0]?.m ? String(r[0].m).slice(0, 7) : ultimoPeriodo;
+        }
+        // Sticky: default al último corte; si hay guardado, respetarlo SALVO que
+        // haya aparecido un corte nuevo (último corte posterior al baseline) -> saltar.
+        let guardado: { periodo?: string; ultimoCorte?: string } | null = null;
+        try { guardado = JSON.parse(sessionStorage.getItem(SS_PERIODO) ?? 'null'); } catch { /* ignore */ }
+        if (guardado?.periodo) {
+            periodo = ultimoPeriodo > (guardado.ultimoCorte ?? '') ? ultimoPeriodo : guardado.periodo;
+        } else {
+            periodo = ultimoPeriodo;
+        }
+        guardarSel();
+    }
+
+    // Cambia el período (flecha o dropdown), clampeado a los límites, persiste y recarga.
+    function seleccionar(p: string) {
+        if (primerPeriodo && p < primerPeriodo) p = primerPeriodo;
+        if (ultimoPeriodo && p > ultimoPeriodo) p = ultimoPeriodo;
+        periodo = p;
+        guardarSel();
+        cargar();
+    }
+    // Vecino anterior/siguiente: en sueldo recorre la secuencia de cortes; en
+    // calendario, mes a mes. Los límites ya están cubiertos por seleccionar().
+    function vecino(dir: -1 | 1) {
+        if (modo === 'sueldo' && cortePeriodos.length) {
+            const i = cortePeriodos.indexOf(periodo);
+            if (i >= 0) {
+                const j = i + dir;
+                if (j >= 0 && j < cortePeriodos.length) seleccionar(cortePeriodos[j]);
+                return;
+            }
+        }
+        seleccionar(addMonths(periodo, dir));
+    }
+    // Abre el dropdown nativo (saltos largos). El input month está como overlay
+    // transparente sobre el texto, así que el click suele bastar; showPicker es el
+    // camino explícito donde está soportado.
+    function abrirDropdown() {
+        try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
+    }
+
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
@@ -376,7 +472,17 @@
     <a href="/credito" class="btn btn-secondary">Crédito</a>
 </div>
 
-<label class="sel">{modo === 'calendario' ? 'Mes' : 'Período de sueldo'}: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+<div class="sel">
+    <span class="sel-label">{modo === 'calendario' ? 'Mes' : 'Período de sueldo'}:</span>
+    <div class="periodo-nav">
+        <button class="nav-flecha" onclick={() => vecino(-1)} disabled={!primerPeriodo || periodo <= primerPeriodo} aria-label="Período anterior" title="Período anterior">‹</button>
+        <span class="periodo-medio">
+            <button class="periodo-texto" onclick={abrirDropdown} title="Tocar para elegir otro período">{labelPeriodo(periodo)}</button>
+            <input type="month" bind:this={mesInput} bind:value={periodo} onchange={() => seleccionar(periodo)} class="periodo-overlay" aria-label="Elegir período" />
+        </span>
+        <button class="nav-flecha" onclick={() => vecino(1)} disabled={!ultimoPeriodo || periodo >= ultimoPeriodo} aria-label="Período siguiente" title="Período siguiente">›</button>
+    </div>
+</div>
 <p class="rango">
     {#if modo === 'calendario'}
         Gastos del <strong>{rango}</strong> (mes calendario, del 1 al último día).
@@ -508,7 +614,16 @@
 
 <style>
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-    .sel { font-size: 0.9rem; display: inline-flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+    .sel { font-size: 0.9rem; display: flex; gap: 8px; align-items: center; margin-bottom: 4px; flex-wrap: wrap; }
+    .sel-label { color: var(--text-dim); }
+    .periodo-nav { display: inline-flex; align-items: stretch; gap: 4px; }
+    .nav-flecha { font-size: 1.2rem; line-height: 1; padding: 4px 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; cursor: pointer; color: var(--text); }
+    .nav-flecha:disabled { opacity: 0.3; cursor: default; }
+    .periodo-medio { position: relative; display: inline-flex; }
+    .periodo-texto { font-size: 0.95rem; font-weight: 600; padding: 4px 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; cursor: pointer; color: var(--text); min-width: 120px; text-align: center; }
+    /* El input month va encima del texto, transparente: el tap abre el picker
+       nativo (dropdown), pero el usuario ve el texto formateado de abajo. */
+    .periodo-overlay { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
     .saludo { font-size: 0.9rem; color: var(--accent); font-weight: 600; margin: 2px 0 14px; }
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }

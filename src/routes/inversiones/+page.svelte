@@ -42,7 +42,7 @@
 		preciosActualizadosEn = mp[0]?.valor ?? null;
 
 		// FIFO compartido con Evolución (una sola implementación)
-		const { lotes, realPorMes, aMap } = await calcularFIFO();
+		const { lotes, realPorMes, aMap, txs } = await calcularFIFO();
 		realizadoAnioActual = Object.entries(realPorMes)
 			.filter(([mes]) => mes.startsWith(anioActual))
 			.reduce((s, [, v]) => s + v, 0);
@@ -52,9 +52,10 @@
 		// vuelve a cero (cierre total), reinicio los acumuladores. Así un ciclo viejo
 		// ya cerrado no contamina el PPC/PPV de la posición que tenés hoy; las ventas
 		// parciales dentro de la posición abierta sí cuentan. No usa FIFO.
-		const txAgg = (await query(
-			'SELECT activo_id AS aid, operacion AS op, unidades AS u, precio AS p, valor_dolar AS vd FROM transaccion WHERE perfil_id=1 ORDER BY activo_id, fecha, id'
-		)) as any[];
+		// Reusa las transacciones que ya leyó calcularFIFO (mismo ORDER BY
+		// activo_id, fecha, id) en vez de re-leer la tabla. Renombra a las columnas
+		// cortas que usa el agregado.
+		const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar }));
 		type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
 		const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
 		const agg: Record<number, Agg> = {};

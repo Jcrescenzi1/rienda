@@ -53,12 +53,16 @@ export function crearAsignador(
 	if (modo === 'calendario') {
 		return (fecha: string) => fecha.slice(0, 7);
 	}
+	// cortes viene ordenado ascendente por fecha -> binary search del último corte
+	// con fecha <= la del movimiento. Antes era scan lineal por fecha: O(cortes)
+	// por movimiento, llamado en varios derivados de las pantallas de evolución.
 	return (fecha: string) => {
-		let elegido: string | null = null;
-		for (const c of cortes) {
-			if (c.fecha <= fecha) elegido = c.periodo;
-			else break;
+		let lo = 0, hi = cortes.length - 1, periodo: string | null = null;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			if (cortes[mid].fecha <= fecha) { periodo = cortes[mid].periodo; lo = mid + 1; }
+			else hi = mid - 1;
 		}
-		return elegido;
+		return periodo;
 	};
 }

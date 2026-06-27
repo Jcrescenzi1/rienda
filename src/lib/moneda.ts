@@ -33,13 +33,17 @@ export async function cargarDolarSerie(): Promise<DolarSerie> {
 }
 
 // Último valor del dólar conocido en/antes de la fecha (null si no hay ninguno previo).
+// La serie viene ordenada ascendente por fecha -> binary search (la última entrada
+// con fecha <= objetivo). Antes era scan lineal: O(n) por movimiento se volvía
+// O(movimientos × días) al convertir históricos grandes.
 export function dolarDeFecha(serie: DolarSerie, fecha: string): number | null {
-	let elegido: number | null = null;
-	for (const d of serie) {
-		if (d.fecha <= fecha) elegido = d.valor;
-		else break;
+	let lo = 0, hi = serie.length - 1, idx = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (serie[mid].fecha <= fecha) { idx = mid; lo = mid + 1; }
+		else hi = mid - 1;
 	}
-	return elegido;
+	return idx >= 0 ? serie[idx].valor : null;
 }
 
 // ===== Inflación / IPC =====
@@ -69,20 +73,28 @@ export async function cargarIPC(): Promise<IPC> {
 	}
 	const idxUltimo = ultimoPeriodo ? indice[ultimoPeriodo] : 1;
 
+	// Memo por período: factorAHoy se llama una vez por movimiento, pero hay muchos
+	// movimientos en pocos meses distintos -> cachear evita recalcular el mismo mes.
+	const memo = new Map<string, number>();
 	const factorAHoy = (periodo: string): number => {
+		const hit = memo.get(periodo);
+		if (hit !== undefined) return hit;
 		let idx = indice[periodo];
 		if (idx == null) {
-			// Sin dato exacto: tomamos el último mes con dato <= período.
-			let elegido: number | null = null;
-			for (const k of claves) {
-				if (k <= periodo) elegido = indice[k];
-				else break;
+			// Sin dato exacto: binary search del último mes con dato <= período
+			// (claves está ordenada ascendente). Período posterior al último dato
+			// (lag de la API) o anterior al primero: sin ajuste fiable -> factor 1.
+			let lo = 0, hi = claves.length - 1, found: string | null = null;
+			while (lo <= hi) {
+				const mid = (lo + hi) >> 1;
+				if (claves[mid] <= periodo) { found = claves[mid]; lo = mid + 1; }
+				else hi = mid - 1;
 			}
-			// Período posterior al último dato (lag de la API) o anterior al primero:
-			// sin ajuste fiable -> factor 1.
-			idx = elegido ?? idxUltimo;
+			idx = found != null ? indice[found] : idxUltimo;
 		}
-		return idx > 0 ? idxUltimo / idx : 1;
+		const f = idx > 0 ? idxUltimo / idx : 1;
+		memo.set(periodo, f);
+		return f;
 	};
 
 	return { indice, ultimoPeriodo, factorAHoy };

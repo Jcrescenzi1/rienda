@@ -27,6 +27,7 @@ export async function calcularFIFO(): Promise<{
 	lotes: Record<number, Lote[]>;
 	realPorMes: Record<string, number>;
 	aMap: Record<number, any>;
+	txs: any[];
 }> {
 	const activos = (await query(
 		'SELECT id, nombre, tipo, renta, moneda, precio_actual FROM activo WHERE perfil_id=1'
@@ -60,7 +61,7 @@ export async function calcularFIFO(): Promise<{
 			}
 		}
 	}
-	return { lotes, realPorMes, aMap };
+	return { lotes, realPorMes, aMap, txs };
 }
 
 // Saldos líquidos por moneda: ancla manual (tabla liquidez) + movimientos de

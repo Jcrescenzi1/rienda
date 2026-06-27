@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
+	import { dolarDeFecha } from '$lib/moneda';
 	import Guia from '$lib/Guia.svelte';
 
 	// Ingreso Primario regular (internamente tipo='Sueldo', categoría 'Ingreso Principal')
@@ -17,15 +18,6 @@
 	let anio = $state('');
 	let anios = $state<string[]>([]);
 	let cargando = $state(true);
-
-	function dolarDeFecha(fecha: string): number | null {
-		let elegido: number | null = null;
-		for (const d of dolarSerie) {
-			if (d.fecha <= fecha) elegido = d.valor;
-			else break;
-		}
-		return elegido;
-	}
 
 	onMount(async () => {
 		const [s, inf, dolDia] = (await Promise.all([
@@ -113,7 +105,7 @@
 		return periodos.map((p) => {
 			// Dólar de la fecha real del sueldo de ese período (sirve en modo sueldo y calendario).
 			const f = sueldoFecha[p];
-			const dolarP = f ? dolarDeFecha(f) : null;
+			const dolarP = f ? dolarDeFecha(dolarSerie, f) : null;
 			const ingresoUSD = (sueldos[p] != null && dolarP) ? sueldos[p] / dolarP : null;
 			return { periodo: p, ingresoUSD, dolar: dolarP };
 		}).filter((x) => x.ingresoUSD != null && x.dolar != null);

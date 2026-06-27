@@ -234,4 +234,8 @@ CREATE INDEX IF NOT EXISTS idx_gasto_detalle     ON gasto(perfil_id, detalle);
 CREATE INDEX IF NOT EXISTS idx_tx_activo         ON transaccion(perfil_id, activo_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_ingreso_periodo   ON ingreso(perfil_id, periodo);
 CREATE INDEX IF NOT EXISTS idx_screg_periodo     ON suscripcion_registro(periodo);
+-- Por gasto_id / ingreso_id: soportan los EXISTS por fila de la Home (recurrente
+-- vs puntual) y los DELETE atómicos de registros de fijos (gastos/ingresos).
+CREATE INDEX IF NOT EXISTS idx_screg_gasto       ON suscripcion_registro(gasto_id);
+CREATE INDEX IF NOT EXISTS idx_ifreg_ingreso     ON ingreso_fijo_registro(ingreso_id);
 `;
