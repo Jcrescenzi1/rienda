@@ -4,7 +4,9 @@
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
     import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
     import { leerMeta, setMeta } from '$lib/db/meta';
+    import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
+    import InstalarApp from '$lib/InstalarApp.svelte';
 
     let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
@@ -44,7 +46,9 @@
     // Aviso de backup: null = no mostrar; -1 = nunca exportó; >0 = días sin exportar
     let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
-    let pasos = $state<{ categorias: boolean; tarjeta: boolean; gasto: boolean; ingreso: boolean } | null>(null);
+    let pasos = $state<{ ingreso: boolean; gasto: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean } | null>(null);
+    // ¿Ya hay al menos un registro (gasto o ingreso)? Dispara el CTA de instalar.
+    let hayRegistro = $state(false);
     let rango = $state('');
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
@@ -335,9 +339,23 @@
         const tarjVisto = (await query("SELECT valor FROM meta WHERE clave='paso_tarjeta'")) as any[];
         const ng = (await query('SELECT COUNT(*) AS n FROM gasto WHERE perfil_id=1')) as any[];
         const ni = (await query('SELECT COUNT(*) AS n FROM ingreso WHERE perfil_id=1')) as any[];
-        const p = { ingreso: ni[0].n > 0, gasto: ng[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0 };
-        if (p.ingreso && p.gasto && p.categorias && p.tarjeta) return; // todo hecho: no molestar
+        // 'instalar' se autocompleta si la app ya corre instalada (standalone).
+        const p = { ingreso: ni[0].n > 0, gasto: ng[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0, instalar: pwa.standalone };
+        if (p.ingreso && p.gasto && p.categorias && p.tarjeta && p.instalar) return; // todo hecho: no molestar
         pasos = p;
+    }
+
+    // ¿Hay algún registro cargado? (gasto o ingreso, en cualquier período). Define
+    // si mostrar el CTA de instalar (Capa 1.5: aparece DESPUÉS del primer registro).
+    async function cargarRegistro() {
+        const r = (await query('SELECT (SELECT COUNT(*) FROM gasto WHERE perfil_id=1) + (SELECT COUNT(*) FROM ingreso WHERE perfil_id=1) AS n')) as any[];
+        hayRegistro = (r[0]?.n ?? 0) > 0;
+    }
+
+    // Disparador del paso "instalá" del checklist (Android prompt; en iOS/sin evento
+    // el banner de InstalarApp ya muestra el cómo).
+    async function instalarDesdeChecklist() {
+        await instalarApp();
     }
 
     async function ocultarPasos() {
@@ -418,7 +436,7 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); cargarRegistro(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
@@ -440,9 +458,11 @@
 
 <div class="titulo-guia">
     <h1>Cuenta Corriente</h1>
-    <Guia clave="home" texto="Tu día a día: cuánto gastaste este período, en qué, y cómo venís contra tu presupuesto. Las dos primeras columnas muestran los meses anteriores para comparar. Tocá el casillero de Presupuesto de cualquier subcategoría para fijar un monto." />
+    <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares recurrentes (fijos, cuotas) entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
 </div>
 {#if nombre}<p class="saludo">Hola, {nombre}</p>{/if}
+
+{#if hayRegistro}<InstalarApp />{/if}
 
 {#if pasos}
     <div class="pasos">
@@ -454,6 +474,11 @@
         <a href="/gastos" class:hecho={pasos.gasto}>{pasos.gasto ? '✓' : '②'} Cargá tu primer gasto</a>
         <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '③'} Revisá y ajustá tus categorías</a>
         <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '④'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
+        {#if pasos.instalar}
+            <span class="paso-done">✓ Instalá la app</span>
+        {:else}
+            <button class="paso-btn" onclick={instalarDesdeChecklist}>⑤ Instalá la app en tu teléfono</button>
+        {/if}
     </div>
 {/if}
 
@@ -677,6 +702,9 @@
     .pasos a { color: var(--accent); text-decoration: none; font-size: 0.88rem; }
     .pasos a:hover { text-decoration: underline; }
     .pasos a.hecho { color: var(--pos); text-decoration: line-through; opacity: 0.75; pointer-events: none; }
+    .pasos .paso-btn { background: none; border: none; color: var(--accent); text-align: left; font-size: 0.88rem; padding: 0; cursor: pointer; font-family: inherit; }
+    .pasos .paso-btn:hover { text-decoration: underline; }
+    .pasos .paso-done { color: var(--pos); text-decoration: line-through; opacity: 0.75; font-size: 0.88rem; }
 
     /* Aviso de backup */
     .aviso-backup {

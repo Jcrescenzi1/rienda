@@ -2,10 +2,12 @@
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
-	import { periodoRegla } from '$lib/periodo';
+	import { periodoRegla, periodoActivoCC } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 
-	let periodo = $state(mesActual());
+	// Arranca en el período activo de Cuenta Corriente (si venís de la Home); si no,
+	// en el mes actual. Solo default inicial; el cambio acá no vuelve a la Home.
+	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let fijos = $state<any[]>([]);
 	let grupos = $state<any[]>([]);

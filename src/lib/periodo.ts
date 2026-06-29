@@ -25,6 +25,23 @@ export function periodoRegla(fecha: string, categoria: string): string {
 	return categoria === 'Ingreso Principal' && d >= 20 ? addMonths(base, 1) : base;
 }
 
+// Período activo de Cuenta Corriente, leído de su sessionStorage (misma clave que
+// usa la Home; acá SOLO se lee, no se crea ni se persiste nada nuevo). Sirve para
+// que Gastos/Ingresos Fijos arranquen en el período que el usuario está mirando.
+// La Home guarda { periodo, ultimoCorte } bajo 'cc_periodo'; en ambos modos
+// 'periodo' es un 'yyyy-mm' (en sueldo es la etiqueta del corte, no un rango), así
+// que el selector mensual de Fijos lo adopta directo. Devuelve 'yyyy-mm' o null.
+export function periodoActivoCC(): string | null {
+	try {
+		const raw = sessionStorage.getItem('cc_periodo');
+		if (!raw) return null;
+		const p = (JSON.parse(raw) as { periodo?: unknown })?.periodo;
+		return typeof p === 'string' && /^\d{4}-\d{2}$/.test(p) ? p : null;
+	} catch {
+		return null;
+	}
+}
+
 // Lee el modo del perfil. Default 'sueldo' si la columna viniera NULL
 // (p. ej. backup viejo importado antes de la migración).
 export async function cargarModo(): Promise<ModoPeriodo> {

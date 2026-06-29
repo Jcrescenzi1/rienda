@@ -242,7 +242,7 @@
 
 <div class="titulo-guia">
     <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
-    <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'). La primera vez que usás un detalle le asignás subcategoría; las próximas veces se clasifica solo. Si pagaste con crédito, indicá tarjeta y cuotas: la app reparte el pago en los meses correspondientes." />
+    <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'); la primera vez le asignás subcategoría y después se clasifica solo. El gasto se cuenta entero el día que lo hacés —también el crédito—; si pagaste en cuotas, indicá tarjeta y cuotas y la app reparte el vencimiento mes a mes." verMas />
 </div>
 <a href="/" class="btn-volver">← Volver a Presupuesto</a>
 

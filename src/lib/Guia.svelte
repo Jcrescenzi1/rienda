@@ -5,7 +5,8 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 
-	let { clave, texto }: { clave: string; texto: string } = $props();
+	// verMas: si true, agrega un link a la página "Cómo funciona" (Capa 3).
+	let { clave, texto, verMas = false }: { clave: string; texto: string; verMas?: boolean } = $props();
 	let abierta = $state(false);
 	let lista = $state(false);
 
@@ -28,6 +29,7 @@
 	{#if abierta}
 		<div class="guia">
 			<p>{texto}</p>
+			{#if verMas}<a class="vermas" href="/como-funciona">Cómo funciona Rienda →</a>{/if}
 			<button class="ok" onclick={entendido}>Entendido</button>
 		</div>
 	{/if}
@@ -50,6 +52,8 @@
 		display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
 	}
 	.guia p { margin: 0; }
+	.vermas { font-size: 0.82rem; color: var(--accent); font-weight: 600; text-decoration: none; }
+	.vermas:hover { text-decoration: underline; }
 	.ok {
 		background: var(--accent); color: #fff; border: none; border-radius: 6px;
 		padding: 5px 12px; cursor: pointer; font-size: 0.8rem; font-weight: 600;

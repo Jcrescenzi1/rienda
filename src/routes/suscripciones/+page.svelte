@@ -3,9 +3,13 @@
 	import { query } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
+	import { periodoActivoCC } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 
-	let periodo = $state(mesActual());
+	// Arranca en el período activo de Cuenta Corriente (si venís de la Home); si no,
+	// en el mes actual. Es solo el default inicial: el usuario lo cambia libremente y
+	// el cambio acá NO se propaga de vuelta a la Home.
+	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let subs = $state<any[]>([]);
 	let grupos = $state<any[]>([]);

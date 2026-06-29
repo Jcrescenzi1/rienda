@@ -22,7 +22,7 @@ export async function nombrePerfil(): Promise<string | null> {
 // categorías genéricas y los datos macro de arranque (dólar/inflación de fallback).
 // Nota: no se envuelve en una transacción propia porque SEED_MACRO ya trae su
 // propio BEGIN/COMMIT (transacciones anidadas no están permitidas en SQLite).
-export async function crearPerfil(nombre: string, modoPeriodo: ModoPeriodo = 'sueldo'): Promise<void> {
+export async function crearPerfil(nombre: string, modoPeriodo: ModoPeriodo = 'calendario'): Promise<void> {
 	const limpio = nombre.trim();
 	if (!limpio) throw new Error('El nombre no puede estar vacío.');
 
