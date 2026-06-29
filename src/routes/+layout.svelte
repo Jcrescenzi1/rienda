@@ -8,7 +8,7 @@
 	import { query } from '$lib/db/client';
 	import { fechaISO } from '$lib/format';
 	import type { ModoPeriodo } from '$lib/periodo';
-	import { pwa, esStandalone } from '$lib/pwa.svelte';
+	import InstalarApp from '$lib/InstalarApp.svelte';
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -148,22 +148,10 @@
 		// a la pantalla de inicio quedan exentas). Best-effort: si no está soportado
 		// o lo rechaza, la app sigue igual.
 		try { navigator.storage?.persist?.(); } catch { /* no soportado */ }
-
-		// PWA: detectar si ya corre instalada y capturar el evento de instalación
-		// (Android/Chromium) para el CTA de la Home. Degrada limpio en navegadores
-		// sin soporte (el evento nunca llega; el CTA cae a instrucciones/navegador).
-		pwa.standalone = esStandalone();
-		const onBIP = (e: Event) => { e.preventDefault(); pwa.deferred = e; };
-		const onInstalled = () => { pwa.deferred = null; pwa.standalone = true; try { navigator.storage?.persist?.(); } catch { /* */ } };
-		window.addEventListener('beforeinstallprompt', onBIP);
-		window.addEventListener('appinstalled', onInstalled);
-
+		// La captura de beforeinstallprompt / standalone vive en pwa.svelte.ts (a
+		// nivel módulo, se evalúa temprano vía el import de InstalarApp).
 		window.addEventListener('scroll', alScrollear, { passive: true });
-		return () => {
-			window.removeEventListener('scroll', alScrollear);
-			window.removeEventListener('beforeinstallprompt', onBIP);
-			window.removeEventListener('appinstalled', onInstalled);
-		};
+		return () => window.removeEventListener('scroll', alScrollear);
 	});
 
 </script>
@@ -191,7 +179,8 @@
 				</div>
 				<p class="bsub">Lo cambiás cuando quieras en Configuración.</p>
 			{:else if paso === 4}
-				<p class="bp">Tus datos viven solo en este teléfono, no en la nube. Por eso conviene instalar la app y hacer backup.</p>
+				<p class="bp">Tus datos viven solo en este teléfono. Conviene instalar la app:</p>
+				<InstalarApp compacto mostrarInstalada dismissible={false} />
 			{:else}
 				<p class="bp">Listo. Cargá un gasto y arrancá. Lo demás aparece cuando lo quieras.</p>
 			{/if}
@@ -242,7 +231,7 @@
 
 			<div class="grupo">
 				<span class="gtit">Datos</span>
-				<button class="item" class:activo={actual === '/datos'} onclick={() => irA('/datos')}>Importar / Exportar</button>
+				<button class="item" class:activo={actual === '/datos'} onclick={() => irA('/datos')}>Tus datos</button>
 				<button class="item" onclick={onActualizarCotiz} disabled={actualizandoCotiz}>
 					{actualizandoCotiz ? 'Actualizando…' : 'Actualizar cotizaciones'}
 				</button>

@@ -6,7 +6,6 @@
     import { leerMeta, setMeta } from '$lib/db/meta';
     import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
-    import InstalarApp from '$lib/InstalarApp.svelte';
 
     let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
@@ -47,8 +46,6 @@
     let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
     let pasos = $state<{ ingreso: boolean; gasto: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean } | null>(null);
-    // ¿Ya hay al menos un registro (gasto o ingreso)? Dispara el CTA de instalar.
-    let hayRegistro = $state(false);
     let rango = $state('');
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
@@ -345,15 +342,8 @@
         pasos = p;
     }
 
-    // ¿Hay algún registro cargado? (gasto o ingreso, en cualquier período). Define
-    // si mostrar el CTA de instalar (Capa 1.5: aparece DESPUÉS del primer registro).
-    async function cargarRegistro() {
-        const r = (await query('SELECT (SELECT COUNT(*) FROM gasto WHERE perfil_id=1) + (SELECT COUNT(*) FROM ingreso WHERE perfil_id=1) AS n')) as any[];
-        hayRegistro = (r[0]?.n ?? 0) > 0;
-    }
-
-    // Disparador del paso "instalá" del checklist (Android prompt; en iOS/sin evento
-    // el banner de InstalarApp ya muestra el cómo).
+    // Disparador del paso "instalá" del checklist (Android prompt). En iOS/sin
+    // evento, el lugar para instalar es la slide del onboarding o /datos.
     async function instalarDesdeChecklist() {
         await instalarApp();
     }
@@ -436,7 +426,7 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); cargarRegistro(); });
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
@@ -461,8 +451,6 @@
     <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares recurrentes (fijos, cuotas) entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
 </div>
 {#if nombre}<p class="saludo">Hola, {nombre}</p>{/if}
-
-{#if hayRegistro}<InstalarApp />{/if}
 
 {#if pasos}
     <div class="pasos">

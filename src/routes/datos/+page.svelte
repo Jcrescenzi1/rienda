@@ -9,6 +9,7 @@
 	} from '$lib/db/precarga';
 	import { hoyISO } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
+	import InstalarApp from '$lib/InstalarApp.svelte';
 
 	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, backup_aviso_hasta: null });
 	let cargando = $state(true);
@@ -38,6 +39,23 @@
 		const d = new Date(iso);
 		return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
+
+	// Días desde una fecha ISO guardada, sin new Date() (Date.parse sobre el ISO
+	// absoluto + Date.now; no hay corrimiento de día). null si nunca.
+	function diasDesde(iso: string | null): number | null {
+		if (!iso) return null;
+		const ms = Date.parse(iso);
+		if (Number.isNaN(ms)) return null;
+		return Math.floor((Date.now() - ms) / 86400000);
+	}
+	const diasCopia = $derived(diasDesde(meta.ultima_exportacion));
+	const copiaVieja = $derived(diasCopia === null || diasCopia > 30);
+	const textoCopia = $derived(
+		diasCopia === null ? 'Todavía no descargaste ninguna copia'
+		: diasCopia === 0 ? 'Última copia: hoy'
+		: diasCopia === 1 ? 'Última copia: hace 1 día'
+		: `Última copia: hace ${diasCopia} días`
+	);
 
 	// true si el backup es más viejo que la base actual en ese módulo
 	function masViejo(actual: string | null, backup: string | null): boolean {
@@ -150,25 +168,20 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Datos</h1>
-	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Creá copias de seguridad seguido y guardalas en otro lado: son tu única red. Las planillas Excel/CSV son para traer o sacar datos; la copia de seguridad, para restaurar todo." />
+	<h1>Tus datos</h1>
+	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Descargá una copia de seguridad seguido y guardala en otro lado: es tu única red real. Las planillas Excel/CSV son para traer o sacar datos." />
 </div>
 
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
-	<h2>Copia de seguridad</h2>
-	<p class="nota">
-		Tu <strong>resguardo total</strong>: un archivo con TODO (datos, configuración y perfil) para
-		guardar a salvo o mudarte de dispositivo. Restaurar <strong>reemplaza todo</strong> lo que haya
-		en la app y vuelve exactamente a ese punto.
-	</p>
-	<div class="acciones">
-		<button class="btn btn-primary" onclick={onExportar}>⬇ Crear copia de seguridad</button>
-		<button class="btn btn-secondary" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
-		<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
+	<!-- Estado: lo que se mira de un vistazo (fijo, no colapsable) -->
+	<div class="estado" class:vieja={copiaVieja}>
+		<span class="est-main">{copiaVieja ? '⚠️ ' : ''}{textoCopia}.</span>
+		{#if copiaVieja}<span class="est-sub">Tus datos viven solo en este teléfono — descargá una copia abajo.</span>{/if}
 	</div>
 
+	<!-- Comparación antes de restaurar (cuando elegiste una copia) -->
 	{#if comparando && fechasBackup}
 		<div class="comparacion">
 			<h2>Comparación antes de restaurar</h2>
@@ -208,138 +221,141 @@
 		</div>
 	{/if}
 
-	<h2>Copias automáticas</h2>
-	<p class="nota">Antes de cada importación o borrado, Rienda guarda sola una copia en este dispositivo (las últimas 5). Si una operación pisó tus datos, restaurá desde acá — usa la misma comparación que una importación.</p>
-	{#if autobackups.length}
-		<ul class="autolist">
-			{#each autobackups as a (a.nombre)}
-				<li>
-					<span class="auto-fecha">{a.fecha}</span>
-					<span class="auto-size">{(a.size / 1024).toFixed(0)} KB</span>
-					<button class="btn btn-secondary" onclick={() => restaurarAuto(a.nombre)}>Restaurar</button>
-				</li>
-			{/each}
-		</ul>
-	{:else}
-		<p class="nota">Todavía no hay copias automáticas (se crean al importar o al borrar).</p>
-	{/if}
-	<p class="nota auto-lim">Estas copias viven en este mismo dispositivo. NO protegen contra "limpiar datos de navegación", desalojo del navegador ni pérdida del equipo. Para eso, descargá la copia de seguridad y guardala en otro lado.</p>
-
-	<h2>Instalá la app (recomendado)</h2>
-	<p class="nota">
-		Instalar Rienda en tu dispositivo protege tus datos y la abre como una app propia.
-		<strong>En iPhone/iPad es clave:</strong> si la usás como pestaña de Safari, el sistema borra
-		tus datos tras 7 días sin abrirla; instalada en la pantalla de inicio, no.
-	</p>
-	<div class="instalar">
-		<div class="inst-card">
-			<strong>📱 iPhone / iPad (Safari)</strong>
-			<ol>
-				<li>Abrí Rienda en <strong>Safari</strong>.</li>
-				<li>Tocá el botón <strong>Compartir</strong> (el cuadrado con la flecha ↑).</li>
-				<li>Elegí <strong>"Agregar a inicio"</strong>.</li>
-				<li>Abrila siempre desde el ícono de la pantalla de inicio.</li>
-			</ol>
-		</div>
-		<div class="inst-card">
-			<strong>🖥 Windows (Chrome / Edge)</strong>
-			<ol>
-				<li>Abrí Rienda en <strong>Chrome</strong> o <strong>Edge</strong>.</li>
-				<li>En la barra de direcciones, clic en el ícono de <strong>instalar</strong> (un monitor con ↓), o menú <strong>⋮ → "Instalar Rienda"</strong>.</li>
-				<li>Se abre como app propia, con su ícono en el escritorio.</li>
-			</ol>
-		</div>
-		<div class="inst-card">
-			<strong>🖥 Mac (Chrome)</strong>
-			<ol>
-				<li>En Mac, <strong>instalá desde Chrome</strong> (no desde Safari): Safari solo permite instalar PWAs en macOS Sonoma o superior, y la opción está escondida.</li>
-				<li>Abrí Rienda en <strong>Chrome</strong>.</li>
-				<li>En la barra de direcciones, clic en el ícono de <strong>instalar</strong> (un monitor con ↓), o menú <strong>⋮ → "Instalar Rienda"</strong>.</li>
-				<li>Se abre como app propia, con su ícono en el Dock.</li>
-			</ol>
-		</div>
-	</div>
-
-	<h2>Planillas (Excel / CSV)</h2>
-	<p class="nota">
-		<strong>Precarga histórica:</strong> ¿venís de una planilla? Bajá la plantilla Excel y completá
-		solo las hojas que quieras (Gastos / Ingresos / Inversiones — adentro tenés instrucciones y
-		desplegables con los valores válidos). Al subirla se importa lo que tenga datos; si una hoja tiene
-		errores, ese bloque no entra y te decimos qué corregir. Categorías, tarjetas, activos y cuentas
-		que no existan se crean solas.<br />
-		<strong>Importar siempre AGREGA</strong>: no pisa ni borra lo que ya tenés, y las filas idénticas
-		a registros existentes se omiten solas (podés resubir un archivo sin miedo a duplicar).
-		<strong>Exportar CSV:</strong> tus datos en formato planilla, para analizarlos en Excel u otra herramienta.
-	</p>
-	<div class="precarga">
-		<div class="prow destacada">
-			<span>Precargar</span>
-			<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
-			<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar datos (agrega)</button>
-			<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
-		</div>
-		<div class="prow">
-			<span>Exportar</span>
-			<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ Gastos</button>
-			<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ Ingresos</button>
-			<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ Inversiones</button>
-		</div>
-	</div>
-
-	<h2>Estado de tus datos</h2>
-	<table>
-		<tbody>
-			<tr><td>Última importación</td><td class="val">{fmt(meta.ultima_importacion)}</td></tr>
-			<tr><td>Última edición de Finanzas</td><td class="val">{fmt(meta.ultima_edicion_finanzas)}</td></tr>
-			<tr><td>Última edición de Inversiones</td><td class="val">{fmt(meta.ultima_edicion_inversiones)}</td></tr>
-		</tbody>
-	</table>
-
-	<p class="nota">
-		"Última edición" registra cuándo cargaste o modificaste datos en este dispositivo, por módulo.
-		Actualizar cotizaciones desde la API no cuenta como edición.
-	</p>
-
-	<div class="peligro">
-		<h2>Zona peligrosa</h2>
-		{#if !reseteando}
-			<p class="peligro-desc">Borra todos los datos de este dispositivo y devuelve la app al inicio. Es irreversible.</p>
-			<button class="btn btn-danger-outline" onclick={abrirReset}>Borrar todos mis datos</button>
-		{:else}
-			<p class="peligro-desc">
-				Vas a borrar <strong>todo</strong>: gastos, ingresos, inversiones, configuración y perfil.
-				No se puede deshacer. Si todavía no tenés una copia, exportala ahora.
-			</p>
-			<button class="btn btn-primary exp-reset" onclick={onExportar}>⬇ Crear copia de seguridad primero</button>
-			<label class="lbl-confirm" for="confirm-borrar">Escribí <strong>BORRAR</strong> para confirmar:</label>
-			<input
-				id="confirm-borrar"
-				class="input-confirm"
-				type="text"
-				bind:value={textoConfirm}
-				placeholder="BORRAR"
-				autocapitalize="characters"
-				autocorrect="off"
-				autocomplete="off"
-				spellcheck="false"
-			/>
-			<div class="botones">
-				<button class="btn btn-secondary" onclick={cerrarReset}>Cancelar</button>
-				<button class="btn btn-danger-solid" disabled={!puedeBorrar || borrando} onclick={confirmarReset}>
-					{borrando ? 'Borrando…' : 'Borrar todo'}
-				</button>
+	<!-- Resguardar e importar (misma intención) -->
+	<details class="sec">
+		<summary>Resguardar e importar</summary>
+		<div class="sec-body">
+			<p class="nota">Tu <strong>resguardo total</strong>: un archivo con TODO (datos, configuración y perfil). Restaurar <strong>reemplaza todo</strong> y vuelve a ese punto.</p>
+			<div class="acc">
+				<button class="btn btn-primary" onclick={onExportar}>⬇ Descargar copia de seguridad</button>
+				<button class="btn btn-secondary" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
+				<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
 			</div>
-		{/if}
-	</div>
+			<p class="nota">Planillas (Excel/CSV): importar <strong>AGREGA</strong> (no pisa ni duplica). Bajá la plantilla, completá las hojas que quieras y subila.</p>
+			<div class="acc">
+				<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
+				<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar planilla (agrega)</button>
+				<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ CSV Gastos</button>
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ CSV Ingresos</button>
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ CSV Inversiones</button>
+			</div>
+			<details class="subsec">
+				<summary>Detalle de fechas</summary>
+				<table class="fechas">
+					<tbody>
+						<tr><td>Última importación</td><td class="val">{fmt(meta.ultima_importacion)}</td></tr>
+						<tr><td>Última edición de Finanzas</td><td class="val">{fmt(meta.ultima_edicion_finanzas)}</td></tr>
+						<tr><td>Última edición de Inversiones</td><td class="val">{fmt(meta.ultima_edicion_inversiones)}</td></tr>
+					</tbody>
+				</table>
+				<p class="nota">"Última edición" = cuándo cargaste o modificaste datos, por módulo. Actualizar cotizaciones no cuenta.</p>
+			</details>
+		</div>
+	</details>
+
+	<!-- Últimas 5 versiones (deshacer) -->
+	<details class="sec">
+		<summary>Últimas 5 versiones</summary>
+		<div class="sec-body">
+			<p class="nota">Función deshacer: la app guarda sola tus últimas 5 versiones antes de cada cambio grande. ¿Te equivocaste? Volvé a cualquiera de las 5. ⚠️ Viven en este teléfono. Para no perder tus datos, descargá una copia (arriba).</p>
+			{#if autobackups.length}
+				<ul class="autolist">
+					{#each autobackups as a (a.nombre)}
+						<li>
+							<span class="auto-fecha">{a.fecha}</span>
+							<span class="auto-size">{(a.size / 1024).toFixed(0)} KB</span>
+							<button class="btn btn-secondary" onclick={() => restaurarAuto(a.nombre)}>Volver a esta</button>
+						</li>
+					{/each}
+				</ul>
+			{:else}
+				<p class="nota">Todavía no hay versiones guardadas (se crean al importar o al borrar).</p>
+			{/if}
+		</div>
+	</details>
+
+	<!-- Instalar la app -->
+	<details class="sec">
+		<summary>Instalar la app</summary>
+		<div class="sec-body">
+			<p class="nota">Instalada es más rápida, funciona sin conexión y ayuda a que no se borren tus datos (clave en iPhone/iPad).</p>
+			<InstalarApp mostrarInstalada dismissible={false} />
+		</div>
+	</details>
+
+	<!-- Zona peligrosa -->
+	<details class="sec peligro">
+		<summary>Zona peligrosa</summary>
+		<div class="sec-body">
+			{#if !reseteando}
+				<p class="peligro-desc">Borra todos los datos de este dispositivo y devuelve la app al inicio. Es irreversible.</p>
+				<button class="btn btn-danger-outline" onclick={abrirReset}>Borrar todos mis datos</button>
+			{:else}
+				<p class="peligro-desc">
+					Vas a borrar <strong>todo</strong>: gastos, ingresos, inversiones, configuración y perfil.
+					No se puede deshacer. Si todavía no tenés una copia, descargala ahora.
+				</p>
+				<button class="btn btn-primary exp-reset" onclick={onExportar}>⬇ Descargar copia primero</button>
+				<label class="lbl-confirm" for="confirm-borrar">Escribí <strong>BORRAR</strong> para confirmar:</label>
+				<input
+					id="confirm-borrar"
+					class="input-confirm"
+					type="text"
+					bind:value={textoConfirm}
+					placeholder="BORRAR"
+					autocapitalize="characters"
+					autocorrect="off"
+					autocomplete="off"
+					spellcheck="false"
+				/>
+				<div class="botones">
+					<button class="btn btn-secondary" onclick={cerrarReset}>Cancelar</button>
+					<button class="btn btn-danger-solid" disabled={!puedeBorrar || borrando} onclick={confirmarReset}>
+						{borrando ? 'Borrando…' : 'Borrar todo'}
+					</button>
+				</div>
+			{/if}
+		</div>
+	</details>
 {/if}
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	h2 { font-size: 1.05rem; margin-top: 24px; }
-	.acciones { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
-	.comparacion { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; }
-	table { border-collapse: collapse; width: 100%; max-width: 560px; font-size: 0.9rem; }
-	td, th { padding: 8px 10px; text-align: left; }
+	h2 { font-size: 1.05rem; margin-top: 0; }
+
+	/* Estado (fijo arriba) */
+	.estado { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px; display: flex; flex-direction: column; gap: 3px; }
+	.estado.vieja { border-color: var(--warn); background: rgba(251, 191, 36, 0.08); }
+	.est-main { font-weight: 600; font-size: 0.92rem; }
+	.est-sub { font-size: 0.8rem; color: var(--text-dim); }
+
+	/* Secciones colapsables */
+	.sec { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; margin: 0 0 10px; }
+	.sec > summary { cursor: pointer; padding: 12px 14px; font-weight: 600; font-size: 0.95rem; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+	.sec > summary::after { content: '▸'; color: var(--text-dim); }
+	.sec[open] > summary::after { content: '▾'; }
+	.sec > summary::-webkit-details-marker { display: none; }
+	.sec-body { padding: 0 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+	.sec.peligro { border-color: var(--neg); margin-top: 22px; }
+	.sec.peligro > summary { color: var(--neg); }
+
+	/* Botones de tamaño uniforme (full-width, sin corrimiento en móvil) */
+	.acc { display: flex; flex-direction: column; gap: 8px; }
+	.acc :global(.btn) { width: 100%; box-sizing: border-box; text-align: center; }
+
+	.subsec { border-top: 1px solid var(--border); padding-top: 8px; }
+	.subsec > summary { cursor: pointer; font-size: 0.84rem; color: var(--text-dim); }
+
+	.nota { font-size: 0.82rem; color: var(--text-dim); margin: 0; line-height: 1.5; }
+	.nota strong { color: var(--text); }
+
+	/* Comparación previa a restaurar */
+	.comparacion { border: 1px solid var(--warn); background: var(--surface); border-radius: 8px; padding: 14px; margin: 0 0 14px; }
+	.comparacion h2 { margin-top: 0; }
+	table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+	.fechas { max-width: 420px; }
+	td, th { padding: 7px 9px; text-align: left; }
 	th { color: var(--text-dim); }
 	td.val, th:nth-child(n+2) { text-align: right; font-weight: 600; }
 	td.rojo { color: var(--neg) !important; }
@@ -347,34 +363,18 @@
 	.aviso.rojo { color: var(--neg); font-weight: 600; }
 	.aviso.ok { color: var(--pos); }
 	.recordatorio { font-size: 0.82rem; color: var(--text-dim); margin: 6px 0 12px; }
-	.botones { display: flex; gap: 10px; }
-	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; max-width: 560px; line-height: 1.5; }
-	.nota strong { color: var(--text); }
+	.botones { display: flex; gap: 10px; flex-wrap: wrap; }
 
-	/* Instalación PWA */
-	.instalar { display: flex; gap: 12px; flex-wrap: wrap; margin: 10px 0; }
-	.inst-card { flex: 1; min-width: 250px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; }
-	.inst-card strong { font-size: 0.92rem; }
-	.inst-card ol { margin: 8px 0 0; padding-left: 20px; font-size: 0.83rem; color: var(--text-dim); line-height: 1.6; }
-	.inst-card ol strong { color: var(--text); font-size: inherit; }
-
-	/* Planillas (precarga + exportación) */
-	.precarga { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; max-width: 620px; }
-	.prow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-	.prow span { font-weight: 600; font-size: 0.9rem; width: 90px; }
-	.prow.destacada { border: 1px solid var(--accent); border-radius: 8px; padding: 8px 10px; background: rgba(91, 157, 255, 0.06); margin-bottom: 4px; }
-
-	/* Zona peligrosa */
-	.peligro { border: 1px solid var(--neg); border-radius: 8px; padding: 14px; margin-top: 32px; max-width: 560px; box-sizing: border-box; }
-	.peligro h2 { margin-top: 0; color: var(--neg); }
-	.peligro-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; margin: 6px 0 12px; }
-	.exp-reset { display: inline-block; margin: 0 0 14px; }
-	.lbl-confirm { display: block; font-size: 0.85rem; margin: 4px 0 6px; }
-	.input-confirm { width: 100%; max-width: 240px; box-sizing: border-box; padding: 9px 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); letter-spacing: 0.05em; margin-bottom: 14px; }
-	.input-confirm:focus { outline: none; border-color: var(--neg); }
-	.autolist { list-style: none; padding: 0; margin: 8px 0 12px; display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
-	.autolist li { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 7px 12px; }
+	/* Versiones (deshacer) */
+	.autolist { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+	.autolist li { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); background: var(--surface-2); border-radius: 8px; padding: 7px 12px; }
 	.auto-fecha { flex: 1; font-size: 0.88rem; }
 	.auto-size { color: var(--text-dim); font-size: 0.8rem; }
-	.auto-lim { font-size: 0.78rem; }
+
+	/* Zona peligrosa */
+	.peligro-desc { font-size: 0.85rem; color: var(--text-dim); line-height: 1.5; margin: 0; }
+	.exp-reset { align-self: flex-start; }
+	.lbl-confirm { font-size: 0.85rem; }
+	.input-confirm { width: 100%; max-width: 240px; box-sizing: border-box; padding: 9px 12px; font-size: 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--text); letter-spacing: 0.05em; }
+	.input-confirm:focus { outline: none; border-color: var(--neg); }
 </style>

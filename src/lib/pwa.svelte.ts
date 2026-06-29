@@ -49,3 +49,17 @@ export async function instalarApp(): Promise<'accepted' | 'dismissed' | 'no-prom
 		return 'dismissed';
 	}
 }
+
+// Captura TEMPRANA, a nivel módulo (apenas se importa, antes del montaje de
+// cualquier componente), para no perder beforeinstallprompt si dispara antes de
+// que monte la slide/CTA. El evento diferido queda en pwa.deferred y sobrevive a
+// la navegación entre slides/pantallas (mismo estado de módulo). Guarded para SSR.
+if (typeof window !== 'undefined') {
+	pwa.standalone = esStandalone();
+	window.addEventListener('beforeinstallprompt', (e: Event) => { e.preventDefault(); pwa.deferred = e; });
+	window.addEventListener('appinstalled', () => {
+		pwa.deferred = null;
+		pwa.standalone = true;
+		try { navigator.storage?.persist?.(); } catch { /* no soportado */ }
+	});
+}
