@@ -155,7 +155,7 @@
 	<h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
 	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
 </div>
-<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
 <h2>{editandoId ? 'Editar ingreso' : 'Cargar ingreso'}</h2>
 <div class="form">

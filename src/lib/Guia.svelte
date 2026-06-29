@@ -1,7 +1,9 @@
 <script lang="ts">
 	// Guía por módulo. El "?" vive al lado del título (dentro de .titulo-guia)
-	// y el cuadro se despliega debajo, a lo ancho. Aparece abierta la primera
-	// vez; "Entendido" la cierra y lo registra en meta (clave guia_<clave>).
+	// y el cuadro se despliega debajo, a lo ancho. Arranca SIEMPRE colapsada (nunca
+	// auto-abre); recuerda la apertura EXPLÍCITA del usuario por clave (guia_<clave>
+	// = 'abierta' | 'cerrada'). Valores viejos ('1' = descartada en el modelo
+	// anterior) cuentan como cerrada, así que nadie ve guías auto-abiertas.
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 
@@ -13,19 +15,25 @@
 	onMount(async () => {
 		try {
 			const r = (await query('SELECT valor FROM meta WHERE clave=?', ['guia_' + clave])) as any[];
-			abierta = r.length === 0;
+			abierta = r[0]?.valor === 'abierta'; // default cerrada; nunca auto-abre
 		} catch { abierta = false; }
 		lista = true;
 	});
 
-	async function entendido() {
-		abierta = false;
-		await query("INSERT INTO meta (clave, valor) VALUES (?, '1') ON CONFLICT(clave) DO UPDATE SET valor='1'", ['guia_' + clave]);
+	async function persistir(v: boolean) {
+		try {
+			await query(
+				"INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+				['guia_' + clave, v ? 'abierta' : 'cerrada']
+			);
+		} catch { /* ignore */ }
 	}
+	function toggle() { abierta = !abierta; persistir(abierta); }
+	function entendido() { abierta = false; persistir(false); }
 </script>
 
 {#if lista}
-	<button class="abrir" class:activo={abierta} onclick={() => (abierta = !abierta)} title="¿Cómo funciona esta pantalla?" aria-label="Ayuda">?</button>
+	<button class="abrir" class:activo={abierta} onclick={toggle} title="¿Cómo funciona esta pantalla?" aria-label="Ayuda">?</button>
 	{#if abierta}
 		<div class="guia">
 			<p>{texto}</p>
@@ -37,12 +45,12 @@
 
 <style>
 	.abrir {
-		background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
-		border-radius: 50%; width: 22px; height: 22px; font-size: 0.8rem; line-height: 1;
+		background: rgba(91, 157, 255, 0.12); color: var(--accent); border: 1px solid var(--accent);
+		border-radius: 50%; width: 22px; height: 22px; font-size: 0.8rem; font-weight: 700; line-height: 1;
 		cursor: pointer; padding: 0; flex-shrink: 0;
 		display: inline-flex; align-items: center; justify-content: center;
 	}
-	.abrir:hover, .abrir.activo { color: var(--accent); border-color: var(--accent); }
+	.abrir:hover, .abrir.activo { background: var(--accent); color: #fff; }
 	.guia {
 		flex-basis: 100%;
 		font-size: 0.85rem; font-weight: 400; color: var(--text);

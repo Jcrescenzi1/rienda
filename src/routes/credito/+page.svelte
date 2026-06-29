@@ -80,9 +80,9 @@
 
 <div class="titulo-guia">
     <h1>Crédito</h1>
-    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. Los montos en pesos y en dólares se muestran por separado (no se mezclan). En 'Reservado' anotás cuánta plata ya apartaste para pagar el vencimiento de ese mes: eso suma a tu ingreso disponible en Presupuesto. Tocá un mes para ver el detalle." />
+    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. Los montos en pesos y en dólares se muestran por separado (no se mezclan). En 'Reservado' anotás cuánta plata ya apartaste para pagar el vencimiento de ese mes: eso suma a tu ingreso disponible en Cuenta Corriente. Tocá un mes para ver el detalle." />
 </div>
-<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
 {#if cargando}
     <p>Cargando…</p>
@@ -135,7 +135,7 @@
             {/each}
         </tbody>
     </table>
-    <p class="nota">Pesos y dólares se muestran por separado porque son unidades distintas. La <strong>reserva</strong> (en pesos) se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Presupuesto: plata que ya separaste no te quita del disponible.</p>
+    <p class="nota">Pesos y dólares se muestran por separado porque son unidades distintas. La <strong>reserva</strong> (en pesos) se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Cuenta Corriente: plata que ya separaste no te quita del disponible.</p>
 {/if}
 
 <style>

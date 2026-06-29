@@ -135,7 +135,7 @@
 
 <div class="titulo-guia">
 	<h1>Evolución</h1>
-	<Guia clave="evolucion-finanzas" texto="Tu evolución financiera: ingresos vs gastos por período, y adentro la evolución de gastos, de ingresos y tu poder adquisitivo. Las cargas de registros se hacen desde Presupuesto." />
+	<Guia clave="evolucion-finanzas" texto="Tu evolución financiera: ingresos vs gastos por período, y adentro la evolución de gastos, de ingresos y tu poder adquisitivo. Las cargas de registros se hacen desde Cuenta Corriente." />
 </div>
 
 <div class="tabs">

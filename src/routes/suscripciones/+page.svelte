@@ -239,7 +239,7 @@
 	<Guia clave="suscripciones" texto="Tus gastos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
 </div>
 
-<a href="/" class="btn-volver">← Volver a Presupuesto</a>
+<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
 <label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
 
