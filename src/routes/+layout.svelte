@@ -36,8 +36,6 @@
 	const puedeAvanzar = $derived(paso !== 2 || nombreNuevo.trim().length > 0); // el nombre es obligatorio
 	function siguiente() { if (puedeAvanzar && paso < TOTAL_PASOS) paso++; }
 	function atras() { if (paso > 1) paso--; }
-	// "Saltar": ir directo al cierre; si falta el nombre (obligatorio), frenar en ese paso.
-	function saltar() { paso = nombreNuevo.trim() ? TOTAL_PASOS : 2; }
 
 	async function chequearPerfil() {
 		try { perfilListo = await hayPerfil(); }
@@ -189,7 +187,6 @@
 				{#if paso > 1}<button class="bback" onclick={atras}>Atrás</button>{/if}
 				{#if paso < TOTAL_PASOS}
 					<button class="crear" onclick={siguiente} disabled={!puedeAvanzar}>Siguiente</button>
-					<button class="bskip" onclick={saltar}>Saltar</button>
 				{:else}
 					<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim()}>{creando ? 'Creando…' : 'Empezar'}</button>
 				{/if}
@@ -452,7 +449,6 @@
 	.bnav { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 	.bnav .crear { flex: 1; }
 	.bback { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; cursor: pointer; font-size: 0.9rem; }
-	.bskip { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 0.85rem; text-decoration: underline; }
 	.crear { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 10px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
 	.crear:disabled { opacity: 0.6; cursor: default; }
 	.bmsg { font-size: 0.82rem; color: var(--neg); margin: 0; }
