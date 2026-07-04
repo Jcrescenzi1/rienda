@@ -74,10 +74,16 @@ export async function calcularLiquidez(): Promise<Record<string, number>> {
 	const tcash = (await query(
 		"SELECT moneda_pago m, COALESCE(SUM(CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END),0) s FROM transaccion WHERE perfil_id=1 AND monto_pago IS NOT NULL GROUP BY moneda_pago"
 	)) as any[];
+	// Renta y amortización cobradas: entran a liquidez en la moneda reportada
+	// (mismo efecto caja que una venta; sin reconvertir).
+	const rcash = (await query(
+		'SELECT moneda m, COALESCE(SUM(monto_renta + monto_amort),0) s FROM renta_activo WHERE perfil_id=1 GROUP BY moneda'
+	)) as any[];
 	const bal: Record<string, number> = { ARS: 0, USD: 0 };
 	for (const a of anchor) bal[a.moneda] = (bal[a.moneda] ?? 0) + a.saldo;
 	for (const r of movc) bal[r.moneda] = (bal[r.moneda] ?? 0) + r.s;
 	for (const r of tcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
+	for (const r of rcash) if (r.m) bal[r.m] = (bal[r.m] ?? 0) + r.s;
 	return bal;
 }
 

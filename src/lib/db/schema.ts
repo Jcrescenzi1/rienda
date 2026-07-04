@@ -153,6 +153,22 @@ CREATE TABLE IF NOT EXISTS transaccion (
   valor_dolar          REAL
 );
 
+-- Renta (cupón) y amortización (devolución de capital) cobradas por un activo.
+-- NO entra a transaccion (no mueve unidades ni FIFO): tabla aparte, atada al
+-- activo. Sus montos se suman al numerador del PPV de la posición abierta y su
+-- cash entra a liquidez. valor_dolar = TC congelado del movimiento (patrón de
+-- transaccion), para la conversión a la lente USD.
+CREATE TABLE IF NOT EXISTS renta_activo (
+  id           INTEGER PRIMARY KEY,
+  perfil_id    INTEGER NOT NULL REFERENCES perfil(id),
+  activo_id    INTEGER NOT NULL REFERENCES activo(id),
+  fecha        TEXT NOT NULL,
+  moneda       TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
+  monto_renta  REAL NOT NULL DEFAULT 0 CHECK (monto_renta >= 0),
+  monto_amort  REAL NOT NULL DEFAULT 0 CHECK (monto_amort >= 0),
+  valor_dolar  REAL
+);
+
 CREATE TABLE IF NOT EXISTS inflacion (
   id          INTEGER PRIMARY KEY,
   perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
@@ -232,6 +248,7 @@ CREATE TABLE IF NOT EXISTS meta (
 CREATE INDEX IF NOT EXISTS idx_gasto_fecha       ON gasto(perfil_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_gasto_detalle     ON gasto(perfil_id, detalle);
 CREATE INDEX IF NOT EXISTS idx_tx_activo         ON transaccion(perfil_id, activo_id, fecha);
+CREATE INDEX IF NOT EXISTS idx_renta_activo      ON renta_activo(perfil_id, activo_id);
 CREATE INDEX IF NOT EXISTS idx_ingreso_periodo   ON ingreso(perfil_id, periodo);
 CREATE INDEX IF NOT EXISTS idx_screg_periodo     ON suscripcion_registro(periodo);
 -- Por gasto_id / ingreso_id: soportan los EXISTS por fila de la Home (recurrente

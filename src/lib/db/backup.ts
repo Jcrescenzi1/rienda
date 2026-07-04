@@ -23,6 +23,7 @@ const TABLAS = [
 	'suscripcion_registro',
 	'ingreso_fijo_registro',
 	'transaccion',
+	'renta_activo',
 	'inflacion',
 	'cotizacion_dolar',
 	'presupuesto',

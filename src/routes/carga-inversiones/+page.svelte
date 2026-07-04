@@ -9,6 +9,7 @@
 	let activosList = $state<any[]>([]);
 	let ledger = $state<any[]>([]);
 	let cajaLedger = $state<any[]>([]);
+	let rentaLedger = $state<any[]>([]);
 
 	// Filtros del libro diario
 	let filtroActivo = $state<string>('');
@@ -16,11 +17,14 @@
 	let filtroHasta = $state('');
 
 	// Formulario
-	let fAccion = $state<'Compra' | 'Venta' | 'Ingreso' | 'Retiro' | 'Convertir'>('Compra');
+	let fAccion = $state<'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir'>('Compra');
 	let fCuenta = $state(''); let fCuentaNueva = $state(''); let fActivo = $state('');
 	let fFecha = $state(hoyISO());
 	let fUnidades = $state('');
 	let fMonto = $state('');
+	// Renta y Amortización: dos montos en la misma moneda + TC opcional (si se deja
+	// vacío, se usa el MEP de la fecha del movimiento).
+	let fRenta = $state(''); let fAmort = $state(''); let fTcRenta = $state('');
 	let fValorDolar = $state('');
 	let fPago = $state<'ARS' | 'USD'>('USD');
 	let fMoneda = $state<'ARS' | 'USD'>('ARS');
@@ -39,6 +43,14 @@
 		return a ? a.moneda : 'USD';
 	});
 	let esTrade = $derived(fAccion === 'Compra' || fAccion === 'Venta');
+	const rentaN = $derived(parseNum(fRenta));
+	const amortN = $derived(parseNum(fAmort));
+
+	// En Renta, la moneda por defecto es la del activo (editable). Se re-sugiere al
+	// cambiar de activo; si el usuario la toca a mano, respeta hasta el próximo activo.
+	$effect(() => {
+		if (fAccion === 'Renta' && fActivo && fActivo !== 'nuevo') fMoneda = monedaActivo as 'ARS' | 'USD';
+	});
 
 	async function cargarBase() {
 		const dolar = await dolarActual();
@@ -63,7 +75,15 @@
 		cajaLedger = (await query('SELECT id, fecha, accion, moneda, monto, grupo FROM mov_caja WHERE perfil_id=1 ORDER BY fecha DESC, id DESC LIMIT 30')) as any[];
 	}
 
-	onMount(() => { cargarBase(); cargarCaja(); });
+	async function cargarRenta() {
+		rentaLedger = (await query(
+			`SELECT r.id, r.fecha, a.nombre, r.moneda, r.monto_renta, r.monto_amort
+			 FROM renta_activo r JOIN activo a ON a.id = r.activo_id
+			 WHERE r.perfil_id=1 ORDER BY r.fecha DESC, r.id DESC LIMIT 30`
+		)) as any[];
+	}
+
+	onMount(() => { cargarBase(); cargarCaja(); cargarRenta(); });
 
 	// Al cambiar cualquier filtro, recarga el libro (también corre al montar).
 	$effect(() => {
@@ -78,12 +98,38 @@
 		filtroHasta = '';
 	}
 
+	// MEP (dólar bolsa) en/antes de una fecha; TC por defecto de la renta si no cargan uno.
+	async function mepDeFecha(fecha: string): Promise<number | null> {
+		const r = (await query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' AND fecha <= ? ORDER BY fecha DESC LIMIT 1", [fecha])) as any[];
+		return r[0]?.valor ?? null;
+	}
+
 	async function guardar() {
 		fMsg = '';
 		const monto = mN;
 		if (!fFecha) return (fMsg = 'Falta la fecha');
-		if (!Number.isFinite(monto) || monto <= 0) return (fMsg = 'Monto inválido');
+		// Renta usa dos montos propios (renta/amort), no fMonto: se valida en su rama.
+		if (fAccion !== 'Renta' && (!Number.isFinite(monto) || monto <= 0)) return (fMsg = 'Monto inválido');
 		try {
+			if (fAccion === 'Renta') {
+				if (!fActivo || fActivo === 'nuevo') return (fMsg = 'Elegí un activo');
+				const renta = Number.isFinite(rentaN) && rentaN > 0 ? rentaN : 0;
+				const amort = Number.isFinite(amortN) && amortN > 0 ? amortN : 0;
+				if (renta + amort <= 0) return (fMsg = 'Cargá al menos un monto (renta o amortización)');
+				const aMon = monedaActivo;
+				const necesitaVd = !(fMoneda === 'USD' && aMon === 'USD');
+				// TC: el que cargaron; si lo dejan vacío, el MEP de la fecha del movimiento.
+				const tcManual = parseNum(fTcRenta);
+				let vd = Number.isFinite(tcManual) && tcManual > 0 ? tcManual : (await mepDeFecha(fFecha)) ?? NaN;
+				if (necesitaVd && !(Number.isFinite(vd) && vd > 0)) return (fMsg = 'No hay cotización del dólar para esa fecha; cargá el tipo de cambio');
+				await query(
+					'INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
+					[Number(fActivo), fFecha, fMoneda, renta, amort, necesitaVd && Number.isFinite(vd) ? vd : null]
+				);
+				fMsg = 'Renta y amortización guardada ✅'; fRenta = ''; fAmort = ''; fTcRenta = '';
+				await cargarBase(); await cargarRenta();
+				return;
+			}
 			if (esTrade) {
 				const u = uN;
 				if (!Number.isFinite(u) || u <= 0) return (fMsg = 'Unidades inválidas');
@@ -157,6 +203,11 @@
 		else await query('DELETE FROM mov_caja WHERE id=? AND perfil_id=1', [m.id]);
 		await cargarCaja();
 	}
+	async function borrarRenta(id: number) {
+		if (!confirm('¿Eliminar este movimiento de renta/amortización?')) return;
+		await query('DELETE FROM renta_activo WHERE id=? AND perfil_id=1', [id]);
+		await cargarRenta();
+	}
 
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
@@ -178,8 +229,8 @@
 
 <div class="form">
 	<div class="acciones">
-		{#each ['Compra', 'Venta', 'Ingreso', 'Retiro', 'Convertir'] as ac}
-			<button type="button" class:activo={fAccion === ac} onclick={() => (fAccion = ac as any)}>{ac}</button>
+		{#each ['Compra', 'Venta', 'Renta', 'Ingreso', 'Retiro', 'Convertir'] as ac}
+			<button type="button" class:activo={fAccion === ac} onclick={() => (fAccion = ac as any)}>{ac === 'Renta' ? 'Renta y Amort.' : ac}</button>
 		{/each}
 	</div>
 	<label>Fecha<input type="date" bind:value={fFecha} /></label>
@@ -223,6 +274,20 @@
 		<label>Monto en {fMoneda}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 		<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
 		{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
+	{:else if fAccion === 'Renta'}
+		<label>Activo
+			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
+				{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}
+			</select></label>
+		<label>Moneda (renta y amortización)<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
+		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:soloNum bind:value={fRenta} placeholder="0,00" /></label>
+		<label>Monto amortización<input type="text" inputmode="decimal" use:soloNum bind:value={fAmort} placeholder="0,00" /></label>
+		{#if !(fMoneda === 'USD' && monedaActivo === 'USD')}
+			<label>Tipo de cambio<input type="text" inputmode="decimal" use:soloNum bind:value={fTcRenta} placeholder="auto: MEP de la fecha" /></label>
+		{/if}
+		{#if rentaN > 0 || amortN > 0}
+			<p class="hint">Entra {money((Number.isFinite(rentaN) ? rentaN : 0) + (Number.isFinite(amortN) ? amortN : 0), fMoneda, 2)} a Líquido {fMoneda} · corrige el resultado del activo (no mueve unidades).</p>
+		{/if}
 	{/if}
 	<button class="btn btn-success" onclick={guardar}>Guardar</button>
 	{#if fMsg}<p class="msg">{fMsg}</p>{/if}
@@ -277,6 +342,24 @@
 		<p class="vacio">Sin movimientos todavía</p>
 	{/each}
 </div>
+
+{#if rentaLedger.length}
+	<h2>Renta y amortización</h2>
+	<div class="fichas">
+		{#each rentaLedger as r (r.id)}
+			<div class="ficha">
+				<div class="ficha-top">
+					<span class="ficha-nombre">{r.nombre}</span>
+					<span class="ficha-monto pos">{money(r.monto_renta + r.monto_amort, r.moneda)}</span>
+					<span class="ficha-acc">
+						<button aria-label="Eliminar" class="del" onclick={() => borrarRenta(r.id)} title="Eliminar">✕</button>
+					</span>
+				</div>
+				<div class="ficha-meta">{fmtFecha(r.fecha)} · renta {money(r.monto_renta, r.moneda)} · amort. {money(r.monto_amort, r.moneda)}</div>
+			</div>
+		{/each}
+	</div>
+{/if}
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }

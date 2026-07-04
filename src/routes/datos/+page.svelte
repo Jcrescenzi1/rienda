@@ -222,7 +222,7 @@
 	{/if}
 
 	<!-- Resguardar e importar (misma intención) -->
-	<details class="sec">
+	<details class="sec" open>
 		<summary>Resguardar e importar</summary>
 		<div class="sec-body">
 			<p class="nota">Tu <strong>resguardo total</strong>: un archivo con TODO (datos, configuración y perfil). Restaurar <strong>reemplaza todo</strong> y vuelve a ese punto.</p>

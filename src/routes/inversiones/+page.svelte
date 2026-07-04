@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
+	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
 	import { actualizarPrecios } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
 
@@ -37,13 +38,17 @@
 
 	async function cargarTodo() {
 		dolar = await dolarActual();
+		// Serie de dólar para convertir renta/amort con el MEP de SU fecha cuando el
+		// movimiento no trae valor_dolar (fallback al último si no hay cotización previa).
+		const serie = await cargarDolarSerie();
+		const tcDe = (vd: any, fecha: string) => (Number.isFinite(vd) && vd > 0 ? vd : (dolarDeFecha(serie, fecha) ?? dolar));
 
 		const mp = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
 		preciosActualizadosEn = mp[0]?.valor ?? null;
 
 		// FIFO compartido con Evolución (una sola implementación)
 		const { lotes, realPorMes, aMap, txs } = await calcularFIFO();
-		realizadoAnioActual = Object.entries(realPorMes)
+		let realizadoAnio = Object.entries(realPorMes)
 			.filter(([mes]) => mes.startsWith(anioActual))
 			.reduce((s, [, v]) => s + v, 0);
 
@@ -55,11 +60,15 @@
 		// Reusa las transacciones que ya leyó calcularFIFO (mismo ORDER BY
 		// activo_id, fecha, id) en vez de re-leer la tabla. Renombra a las columnas
 		// cortas que usa el agregado.
-		const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar }));
+		const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar, f: t.fecha }));
 		type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
 		const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
 		const agg: Record<number, Agg> = {};
 		const heldRun: Record<number, number> = {};
+		// Fecha en que arrancó la posición abierta actual (primera compra del episodio
+		// vivo). Sirve para atribuir renta/amort SOLO a la posición viva (no a una vieja
+		// ya cerrada y recomprada).
+		const episodioDesde: Record<number, string> = {};
 		for (const t of txAgg) {
 			const a = aMap[t.aid];
 			if (!a) continue;
@@ -68,6 +77,7 @@
 			const nat = t.u * t.p;
 			const enUSD = aUSD(t.p, a.moneda, t.vd) * t.u;
 			if (t.op === 'Compra') {
+				if (agg[t.aid].compU === 0) episodioDesde[t.aid] = t.f; // primera compra del episodio
 				heldRun[t.aid] += t.u;
 				agg[t.aid].compU += t.u; agg[t.aid].inv += nat; agg[t.aid].invUSD += enUSD;
 			} else {
@@ -77,6 +87,34 @@
 				if (heldRun[t.aid] <= 1e-9) { heldRun[t.aid] = 0; agg[t.aid] = nuevoAgg(); }
 			}
 		}
+
+		// Renta y amortización de la POSICIÓN ABIERTA: se suman al numerador del PPV
+		// (lado "recuperado", sin unidades ni lote). Solo cuentan las cobradas dentro
+		// del episodio vivo (fecha >= inicio del episodio actual). Amort compensa la
+		// caída de precio que data912 ya aplicó; renta sube el PPV genuino.
+		const rentas = (await query(
+			'SELECT activo_id, fecha, moneda, monto_renta, monto_amort, valor_dolar FROM renta_activo WHERE perfil_id=1 ORDER BY activo_id, fecha'
+		)) as any[];
+		const rentaAgg: Record<number, { rec: number; recUSD: number }> = {};
+		let rentaAnioUSD = 0; // cupón realizado en el año (para la card de ganancia realizada)
+		for (const r of rentas) {
+			const a = aMap[r.activo_id];
+			if (!a) continue;
+			const vd = tcDe(r.valor_dolar, r.fecha); // MEP de la fecha si el mov no trae TC
+			// Cupón como ganancia realizada del año (todas las posiciones). La
+			// amortización es devolución de capital, no ganancia: NO cuenta acá.
+			if (String(r.fecha).startsWith(anioActual)) rentaAnioUSD += aUSD(r.monto_renta ?? 0, r.moneda, vd);
+			// PPV: solo la posición abierta actual (fecha >= inicio del episodio vivo).
+			const desde = episodioDesde[r.activo_id];
+			if (!desde || r.fecha < desde) continue; // pertenece a una posición ya cerrada
+			const total = (r.monto_renta ?? 0) + (r.monto_amort ?? 0);
+			const rUSD = aUSD(total, r.moneda, vd);            // para gananciaUSD
+			const rNat = a.moneda === 'USD' ? rUSD : rUSD * vd; // en la moneda del activo, para el PPV
+			(rentaAgg[r.activo_id] ??= { rec: 0, recUSD: 0 });
+			rentaAgg[r.activo_id].rec += rNat;
+			rentaAgg[r.activo_id].recUSD += rUSD;
+		}
+		realizadoAnioActual = realizadoAnio + rentaAnioUSD;
 
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
@@ -89,6 +127,9 @@
 			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);  // costo USD de lo que queda (para "no realizado")
 			// Agregado del activo (total comprado/vendido). Fallback al remanente si faltara.
 			const g = agg[Number(aid)] ?? { compU: u, inv: costoNat, invUSD: costoUSD, rec: 0, recUSD: 0 };
+			// Renta/amort de la posición abierta -> al numerador del PPV y a la ganancia.
+			const rp = rentaAgg[Number(aid)];
+			if (rp) { g.rec += rp.rec; g.recUSD += rp.recUSD; }
 			const ppc = g.compU ? g.inv / g.compU : 0;                 // promedio de compra sobre TODO lo comprado
 			const pa = a.precio_actual ?? ppc; const mercado = u * pa;
 			const mercadoUSD = a.moneda === 'USD' ? mercado : mercado / dolar;

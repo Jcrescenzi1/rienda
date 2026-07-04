@@ -10,7 +10,7 @@ const TABLAS_FINANZAS = new Set([
 	'tarjeta', 'suscripcion', 'suscripcion_registro', 'presupuesto', 'reserva_credito'
 ]);
 const TABLAS_INVERSIONES = new Set([
-	'activo', 'transaccion', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja'
+	'activo', 'transaccion', 'renta_activo', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja'
 ]);
 // Neutras (no cuentan como edición del usuario): cotizacion_dolar, inflacion,
 // perfil, meta. No actualizan ninguna fecha.
