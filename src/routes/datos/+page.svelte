@@ -169,7 +169,7 @@
 
 <div class="titulo-guia">
 	<h1>Tus datos</h1>
-	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. Descargá una copia de seguridad seguido y guardala en otro lado: es tu única red real. Las planillas Excel/CSV son para traer o sacar datos." />
+	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. La copia de seguridad JSON es tu ÚNICO respaldo total: descargala seguido y guardala fuera del teléfono. Las planillas Excel/CSV NO son respaldo — solo mueven datos entre Rienda y una planilla." />
 </div>
 
 {#if cargando}
@@ -178,7 +178,7 @@
 	<!-- Estado: lo que se mira de un vistazo (fijo, no colapsable) -->
 	<div class="estado" class:vieja={copiaVieja}>
 		<span class="est-main">{copiaVieja ? '⚠️ ' : ''}{textoCopia}.</span>
-		{#if copiaVieja}<span class="est-sub">Tus datos viven solo en este teléfono — descargá una copia abajo.</span>{/if}
+		{#if copiaVieja}<span class="est-sub">Tus datos viven solo en este teléfono — descargá la copia JSON abajo (tu único respaldo total).</span>{/if}
 	</div>
 
 	<!-- Comparación antes de restaurar (cuando elegiste una copia) -->
@@ -221,24 +221,15 @@
 		</div>
 	{/if}
 
-	<!-- Resguardar e importar (misma intención) -->
+	<!-- Copia de seguridad JSON: el ÚNICO respaldo total -->
 	<details class="sec" open>
-		<summary>Resguardar e importar</summary>
+		<summary>Copia de seguridad (JSON)</summary>
 		<div class="sec-body">
-			<p class="nota">Tu <strong>resguardo total</strong>: un archivo con TODO (datos, configuración y perfil). Restaurar <strong>reemplaza todo</strong> y vuelve a ese punto.</p>
+			<p class="nota"><strong>Es el único respaldo total.</strong> Un archivo <strong>JSON</strong> con TODO (gastos, ingresos, inversiones, configuración y perfil). Es lo único que te deja <strong>recuperar todo</strong> si cambiás de teléfono o se borran los datos. Descargala seguido y guardala <strong>fuera del teléfono</strong> (mail, Drive, etc.). Restaurar <strong>reemplaza todo</strong> y vuelve exactamente a ese punto.</p>
 			<div class="acc">
-				<button class="btn btn-primary" onclick={onExportar}>⬇ Descargar copia de seguridad</button>
+				<button class="btn btn-primary" onclick={onExportar}>⬇ Descargar copia (JSON)</button>
 				<button class="btn btn-secondary" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
 				<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
-			</div>
-			<p class="nota">Planillas (Excel/CSV): importar <strong>AGREGA</strong> (no pisa ni duplica). Bajá la plantilla, completá las hojas que quieras y subila.</p>
-			<div class="acc">
-				<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
-				<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar planilla (agrega)</button>
-				<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ CSV Gastos</button>
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ CSV Ingresos</button>
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ CSV Inversiones</button>
 			</div>
 			<details class="subsec">
 				<summary>Detalle de fechas</summary>
@@ -254,11 +245,31 @@
 		</div>
 	</details>
 
+	<!-- Planillas Excel/CSV: NO son respaldo, mueven datos entre Rienda y una planilla -->
+	<details class="sec">
+		<summary>Planillas (Excel / CSV)</summary>
+		<div class="sec-body">
+			<p class="nota"><strong>No son un respaldo</strong> — para eso está la copia JSON de arriba. Sirven para mover datos entre Rienda y una planilla.</p>
+			<p class="nota"><strong>Excel — precargar (traer datos):</strong> bajá la plantilla, completá las hojas que quieras (Gastos / Ingresos / Inversiones) y subila. Importar <strong>AGREGA</strong>: no pisa ni borra lo que ya tenés y omite duplicados. Crea categorías, tarjetas y activos que falten.</p>
+			<div class="acc">
+				<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
+				<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar planilla (agrega)</button>
+				<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
+			</div>
+			<p class="nota"><strong>CSV — exportar (sacar datos):</strong> tus datos en formato planilla para mirarlos o analizarlos afuera (Excel, Google Sheets). Es solo salida: no se vuelve a importar.</p>
+			<div class="acc">
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ CSV Gastos</button>
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ CSV Ingresos</button>
+				<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ CSV Inversiones</button>
+			</div>
+		</div>
+	</details>
+
 	<!-- Últimas 5 versiones (deshacer) -->
 	<details class="sec">
 		<summary>Últimas 5 versiones</summary>
 		<div class="sec-body">
-			<p class="nota">Función deshacer: la app guarda sola tus últimas 5 versiones antes de cada cambio grande. ¿Te equivocaste? Volvé a cualquiera de las 5. ⚠️ Viven en este teléfono. Para no perder tus datos, descargá una copia (arriba).</p>
+			<p class="nota">Función deshacer: la app guarda sola tus últimas 5 versiones antes de cada cambio grande. ¿Te equivocaste? Volvé a cualquiera de las 5. ⚠️ Viven en este teléfono. Para no perder tus datos, descargá la copia JSON (arriba).</p>
 			{#if autobackups.length}
 				<ul class="autolist">
 					{#each autobackups as a (a.nombre)}
