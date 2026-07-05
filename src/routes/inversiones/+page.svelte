@@ -277,7 +277,6 @@
 
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
 	// Texto legible SOBRE una barra de color: negro para colores claros, blanco para
 	// oscuros (según luminancia percibida). Sirve para el % embebido en cada barra.
@@ -314,13 +313,13 @@
 		</div>
 	{/if}
 
-	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
-
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong>{usd(totalUSD)}</strong></div>
 		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}>{usd(resultadoAbiertasTotal, 2)}</strong></div>
 		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}>{usd(realizadoAnioActual, 2)}</strong></div>
 	</div>
+
+	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
 
 	{#if realizadoPorAnio.length}
 		<details class="por-anio">
@@ -336,6 +335,7 @@
 		</details>
 	{/if}
 
+	<h2>Cartera actual</h2>
 	<div class="liquidez">
 		{#each ['ARS', 'USD'] as mon}
 			<div class="liqcard">
@@ -356,7 +356,6 @@
 		{/each}
 	</div>
 
-	<h2>Cartera actual</h2>
 	<div class="preciosbar">
 		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
 		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
@@ -383,15 +382,18 @@
 			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
-	<p class="nota">
-		<strong>PPC</strong> (Precio Promedio de Compra): precio promedio de las compras de cada activo.<br />
-		<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
-		• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
-		• <strong>Rojo</strong> si está por debajo.<br />
-		<strong>Rend. %</strong> = Result. Real ÷ invertido (USD) del episodio abierto.<br />
-		<strong>Result. Real</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
-		• La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.
-	</p>
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Cartera actual</summary>
+		<p class="nota">
+			<strong>PPC</strong> (Precio Promedio de Compra): precio promedio de las compras de cada activo.<br />
+			<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
+			• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
+			• <strong>Rojo</strong> si está por debajo.<br />
+			<strong>Rend. %</strong> = Result. Real ÷ invertido (USD) del episodio abierto.<br />
+			<strong>Result. Real</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
+			• La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.
+		</p>
+	</details>
 
 	<div class="graf-fila">
 		<div class="graf">
@@ -428,7 +430,10 @@
 		</div>
 	</div>
 	{#if exposicion.tot > 0}
-		<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>.</p>
+		<details class="nota-colapsable">
+			<summary>Descripción de la visual: Exposición y estructura de renta</summary>
+			<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>.</p>
+		</details>
 	{/if}
 
 	<h2>Detalle del mix — ranking de concentración</h2>
@@ -446,9 +451,10 @@
 			{#if detalleMix.length === 0}<tr><td colspan="4" class="vacio">Sin posiciones todavía.</td></tr>{/if}
 		</tbody>
 	</table>
-	<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo.</p>
-
-	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). "Guardar Cartera" toma una foto del valor actual para la pantalla de Evolución.</p>
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Detalle del mix</summary>
+		<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo.</p>
+	</details>
 {/if}
 
 <style>
@@ -499,6 +505,11 @@
 	.por-anio { margin: 6px 0 12px; }
 	.por-anio summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
 	table.chica { max-width: 320px; margin-top: 8px; }
+
+	/* Textos descriptivos de cada visual, colapsados por defecto */
+	.nota-colapsable { margin: 6px 0 12px; }
+	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	.nota-colapsable .nota { margin-top: 6px; }
 
 	/* Los dos gráficos de barras, lado a lado. En pantallas angostas se compactan
 	   (labels/altura/fuente más chicos) en vez de apilarse, para que entren en
