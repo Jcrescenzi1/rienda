@@ -20,12 +20,21 @@ export async function dolarActual(): Promise<number> {
 }
 
 // Recorre todas las transacciones con método FIFO y devuelve:
-//   lotes:      lo que queda en tenencia por activo (unidades + precio de compra)
-//   realPorMes: ganancia realizada por mes (USD), calculada al vender
-//   aMap:       mapa id -> activo (nombre, tipo, renta, moneda, precio_actual)
+//   lotes:                 lo que queda en tenencia por activo (unidades + precio de compra)
+//   realPorMes:            ganancia realizada por mes (USD), TODAS las ventas (para Evolución)
+//   realizadoCerradoPorMes: ganancia realizada por mes (USD), SOLO de ciclos que volvieron a 0
+//                          (para no duplicar con "Resultado Posiciones Abiertas": la venta parcial
+//                          de una posición que seguís teniendo ya está adentro de ese cálculo)
+//   episodioDesde:         fecha de inicio del episodio vivo por activo (última compra después de
+//                          volver a 0, o la primera compra de todas). Si el activo terminó en 0,
+//                          apunta al último episodio (que ya está cerrado) — quien lo use debe
+//                          chequear la tenencia final antes de tratarlo como "abierto".
+//   aMap:                  mapa id -> activo (nombre, tipo, renta, moneda, precio_actual)
 export async function calcularFIFO(): Promise<{
 	lotes: Record<number, Lote[]>;
 	realPorMes: Record<string, number>;
+	realizadoCerradoPorMes: Record<string, number>;
+	episodioDesde: Record<number, string>;
 	aMap: Record<number, any>;
 	txs: any[];
 }> {
@@ -41,10 +50,18 @@ export async function calcularFIFO(): Promise<{
 
 	const lotes: Record<number, Lote[]> = {};
 	const realPorMes: Record<string, number> = {};
+	const realizadoCerradoPorMes: Record<string, number> = {};
+	// Ganancia acumulada del episodio EN CURSO (todavía no se sabe si va a cerrar);
+	// se vuelca a realizadoCerradoPorMes recién cuando la tenencia vuelve a 0, y se
+	// descarta del acumulado "cerrado" si al final del recorrido sigue abierta.
+	const pendienteAbierto: Record<number, Record<string, number>> = {};
+	const episodioDesde: Record<number, string> = {};
+
 	for (const t of txs) {
 		const a = aMap[t.activo_id];
 		lotes[t.activo_id] ??= [];
 		if (t.operacion === 'Compra') {
+			if (lotes[t.activo_id].length === 0) episodioDesde[t.activo_id] = t.fecha;
 			lotes[t.activo_id].push({ u: t.unidades, pNat: t.precio, pUSD: aUSD(t.precio, a.moneda, t.valor_dolar) });
 		} else {
 			let rem = t.unidades;
@@ -54,14 +71,25 @@ export async function calcularFIFO(): Promise<{
 			while (rem > 1e-9 && q.length) {
 				const lote = q[0];
 				const take = Math.min(rem, lote.u);
-				realPorMes[mes] = (realPorMes[mes] ?? 0) + take * (pvUSD - lote.pUSD);
+				const gain = take * (pvUSD - lote.pUSD);
+				realPorMes[mes] = (realPorMes[mes] ?? 0) + gain;
+				const pend = (pendienteAbierto[t.activo_id] ??= {});
+				pend[mes] = (pend[mes] ?? 0) + gain;
 				lote.u -= take;
 				rem -= take;
 				if (lote.u < 1e-9) q.shift();
 			}
+			// Posición cerrada del todo: el episodio recién terminado pasa a "cerrado".
+			if (q.length === 0) {
+				const pend = pendienteAbierto[t.activo_id];
+				if (pend) {
+					for (const [m, v] of Object.entries(pend)) realizadoCerradoPorMes[m] = (realizadoCerradoPorMes[m] ?? 0) + v;
+					delete pendienteAbierto[t.activo_id];
+				}
+			}
 		}
 	}
-	return { lotes, realPorMes, aMap, txs };
+	return { lotes, realPorMes, realizadoCerradoPorMes, episodioDesde, aMap, txs };
 }
 
 // Saldos líquidos por moneda: ancla manual (tabla liquidez) + movimientos de

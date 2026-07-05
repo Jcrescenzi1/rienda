@@ -9,8 +9,9 @@
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
+	let resultadoAbiertasTotal = $state(0);
 	let realizadoAnioActual = $state(0);
-	let noRealizadoTotal = $state(0);
+	let realizadoPorAnio = $state<any[]>([]);
 	let buckets = $state<any[]>([]);
 	// Detalle del mix: cada activo (y el líquido) con su renta, tipo y % del total
 	let detalleMix = $state<any[]>([]);
@@ -51,10 +52,7 @@
 		preciosActualizadosEn = mp[0]?.valor ?? null;
 
 		// FIFO compartido con Evolución (una sola implementación)
-		const { lotes, realPorMes, aMap, txs } = await calcularFIFO();
-		let realizadoAnio = Object.entries(realPorMes)
-			.filter(([mes]) => mes.startsWith(anioActual))
-			.reduce((s, [, v]) => s + v, 0);
+		const { lotes, realizadoCerradoPorMes, episodioDesde, aMap, txs } = await calcularFIFO();
 
 		// Agregados por activo para el resultado de la tabla, acotados a la POSICIÓN
 		// ABIERTA ACTUAL: recorro las transacciones en orden y, cada vez que la tenencia
@@ -63,16 +61,12 @@
 		// parciales dentro de la posición abierta sí cuentan. No usa FIFO.
 		// Reusa las transacciones que ya leyó calcularFIFO (mismo ORDER BY
 		// activo_id, fecha, id) en vez de re-leer la tabla. Renombra a las columnas
-		// cortas que usa el agregado.
+		// cortas que usa el agregado. episodioDesde ya viene calculado por calcularFIFO.
 		const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar, f: t.fecha }));
 		type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
 		const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
 		const agg: Record<number, Agg> = {};
 		const heldRun: Record<number, number> = {};
-		// Fecha en que arrancó la posición abierta actual (primera compra del episodio
-		// vivo). Sirve para atribuir renta/amort SOLO a la posición viva (no a una vieja
-		// ya cerrada y recomprada).
-		const episodioDesde: Record<number, string> = {};
 		for (const t of txAgg) {
 			const a = aMap[t.aid];
 			if (!a) continue;
@@ -81,7 +75,6 @@
 			const nat = t.u * t.p;
 			const enUSD = aUSD(t.p, a.moneda, t.vd) * t.u;
 			if (t.op === 'Compra') {
-				if (agg[t.aid].compU === 0) episodioDesde[t.aid] = t.f; // primera compra del episodio
 				heldRun[t.aid] += t.u;
 				agg[t.aid].compU += t.u; agg[t.aid].inv += nat; agg[t.aid].invUSD += enUSD;
 			} else {
@@ -92,43 +85,63 @@
 			}
 		}
 
-		// Renta y amortización de la POSICIÓN ABIERTA: se suman al numerador del PPV
-		// (lado "recuperado", sin unidades ni lote). Solo cuentan las cobradas dentro
-		// del episodio vivo (fecha >= inicio del episodio actual). Amort compensa la
-		// caída de precio que data912 ya aplicó; renta sube el PPV genuino.
+		// Posición abierta HOY (tenencia > 0 según el FIFO de calcularFIFO).
+		const posicionAbierta = (aid: number) => (lotes[aid]?.reduce((s, l) => s + l.u, 0) ?? 0) > 1e-6;
+
+		// Renta y amortización: si cae dentro del episodio VIVO de una posición que
+		// seguís teniendo, va al numerador del PPV/Result.Real (ya está adentro de
+		// "Resultado Posiciones Abiertas"). Si no —posición ya cerrada, o renta de un
+		// ciclo anterior—, el cupón (sin amort, que es devolución de capital) pasa a
+		// "ganancia realizada" para no perderlo ni duplicarlo.
 		const rentas = (await query(
 			'SELECT activo_id, fecha, moneda, monto_renta, monto_amort, valor_dolar FROM renta_activo WHERE perfil_id=1 ORDER BY activo_id, fecha'
 		)) as any[];
 		const rentaAgg: Record<number, { rec: number; recUSD: number }> = {};
-		let rentaAnioUSD = 0; // cupón realizado en el año (para la card de ganancia realizada)
+		const rentaCerradaPorMes: Record<string, number> = {};
 		for (const r of rentas) {
 			const a = aMap[r.activo_id];
 			if (!a) continue;
 			const vd = tcDe(r.valor_dolar, r.fecha); // MEP de la fecha si el mov no trae TC
-			// Cupón como ganancia realizada del año (todas las posiciones). La
-			// amortización es devolución de capital, no ganancia: NO cuenta acá.
-			if (String(r.fecha).startsWith(anioActual)) rentaAnioUSD += aUSD(r.monto_renta ?? 0, r.moneda, vd);
-			// PPV: solo la posición abierta actual (fecha >= inicio del episodio vivo).
 			const desde = episodioDesde[r.activo_id];
-			if (!desde || r.fecha < desde) continue; // pertenece a una posición ya cerrada
-			const total = (r.monto_renta ?? 0) + (r.monto_amort ?? 0);
-			const rUSD = aUSD(total, r.moneda, vd);            // para gananciaUSD
-			const rNat = a.moneda === 'USD' ? rUSD : rUSD * vd; // en la moneda del activo, para el PPV
-			(rentaAgg[r.activo_id] ??= { rec: 0, recUSD: 0 });
-			rentaAgg[r.activo_id].rec += rNat;
-			rentaAgg[r.activo_id].recUSD += rUSD;
+			const esAbierta = posicionAbierta(r.activo_id) && !!desde && r.fecha >= desde;
+			if (esAbierta) {
+				const total = (r.monto_renta ?? 0) + (r.monto_amort ?? 0);
+				const rUSD = aUSD(total, r.moneda, vd);            // para gananciaUSD
+				const rNat = a.moneda === 'USD' ? rUSD : rUSD * vd; // en la moneda del activo, para el PPV
+				(rentaAgg[r.activo_id] ??= { rec: 0, recUSD: 0 });
+				rentaAgg[r.activo_id].rec += rNat;
+				rentaAgg[r.activo_id].recUSD += rUSD;
+			} else {
+				const mes = r.fecha.slice(0, 7);
+				rentaCerradaPorMes[mes] = (rentaCerradaPorMes[mes] ?? 0) + aUSD(r.monto_renta ?? 0, r.moneda, vd);
+			}
 		}
-		realizadoAnioActual = realizadoAnio + rentaAnioUSD;
+
+		// Ganancia realizada del año: solo ciclos CERRADOS (ventas + cupón). Lo de
+		// posiciones que seguís teniendo ya está en "Resultado Posiciones Abiertas".
+		realizadoAnioActual = Object.entries(realizadoCerradoPorMes)
+			.filter(([mes]) => mes.startsWith(anioActual))
+			.reduce((s, [, v]) => s + v, 0)
+			+ Object.entries(rentaCerradaPorMes)
+				.filter(([mes]) => mes.startsWith(anioActual))
+				.reduce((s, [, v]) => s + v, 0);
+
+		// Detalle histórico por año (ciclos cerrados), para no perder el resto del
+		// historial aunque el card de arriba solo muestre el año en curso.
+		const porAnio: Record<string, number> = {};
+		for (const [mes, v] of Object.entries(realizadoCerradoPorMes)) porAnio[mes.slice(0, 4)] = (porAnio[mes.slice(0, 4)] ?? 0) + v;
+		for (const [mes, v] of Object.entries(rentaCerradaPorMes)) porAnio[mes.slice(0, 4)] = (porAnio[mes.slice(0, 4)] ?? 0) + v;
+		realizadoPorAnio = Object.keys(porAnio).sort().reverse().map((anio) => ({ anio, monto: porAnio[anio] }));
 
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
-		let tUSD = 0; let noRealUSD = 0;
+		let tUSD = 0;
 		for (const [aid, q] of Object.entries(lotes)) {
 			const u = q.reduce((s, l) => s + l.u, 0);
 			if (u < 1e-6) continue;
 			const a = aMap[Number(aid)];
 			const costoNat = q.reduce((s, l) => s + l.u * l.pNat, 0);  // costo de lo que queda (fallback)
-			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);  // costo USD de lo que queda (para "no realizado")
+			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);  // costo USD de lo que queda (fallback)
 			// Agregado del activo (total comprado/vendido). Fallback al remanente si faltara.
 			const g = agg[Number(aid)] ?? { compU: u, inv: costoNat, invUSD: costoUSD, rec: 0, recUSD: 0 };
 			// Renta/amort de la posición abierta -> al numerador del PPV y a la ganancia.
@@ -140,14 +153,14 @@
 			// PPV ponderado: lo recuperado en ventas + la tenencia a precio actual, sobre el total comprado.
 			const ppv = g.compU ? (g.rec + mercado) / g.compU : pa;
 			const gananciaUSD = (g.recUSD + mercadoUSD) - g.invUSD;                      // ganancia real ≈USD (realizada + no realizada)
-			noRealUSD += mercadoUSD - costoUSD;
+			const rendPct = g.invUSD ? gananciaUSD / g.invUSD : null;                    // % sobre lo invertido en USD
 			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
 			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
 				exposicion: a.exposicion ?? (a.moneda === 'USD' || a.tipo === 'CEDEAR' ? 'Dolar' : 'Peso'),
 				unidades: u, ppc, ppv, precioActual: pa, mercado,
-				gananciaUSD, mercadoUSD });
+				gananciaUSD, rendPct, mercadoUSD });
 		}
-		noRealizadoTotal = noRealUSD;
+		resultadoAbiertasTotal = hold.reduce((s, h) => s + h.gananciaUSD, 0);
 
 		const bal = await calcularLiquidez();
 		liqSaldos = bal;
@@ -164,7 +177,10 @@
 		cartera = hold; totalUSD = tUSD;
 		buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
 
-		// Detalle del mix: activos + líquido, agrupados por renta (mismo orden que las barras)
+		// Detalle del mix: ranking de concentración (activos + líquido), ordenado por
+		// % del total de mayor a menor. El desglose por renta ya lo muestra el
+		// gráfico de barras de arriba; acá interesa ver de un vistazo cuáles son las
+		// apuestas más grandes cruzando categorías.
 		const liqRows = ['ARS', 'USD']
 			.map((mon) => {
 				const saldo = bal[mon] ?? 0;
@@ -176,10 +192,12 @@
 			...hold.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD })),
 			...liqRows
 		];
-		const ordenRenta: Record<string, number> = {};
-		buckets.forEach((b, i) => (ordenRenta[b.renta] = i));
-		filasMix.sort((a, b) => (ordenRenta[a.renta] ?? 99) - (ordenRenta[b.renta] ?? 99) || b.mercadoUSD - a.mercadoUSD);
-		detalleMix = filasMix.map((r) => ({ ...r, pct: tUSD ? r.mercadoUSD / tUSD : 0 }));
+		filasMix.sort((a, b) => b.mercadoUSD - a.mercadoUSD);
+		const UMBRAL_CONCENTRACION = 0.2; // 20% del total
+		detalleMix = filasMix.map((r) => {
+			const pct = tUSD ? r.mercadoUSD / tUSD : 0;
+			return { ...r, pct, concentrado: r.tipo !== 'Caja' && pct >= UMBRAL_CONCENTRACION };
+		});
 
 		cargando = false;
 	}
@@ -261,6 +279,15 @@
 	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
+	// Texto legible SOBRE una barra de color: negro para colores claros, blanco para
+	// oscuros (según luminancia percibida). Sirve para el % embebido en cada barra.
+	function contraste(bg: string): string {
+		let h = bg.replace('#', '');
+		if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+		const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+		const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+		return L > 0.6 ? 'rgba(0,0,0,0.82)' : '#fff';
+	}
 </script>
 
 <div class="titulo-guia">
@@ -291,9 +318,23 @@
 
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong>{usd(totalUSD)}</strong></div>
+		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}>{usd(resultadoAbiertasTotal, 2)}</strong></div>
 		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}>{usd(realizadoAnioActual, 2)}</strong></div>
-		<div class="card"><span>Ganancia no realizada (USD)</span><strong class={noRealizadoTotal >= 0 ? 'pos' : 'neg'}>{usd(noRealizadoTotal, 2)}</strong></div>
 	</div>
+
+	{#if realizadoPorAnio.length}
+		<details class="por-anio">
+			<summary>Ganancia realizada por año (ciclos cerrados)</summary>
+			<table class="chica">
+				<thead><tr><th>Año</th><th class="num">Realizado (USD)</th></tr></thead>
+				<tbody>
+					{#each realizadoPorAnio as r (r.anio)}
+						<tr><td>{r.anio}</td><td class="num {r.monto >= 0 ? 'pos' : 'neg'}">{usd(r.monto, 2)}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</details>
+	{/if}
 
 	<div class="liquidez">
 		{#each ['ARS', 'USD'] as mon}
@@ -323,7 +364,7 @@
 	</div>
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th>
-			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Result. Real</th></tr></thead>
+			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th><th class="num hl">Result. Real</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr>
@@ -335,10 +376,11 @@
 							<button aria-label="Guardar" class="okp" onclick={guardarPrecio}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editId = null)}>✕</button>
 						{:else}{money(h.precioActual, h.moneda, 2)}<button aria-label="Editar" class="lapiz" onclick={() => abrirEdit(h)}>✏</button>{/if}
 					</td>
+					<td class="num hl {h.rendPct != null && h.rendPct >= 0 ? 'pos' : 'neg'}">{h.rendPct != null ? (h.rendPct * 100).toFixed(1) + '%' : '—'}</td>
 					<td class="num hl {h.gananciaUSD >= 0 ? 'pos' : 'neg'}">{usd(h.gananciaUSD)}</td>
 				</tr>
 			{/each}
-			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 	<p class="nota">
@@ -346,7 +388,8 @@
 		<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
 		• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
 		• <strong>Rojo</strong> si está por debajo.<br />
-		<strong>Resultado</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
+		<strong>Rend. %</strong> = Result. Real ÷ invertido (USD) del episodio abierto.<br />
+		<strong>Result. Real</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
 		• La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.
 	</p>
 
@@ -357,8 +400,12 @@
 				<div class="bars">
 					{#each exposicion.filas as f (f.clave)}
 						<div class="barrow"><span class="lbl">{f.label}</span>
-							<div class="track"><div class="bar" style="width:{f.pct * 100}%; background:{f.color}"></div></div>
-							<span class="val">{usd(f.v)} · {(f.pct * 100).toFixed(0)}%</span></div>
+							<div class="track">
+								<div class="bar" style="width:{f.pct * 100}%; background:{f.color}">
+									{#if f.pct >= 0.16}<span class="pct" style="color:{contraste(f.color)}">{(f.pct * 100).toFixed(0)}%</span>{/if}
+								</div>
+								{#if f.pct < 0.16}<span class="pct-out">{(f.pct * 100).toFixed(0)}%</span>{/if}
+							</div></div>
 					{/each}
 				</div>
 			{:else}
@@ -370,8 +417,12 @@
 			<div class="bars">
 				{#each buckets as b (b.renta)}
 					<div class="barrow"><span class="lbl">{b.renta}</span>
-						<div class="track"><div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}"></div></div>
-						<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
+						<div class="track">
+							<div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}">
+								{#if b.pct >= 0.16}<span class="pct" style="color:{contraste(colorRenta[b.renta])}">{(b.pct * 100).toFixed(0)}%</span>{/if}
+							</div>
+							{#if b.pct < 0.16}<span class="pct-out">{(b.pct * 100).toFixed(0)}%</span>{/if}
+						</div></div>
 				{/each}
 			</div>
 		</div>
@@ -380,21 +431,22 @@
 		<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>.</p>
 	{/if}
 
-	<h2>Detalle del mix</h2>
+	<h2>Detalle del mix — ranking de concentración</h2>
 	<table class="mix">
-		<thead><tr><th>Renta</th><th>Tipo</th><th>Activo</th><th class="num">% del total</th></tr></thead>
+		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th class="num">% del total</th></tr></thead>
 		<tbody>
-			{#each detalleMix as d, i (d.renta + d.nombre)}
-				<tr class:grupo={i === 0 || detalleMix[i - 1].renta !== d.renta}>
-					<td class="renta" style="color:{colorRenta[d.renta]}">{i === 0 || detalleMix[i - 1].renta !== d.renta ? d.renta : ''}</td>
-					<td>{d.tipo}</td>
+			{#each detalleMix as d (d.nombre)}
+				<tr class:concentrado={d.concentrado}>
 					<td>{d.nombre}</td>
-					<td class="num">{(d.pct * 100).toFixed(1)}%</td>
+					<td>{d.tipo}</td>
+					<td class="renta" style="color:{colorRenta[d.renta]}">{d.renta}</td>
+					<td class="num">{(d.pct * 100).toFixed(1)}%{#if d.concentrado} ⚠{/if}</td>
 				</tr>
 			{/each}
 			{#if detalleMix.length === 0}<tr><td colspan="4" class="vacio">Sin posiciones todavía.</td></tr>{/if}
 		</tbody>
 	</table>
+	<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo.</p>
 
 	<p class="nota">≈USD al dólar más reciente (${nf(dolar)}). "Guardar Cartera" toma una foto del valor actual para la pantalla de Evolución.</p>
 {/if}
@@ -435,23 +487,40 @@
 	td.num { text-align: right; white-space: nowrap; }
 	th.num { text-align: center; }
 
-	/* Detalle del mix */
+	/* Detalle del mix — ranking de concentración */
 	table.mix { max-width: 640px; margin-top: 6px; }
 	table.mix td.renta { font-weight: 700; white-space: nowrap; }
-	table.mix tr.grupo td { border-top: 2px solid var(--border) !important; }
+	table.mix tr.concentrado td { color: var(--warn); font-weight: 600; background: rgba(251, 191, 36, 0.08); }
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
-	/* Los dos gráficos de barras, lado a lado (colapsan a uno en pantallas angostas) */
+
+	/* Ganancia realizada por año (detalle plegable) */
+	.por-anio { margin: 6px 0 12px; }
+	.por-anio summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	table.chica { max-width: 320px; margin-top: 8px; }
+
+	/* Los dos gráficos de barras, lado a lado. En pantallas angostas se compactan
+	   (labels/altura/fuente más chicos) en vez de apilarse, para que entren en
+	   paralelo en un celular; solo apilan en pantallas realmente extremas (<=320px). */
 	.graf-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; align-items: start; }
 	.graf h2 { margin-top: 16px; }
-	@media (max-width: 620px) { .graf-fila { grid-template-columns: 1fr; } }
 	.bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
 	.lbl { width: 64px; color: var(--text-dim); flex-shrink: 0; }
-	.track { flex: 1; background: var(--surface-2); border-radius: 4px; height: 32px; overflow: hidden; }
-	.bar { height: 100%; }
-	.val { width: 130px; text-align: right; color: var(--text); flex-shrink: 0; white-space: nowrap; }
+	.track { flex: 1; display: flex; align-items: center; background: var(--surface-2); border-radius: 4px; height: 32px; overflow: hidden; }
+	.bar { height: 100%; display: flex; align-items: center; justify-content: flex-end; }
+	.pct { padding-right: 8px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+	.pct-out { padding-left: 8px; font-size: 0.78rem; font-weight: 700; color: var(--text); white-space: nowrap; }
+	@media (max-width: 620px) {
+		.graf-fila { gap: 4px 10px; }
+		.lbl { width: 40px; font-size: 0.72rem; }
+		.track { height: 24px; }
+		.pct, .pct-out { font-size: 0.68rem; padding-left: 4px; padding-right: 4px; }
+	}
+	@media (max-width: 320px) {
+		.graf-fila { grid-template-columns: 1fr; }
+	}
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.pos { color: var(--pos); }
 	.neg { color: var(--neg); }
