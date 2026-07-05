@@ -13,7 +13,7 @@
 
 	async function cargar() {
 		activos = (await query(
-			"SELECT id, ticker, nombre, tipo, moneda, precio_actual, simbolo_cotizacion FROM activo WHERE perfil_id=1 AND activo=1 AND tipo <> 'FCI' ORDER BY nombre COLLATE NOCASE"
+			"SELECT id, ticker, nombre, tipo, moneda, precio_actual, simbolo_cotizacion, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo='CEDEAR' THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 AND tipo <> 'FCI' ORDER BY nombre COLLATE NOCASE"
 		)) as any[];
 		cargando = false;
 	}
@@ -39,6 +39,15 @@
 
 	async function guardarMoneda(a: any) {
 		try { await query('UPDATE activo SET moneda=? WHERE id=? AND perfil_id=1', [a.moneda, a.id]); flash('Moneda actualizada ✅'); }
+		catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
+	}
+
+	// Exposición al tipo de cambio (a qué FX sigue el valor del activo), distinta de
+	// la moneda de cotización: un CEDEAR o una ON dollar-linked cotizan en ARS pero
+	// su exposición es 'Dolar'. Alimenta la tabla de Exposición en Inversiones.
+	const EXPOSICIONES = ['Dolar', 'CER', 'Peso'];
+	async function guardarExposicion(a: any) {
+		try { await query('UPDATE activo SET exposicion=? WHERE id=? AND perfil_id=1', [a.exposicion, a.id]); flash('Exposición actualizada ✅'); }
 		catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
 	}
 
@@ -102,7 +111,7 @@
 	<p>Cargando…</p>
 {:else}
 	<table>
-		<thead><tr><th>Activo</th><th>Tipo</th><th>Moneda</th><th>Símbolo data912</th><th class="num">Precio fuente</th><th class="num">Precio guardado</th></tr></thead>
+		<thead><tr><th>Activo</th><th>Tipo</th><th>Moneda</th><th>Exposición</th><th>Símbolo data912</th><th class="num">Precio fuente</th><th class="num">Precio guardado</th></tr></thead>
 		<tbody>
 			{#each activos as a (a.id)}
 				<tr>
@@ -119,6 +128,11 @@
 						<select class="mon" bind:value={a.moneda} onchange={() => guardarMoneda(a)}>
 							<option value="ARS">ARS</option>
 							<option value="USD">USD</option>
+						</select>
+					</td>
+					<td>
+						<select class="mon" bind:value={a.exposicion} onchange={() => guardarExposicion(a)}>
+							{#each EXPOSICIONES as e}<option value={e}>{e}</option>{/each}
 						</select>
 					</td>
 					<td>
@@ -142,7 +156,7 @@
 					<td class="num">{money(a.precio_actual, a.moneda)}</td>
 				</tr>
 			{/each}
-			{#if activos.length === 0}<tr><td colspan="6" class="vacio">No tenés activos cargados.</td></tr>{/if}
+			{#if activos.length === 0}<tr><td colspan="7" class="vacio">No tenés activos cargados.</td></tr>{/if}
 		</tbody>
 	</table>
 	<p class="nota">El precio se guarda en la moneda que implica el símbolo. Si "Precio fuente" dice <span class="bad">sin match</span>, revisá el símbolo (mayúsculas, sufijo D/C). Nombre y moneda se guardan al salir del campo; <strong>cambiar la moneda reinterpreta los precios de ese activo en la nueva moneda</strong>.</p>

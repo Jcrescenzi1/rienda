@@ -80,6 +80,13 @@ async function init() {
 	if (!acols.some((c: any) => c.name === 'simbolo_cotizacion')) {
 		db.exec('ALTER TABLE activo ADD COLUMN simbolo_cotizacion TEXT');
 	}
+	// Columna exposicion (Dolar | CER | Peso): a qué tipo de cambio está atado el
+	// valor del activo. Se agrega sin CHECK (ALTER) y se backfillea por regla: USD o
+	// CEDEAR -> Dolar, el resto -> Peso. El usuario ajusta CER y dollar-linked a mano.
+	if (!acols.some((c: any) => c.name === 'exposicion')) {
+		db.exec('ALTER TABLE activo ADD COLUMN exposicion TEXT');
+		db.exec("UPDATE activo SET exposicion = CASE WHEN moneda='USD' OR tipo='CEDEAR' THEN 'Dolar' ELSE 'Peso' END WHERE exposicion IS NULL");
+	}
 
 	// Columna modo_periodo en perfil (sueldo | calendario). Default 'sueldo'
 	// mantiene el comportamiento histórico para perfiles ya existentes.

@@ -144,8 +144,10 @@
 				} else cuentaId = Number(fCuenta);
 				let activoId: number; let monA: string;
 				if (fActivo === 'nuevo') {
-					const r = (await query('INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda) VALUES (1,?,?,?,?,?) RETURNING id',
-						[naTicker.trim(), naNombre.trim(), naTipo, naRenta, naMoneda])) as any[];
+					// Exposición FX por defecto (editable después en Configurar tickers).
+					const expo = naMoneda === 'USD' || naTipo === 'CEDEAR' ? 'Dolar' : 'Peso';
+					const r = (await query('INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda,exposicion) VALUES (1,?,?,?,?,?,?) RETURNING id',
+						[naTicker.trim(), naNombre.trim(), naTipo, naRenta, naMoneda, expo])) as any[];
 					activoId = r[0].id; monA = naMoneda;
 				} else { activoId = Number(fActivo); monA = monedaActivo; }
 				if (fAccion === 'Venta') {

@@ -30,7 +30,7 @@ export async function calcularFIFO(): Promise<{
 	txs: any[];
 }> {
 	const activos = (await query(
-		'SELECT id, nombre, tipo, renta, moneda, precio_actual FROM activo WHERE perfil_id=1'
+		'SELECT id, nombre, tipo, renta, moneda, precio_actual, exposicion FROM activo WHERE perfil_id=1'
 	)) as any[];
 	const aMap: Record<number, any> = {};
 	for (const a of activos) aMap[a.id] = a;

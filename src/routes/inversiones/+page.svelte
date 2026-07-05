@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { hoyISO, fmtFecha, parseNum, formatNum, soloNum } from '$lib/format';
 	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
 	import { actualizarPrecios } from '$lib/db/precios';
@@ -15,6 +15,7 @@
 	// Detalle del mix: cada activo (y el líquido) con su renta, tipo y % del total
 	let detalleMix = $state<any[]>([]);
 	let dolar = $state(1);
+	let dolarFecha = $state<string | null>(null); // fecha de la cotización MEP usada
 	let totalUSD = $state(0);
 	let liqSaldos = $state<Record<string, number>>({ ARS: 0, USD: 0 });
 
@@ -38,6 +39,9 @@
 
 	async function cargarTodo() {
 		dolar = await dolarActual();
+		// Fecha de esa cotización MEP (para mostrar a qué dólar y qué tan fresco se valúa).
+		const df = (await query("SELECT fecha FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
+		dolarFecha = df[0]?.fecha ?? null;
 		// Serie de dólar para convertir renta/amort con el MEP de SU fecha cuando el
 		// movimiento no trae valor_dolar (fallback al último si no hay cotización previa).
 		const serie = await cargarDolarSerie();
@@ -139,6 +143,7 @@
 			noRealUSD += mercadoUSD - costoUSD;
 			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
 			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
+				exposicion: a.exposicion ?? (a.moneda === 'USD' || a.tipo === 'CEDEAR' ? 'Dolar' : 'Peso'),
 				unidades: u, ppc, ppv, precioActual: pa, mercado,
 				gananciaUSD, mercadoUSD });
 		}
@@ -181,19 +186,24 @@
 
 	onMount(cargarTodo);
 
-	// Exposición por moneda de denominación (USD vs ARS), ≈USD. Suma el valor de
-	// mercado de cada activo según la moneda con la que cotiza, más la liquidez en
-	// cada moneda. En Argentina, la porción en USD es la defensa real ante inflación.
+	// Exposición al TIPO DE CAMBIO (no a la moneda de cotización): a qué se mueve el
+	// valor de cada activo. Tres cubos: Dólar / CER (inflación) / Peso. Lo define
+	// activo.exposicion (editable en Configurar tickers). El cash: USD -> Dólar,
+	// ARS -> Peso. Sirve para mapear tu posicionamiento vs. el contexto macro.
 	let exposicion = $derived.by(() => {
-		let usd = 0, ars = 0;
-		for (const h of cartera) {
-			if (h.moneda === 'USD') usd += h.mercadoUSD;
-			else ars += h.mercadoUSD;
-		}
-		usd += liqSaldos.USD ?? 0;
-		ars += (liqSaldos.ARS ?? 0) / dolar;
-		const tot = usd + ars;
-		return { usd, ars, tot, pctUsd: tot ? usd / tot : 0, pctArs: tot ? ars / tot : 0 };
+		const b: Record<string, number> = { Dolar: 0, CER: 0, Peso: 0 };
+		for (const h of cartera) b[h.exposicion] = (b[h.exposicion] ?? 0) + h.mercadoUSD;
+		b.Dolar += liqSaldos.USD ?? 0;
+		b.Peso += (liqSaldos.ARS ?? 0) / dolar;
+		const tot = b.Dolar + b.CER + b.Peso;
+		return {
+			tot,
+			filas: [
+				{ clave: 'Dolar', label: 'Dólar', v: b.Dolar, pct: tot ? b.Dolar / tot : 0, color: 'var(--accent)' },
+				{ clave: 'CER', label: 'CER / Inflación', v: b.CER, pct: tot ? b.CER / tot : 0, color: '#4ade80' },
+				{ clave: 'Peso', label: 'Peso', v: b.Peso, pct: tot ? b.Peso / tot : 0, color: '#e8975b' }
+			]
+		};
 	});
 
 	function abrirEdit(h: any) { editId = h.id; editPrecio = formatNum(h.precioActual, 2); }
@@ -264,7 +274,6 @@
 	<div class="topbar">
 		<a href="/carga-inversiones" class="btn btn-primary">➕ Cargar movimiento</a>
 		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Cartera</button>
-		<a href="/evolucion" class="btn btn-secondary">📈 Evolución de Cartera</a>
 	</div>
 	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
 
@@ -278,7 +287,7 @@
 		</div>
 	{/if}
 
-	<div class="moneda-fija"><span class="moneda-lbl">Moneda</span> <span class="moneda-badge">USD · dólar bolsa</span></div>
+	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
 
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong>{usd(totalUSD)}</strong></div>
@@ -332,31 +341,44 @@
 			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
-	<p class="nota">Sobre tu <strong>posición abierta actual</strong> (se reinicia cuando cerrás del todo y volvés a abrir). PPC = promedio de compra. PPV = precio de salida ponderado (lo recuperado en ventas + tu tenencia a precio actual): <strong>verde si está por encima del PPC</strong> (ganás en la moneda del activo), rojo si por debajo. Resultado = tu <strong>ganancia/pérdida real ≈USD</strong> (realizada de ventas parciales + no realizada). La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.</p>
+	<p class="nota">
+		<strong>PPC</strong> (Precio Promedio de Compra): precio promedio de las compras de cada activo.<br />
+		<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
+		• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
+		• <strong>Rojo</strong> si está por debajo.<br />
+		<strong>Resultado</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
+		• La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.
+	</p>
 
-	<h2>Exposición por moneda (≈USD)</h2>
-	{#if exposicion.tot > 0}
-		<div class="bars">
-			<div class="barrow"><span class="lbl">USD</span>
-				<div class="track"><div class="bar" style="width:{exposicion.pctUsd * 100}%; background:var(--accent)"></div></div>
-				<span class="val">{usd(exposicion.usd)} · {(exposicion.pctUsd * 100).toFixed(0)}%</span></div>
-			<div class="barrow"><span class="lbl">ARS</span>
-				<div class="track"><div class="bar" style="width:{exposicion.pctArs * 100}%; background:#e8975b"></div></div>
-				<span class="val">{usd(exposicion.ars)} · {(exposicion.pctArs * 100).toFixed(0)}%</span></div>
+	<div class="graf-fila">
+		<div class="graf">
+			<h2>Exposición al tipo de cambio (≈USD)</h2>
+			{#if exposicion.tot > 0}
+				<div class="bars">
+					{#each exposicion.filas as f (f.clave)}
+						<div class="barrow"><span class="lbl">{f.label}</span>
+							<div class="track"><div class="bar" style="width:{f.pct * 100}%; background:{f.color}"></div></div>
+							<span class="val">{usd(f.v)} · {(f.pct * 100).toFixed(0)}%</span></div>
+					{/each}
+				</div>
+			{:else}
+				<p class="nota">Sin posiciones todavía.</p>
+			{/if}
 		</div>
-		<p class="nota">Cuánto de tu patrimonio invertido está denominado en dólares vs pesos (incluye liquidez). En Argentina, la porción en USD es tu defensa real ante la inflación.</p>
-	{:else}
-		<p class="nota">Sin posiciones todavía.</p>
-	{/if}
-
-	<h2>Estructura de renta (≈USD)</h2>
-	<div class="bars">
-		{#each buckets as b (b.renta)}
-			<div class="barrow"><span class="lbl">{b.renta}</span>
-				<div class="track"><div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}"></div></div>
-				<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
-		{/each}
+		<div class="graf">
+			<h2>Estructura de renta (≈USD)</h2>
+			<div class="bars">
+				{#each buckets as b (b.renta)}
+					<div class="barrow"><span class="lbl">{b.renta}</span>
+						<div class="track"><div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}"></div></div>
+						<span class="val">{usd(b.v)} · {(b.pct * 100).toFixed(0)}%</span></div>
+				{/each}
+			</div>
+		</div>
 	</div>
+	{#if exposicion.tot > 0}
+		<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>.</p>
+	{/if}
 
 	<h2>Detalle del mix</h2>
 	<table class="mix">
@@ -385,7 +407,7 @@
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
 	.preciostamp strong { color: var(--text); }
-	.moneda-fija { display: inline-flex; align-items: center; gap: 8px; margin: 6px 0; }
+	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
 	.moneda-lbl { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
 	.form { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin: 12px 0; display: flex; flex-direction: column; gap: 9px; max-width: 400px; }
@@ -420,12 +442,16 @@
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
-	.bars { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; max-width: 640px; }
+	/* Los dos gráficos de barras, lado a lado (colapsan a uno en pantallas angostas) */
+	.graf-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; align-items: start; }
+	.graf h2 { margin-top: 16px; }
+	@media (max-width: 620px) { .graf-fila { grid-template-columns: 1fr; } }
+	.bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
-	.lbl { width: 70px; color: var(--text-dim); }
-	.track { flex: 1; background: var(--surface-2); border-radius: 4px; height: 16px; overflow: hidden; }
+	.lbl { width: 64px; color: var(--text-dim); flex-shrink: 0; }
+	.track { flex: 1; background: var(--surface-2); border-radius: 4px; height: 32px; overflow: hidden; }
 	.bar { height: 100%; }
-	.val { width: 170px; text-align: right; color: var(--text); }
+	.val { width: 130px; text-align: right; color: var(--text); flex-shrink: 0; white-space: nowrap; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.pos { color: var(--pos); }
 	.neg { color: var(--neg); }

@@ -223,6 +223,7 @@
 			<div class="grupo">
 				<span class="gtit">Activos</span>
 				<button class="item" class:activo={actual === '/inversiones'} onclick={() => irA('/inversiones')}>Inversiones</button>
+				<button class="item" class:activo={actual === '/evolucion'} onclick={() => irA('/evolucion')}>Evolución de cartera</button>
 			</div>
 
 			<div class="grupo">

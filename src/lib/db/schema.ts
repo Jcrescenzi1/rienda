@@ -138,6 +138,10 @@ CREATE TABLE IF NOT EXISTS activo (
   precio_actual         REAL,
   precio_actualizado_en TEXT,
   activo                INTEGER NOT NULL DEFAULT 1,
+  -- Exposición al tipo de cambio (a qué FX está atado el valor del activo), NO su
+  -- moneda de cotización: un CEDEAR o una ON dollar-linked cotizan en ARS pero su
+  -- exposición es 'Dolar'. Lo fija el usuario en Configurar tickers; default por regla.
+  exposicion            TEXT CHECK (exposicion IS NULL OR exposicion IN ('Dolar','CER','Peso')),
   UNIQUE (perfil_id, ticker)
 );
 
