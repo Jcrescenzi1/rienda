@@ -291,7 +291,7 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Inversiones</h1>
+	<h1>Tenencia Actual</h1>
 	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Cartera' saca la foto que alimenta Evolución." />
 </div>
 

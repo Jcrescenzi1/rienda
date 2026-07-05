@@ -221,8 +221,8 @@
 			</div>
 
 			<div class="grupo">
-				<span class="gtit">Activos</span>
-				<button class="item" class:activo={actual === '/inversiones'} onclick={() => irA('/inversiones')}>Inversiones</button>
+				<span class="gtit">Inversiones</span>
+				<button class="item" class:activo={actual === '/inversiones'} onclick={() => irA('/inversiones')}>Tenencia Actual</button>
 				<button class="item" class:activo={actual === '/evolucion'} onclick={() => irA('/evolucion')}>Evolución de cartera</button>
 			</div>
 
@@ -231,7 +231,7 @@
 				<button class="item" class:activo={actual === '/datos'} onclick={() => irA('/datos')}>Tus datos</button>
 				<button class="item" class:activo={actual === '/como-funciona'} onclick={() => irA('/como-funciona')}>Cómo funciona</button>
 				<button class="item" onclick={onActualizarCotiz} disabled={actualizandoCotiz}>
-					{actualizandoCotiz ? 'Actualizando…' : 'Actualizar cotizaciones'}
+					{actualizandoCotiz ? 'Actualizando…' : 'Actualizar tipo de cambio'}
 				</button>
 			</div>
 		</aside>
