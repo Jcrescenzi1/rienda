@@ -13,7 +13,7 @@
 
 	async function cargar() {
 		activos = (await query(
-			"SELECT id, ticker, nombre, tipo, moneda, precio_actual, simbolo_cotizacion, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo='CEDEAR' THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 AND tipo <> 'FCI' ORDER BY nombre COLLATE NOCASE"
+			"SELECT id, ticker, nombre, tipo, moneda, precio_actual, simbolo_cotizacion, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 AND tipo <> 'FCI' ORDER BY tipo COLLATE NOCASE, nombre COLLATE NOCASE"
 		)) as any[];
 		cargando = false;
 	}

@@ -156,7 +156,7 @@
 			const rendPct = g.invUSD ? gananciaUSD / g.invUSD : null;                    // % sobre lo invertido en USD
 			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
 			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
-				exposicion: a.exposicion ?? (a.moneda === 'USD' || a.tipo === 'CEDEAR' ? 'Dolar' : 'Peso'),
+				exposicion: a.exposicion ?? (a.moneda === 'USD' || a.tipo === 'CEDEAR' || a.tipo === 'Indice' ? 'Dolar' : 'Peso'),
 				unidades: u, ppc, ppv, precioActual: pa, mercado,
 				gananciaUSD, rendPct, mercadoUSD });
 		}
@@ -185,11 +185,11 @@
 			.map((mon) => {
 				const saldo = bal[mon] ?? 0;
 				const valUSD = mon === 'USD' ? saldo : saldo / dolar;
-				return { renta: 'Liquido', tipo: 'Caja', nombre: 'Líquido ' + mon, mercadoUSD: valUSD };
+				return { renta: 'Liquido', tipo: 'Caja', nombre: 'Líquido ' + mon, mercadoUSD: valUSD, exposicion: mon === 'USD' ? 'Dolar' : 'Peso' };
 			})
 			.filter((r) => r.mercadoUSD > 0);
 		const filasMix = [
-			...hold.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD })),
+			...hold.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD, exposicion: h.exposicion })),
 			...liqRows
 		];
 		filasMix.sort((a, b) => b.mercadoUSD - a.mercadoUSD);
@@ -278,6 +278,8 @@
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
+	// Mismos colores que las barras de "Exposición al tipo de cambio" de arriba.
+	const colorExposicion: Record<string, string> = { Dolar: 'var(--accent)', CER: '#4ade80', Peso: '#e8975b' };
 	// Texto legible SOBRE una barra de color: negro para colores claros, blanco para
 	// oscuros (según luminancia percibida). Sirve para el % embebido en cada barra.
 	function contraste(bg: string): string {
@@ -438,22 +440,23 @@
 
 	<h2>Detalle del mix — ranking de concentración</h2>
 	<table class="mix">
-		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th class="num">% del total</th></tr></thead>
+		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th>Exposición</th><th class="num">% del total</th></tr></thead>
 		<tbody>
 			{#each detalleMix as d (d.nombre)}
 				<tr class:concentrado={d.concentrado}>
 					<td>{d.nombre}</td>
 					<td>{d.tipo}</td>
 					<td class="renta" style="color:{colorRenta[d.renta]}">{d.renta}</td>
+					<td class="renta" style="color:{colorExposicion[d.exposicion]}">{d.exposicion}</td>
 					<td class="num">{(d.pct * 100).toFixed(1)}%{#if d.concentrado} ⚠{/if}</td>
 				</tr>
 			{/each}
-			{#if detalleMix.length === 0}<tr><td colspan="4" class="vacio">Sin posiciones todavía.</td></tr>{/if}
+			{#if detalleMix.length === 0}<tr><td colspan="5" class="vacio">Sin posiciones todavía.</td></tr>{/if}
 		</tbody>
 	</table>
 	<details class="nota-colapsable">
 		<summary>Descripción de la visual: Detalle del mix</summary>
-		<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo.</p>
+		<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo. La columna <strong>Exposición</strong> muestra a qué tipo de cambio sigue cada fila (Dólar / CER / Peso) — sirve para ver en qué se compone el desglose del gráfico "Exposición al tipo de cambio" de arriba.</p>
 	</details>
 {/if}
 

@@ -34,15 +34,19 @@
 		<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD): sale de tu stock de dólares, queda aparte del cálculo en pesos y se muestra informativo en USD.</li>
 	</ul>
 	<p>El dólar de referencia es el <strong>MEP (bolsa)</strong>, y cada conversión usa el valor del día del propio movimiento (no flota con el dólar de hoy).</p>
+	<p>La cotización de dólar e inflación no depende solo de vos: al abrir la app se refresca sola si la última guardada tiene más de 3 días (silencioso, sin avisar si falla). Si necesitás algo más fresco al toque, el botón <strong>"Actualizar tipo de cambio"</strong> (menú → Datos) la fuerza en el momento.</p>
 </section>
 
 <section>
-	<h2>Inversiones (FIFO, PPC, PPV)</h2>
+	<h2>Tenencia Actual (FIFO, PPC, PPV)</h2>
 	<p>La cartera se valúa a precio de mercado en dólares. Los resultados se calculan con método <strong>FIFO</strong> (las ventas consumen primero los lotes más viejos):</p>
 	<ul>
 		<li><strong>PPC</strong> (precio promedio de compra): cuánto te costó en promedio lo que tenés.</li>
-		<li><strong>PPV</strong> (precio de salida ponderado): lo recuperado en ventas más la tenencia a precio actual, sobre el total comprado.</li>
-		<li><strong>Ganancia realizada</strong>: la que ya cerraste al vender. <strong>No realizada</strong>: la diferencia entre el valor de mercado y el costo de lo que todavía tenés.</li>
+		<li><strong>PPV</strong> (precio de salida ponderado): lo recuperado en ventas, rentas y amortizaciones más la tenencia a precio actual, sobre el total comprado.</li>
+		<li><strong>Rend. %</strong>: Result. Real de la posición ÷ lo invertido en USD del episodio abierto. Es el % que le falta al monto absoluto para saber si un resultado es grande o chico.</li>
+		<li><strong>Resultado Posiciones Abiertas</strong> (card): la ganancia total de todo lo que tenés hoy, en USD — ventas parciales + rentas/amortización cobradas + valor de mercado actual, menos lo invertido. Reemplaza al viejo concepto de "ganancia no realizada", que ignoraba la plata ya cobrada por renta y por eso subestimaba (o exageraba) cómo te estaba yendo.</li>
+		<li><strong>Ganancia realizada del año</strong> (card) y su detalle <strong>por año</strong> (tabla plegable debajo): solo cuenta ciclos que cerraste del todo (vendiste el 100%). Lo de una posición que seguís teniendo, aunque hayas vendido una parte, ya está adentro de "Resultado Posiciones Abiertas" — así no se duplica ni se pierde nada entre un año y el siguiente.</li>
+		<li><strong>Detalle del mix</strong>: ranking de tus posiciones ordenado por % de la cartera, de mayor a menor (cruza todas las categorías de renta). Incluye Renta y Exposición (Dólar/CER/Peso) por fila, para ver de dónde sale cada % del gráfico de arriba. Marca con ⚠ cualquier posición que supere el 20% del total, como alerta de concentración.</li>
 	</ul>
 	<p>Podés guardar "fotos" de la cartera para ver su evolución (rendimiento descontando ingresos/retiros, base 100).</p>
 </section>
