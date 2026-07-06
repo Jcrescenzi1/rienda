@@ -53,7 +53,7 @@
 		modo = await cargarModo();
 
 		categorias = (await query(`
-			SELECT c.id, c.nombre,
+			SELECT c.id, c.nombre, c.es_ahorro,
 				(SELECT COUNT(*) FROM gasto g WHERE g.categoria_id = c.id)
 				+ (SELECT COUNT(*) FROM suscripcion s WHERE s.categoria_id = c.id) AS usos
 			FROM categoria c WHERE c.perfil_id=1 ORDER BY c.nombre
@@ -140,6 +140,7 @@
 		catch(e:any){ flash(esUnique(e)?'Ya existe esa categoría.':'Error: '+(e?.message??e)); }
 	}
 	async function borrarCat(c:any){
+		if(c.es_ahorro){ alert('No se puede eliminar — es tu categoría de ahorro. Registrá acá cualquier plata que apartes del gasto (dólares, plazo fijo, colchón, etc.).'); return; }
 		if(c.usos>0){ alert(`No se puede eliminar "${c.nombre}": tiene ${c.usos} gasto(s) asociado(s).`); return; }
 		if(!confirm(`¿Eliminar la categoría "${c.nombre}"?`)) return;
 		try { await query('DELETE FROM categoria WHERE id=? AND perfil_id=1',[c.id]); await cargar(); flash('Categoría eliminada ✅'); }
@@ -298,7 +299,7 @@
 								<td class="acciones">
 									{#if editCatId !== c.id}
 										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏</button>
-										<button aria-label="Eliminar" class="del" class:off={c.usos > 0} onclick={() => borrarCat(c)} title={c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
+										<button aria-label="Eliminar" class="del" class:off={c.usos > 0 || c.es_ahorro} onclick={() => borrarCat(c)} title={c.es_ahorro ? 'Es tu categoría de ahorro' : c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
 									{/if}
 								</td>
 							</tr>

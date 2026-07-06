@@ -11,6 +11,7 @@ INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Salidas');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Salud');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Compras');
 INSERT INTO categoria (perfil_id, nombre) VALUES (1, 'Otros');
+INSERT INTO categoria (perfil_id, nombre, es_ahorro) VALUES (1, 'Ahorro', 1);
 
 -- Subcategorías genéricas mínimas (para que el formulario de gastos funcione)
 INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, 'General');

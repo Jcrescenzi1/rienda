@@ -90,6 +90,14 @@ async function init() {
 		db.exec("UPDATE activo SET exposicion = CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END WHERE exposicion IS NULL");
 	}
 
+	// Columna es_ahorro en categoria (0|1): marca la categoría reservada para
+	// plata que el usuario aparta del consumo (dólares, plazo fijo, colchón, etc.).
+	// Se agrega sin CHECK (ALTER), igual criterio que exposicion en activo.
+	const catcols = db.exec({ sql: 'PRAGMA table_info(categoria)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!catcols.some((c: any) => c.name === 'es_ahorro')) {
+		db.exec('ALTER TABLE categoria ADD COLUMN es_ahorro INTEGER NOT NULL DEFAULT 0');
+	}
+
 	// Columna modo_periodo en perfil (sueldo | calendario). Default 'sueldo'
 	// mantiene el comportamiento histórico para perfiles ya existentes.
 	const pcols = db.exec({ sql: 'PRAGMA table_info(perfil)', rowMode: 'object', returnValue: 'resultRows' });
@@ -178,6 +186,28 @@ async function init() {
 		const rm = db.exec({ sql: 'SELECT COUNT(*) AS n FROM cotizacion_dolar', rowMode: 'object', returnValue: 'resultRows' });
 		if (rm[0].n === 0 && SEED_MACRO && SEED_MACRO.trim()) {
 			db.exec(SEED_MACRO);
+		}
+
+		// Backfill de la categoría de Ahorro para perfiles que ya existían antes de
+		// esta función (el seed de un perfil nuevo ya la trae). Idempotente: solo
+		// actúa si todavía no hay ninguna categoría marcada es_ahorro=1. Si el
+		// usuario ya tenía una categoría llamada "Ahorro" (creada a mano), se
+		// promueve esa en vez de insertar una duplicada (chocaría con el UNIQUE
+		// perfil_id+nombre). Si no existe, se crea.
+		const ra = db.exec({
+			sql: "SELECT COUNT(*) AS n FROM categoria WHERE perfil_id=1 AND es_ahorro=1",
+			rowMode: 'object', returnValue: 'resultRows'
+		});
+		if (ra[0].n === 0) {
+			const yaExiste = db.exec({
+				sql: "SELECT id FROM categoria WHERE perfil_id=1 AND TRIM(nombre) = 'Ahorro' COLLATE NOCASE",
+				rowMode: 'object', returnValue: 'resultRows'
+			});
+			if (yaExiste.length > 0) {
+				db.exec({ sql: 'UPDATE categoria SET es_ahorro=1 WHERE id=?', bind: [yaExiste[0].id] });
+			} else {
+				db.exec("INSERT INTO categoria (perfil_id, nombre, es_ahorro) VALUES (1, 'Ahorro', 1)");
+			}
 		}
 	}
 

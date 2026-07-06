@@ -11,6 +11,16 @@
     let grupos = $state<any[]>([]);
     let consolidado = $state<any[]>([]);
     let totales = $state<any>({ n2: 0, n1: 0, presup: 0, real: 0 });
+    // Split de "Gasto total del mes" (Ítem 1): consumo real vs. plata apartada en
+    // la categoría de Ahorro. Ninguno de los dos resta de Ingreso disponible; son
+    // solo una apertura informativa de totales.real (que no cambia) — mismo patrón
+    // colapsado/expandido que "Ingreso disponible": el total se ve siempre, el
+    // desglose (Gasto real / Ahorro) aparece al abrir.
+    let gastoRealMes = $state(0);
+    let ahorroMes = $state(0);
+    let nombreAhorro = $state('Ahorro'); // nombre editable de la categoría de ahorro
+    let gastoAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('gasto_detalle') === '1');
+    $effect(() => { try { localStorage.setItem('gasto_detalle', gastoAbierto ? '1' : '0'); } catch { /* ignore */ } });
     // Reserva para tarjetas: suma de cuotas de crédito que vencen en el mes
     // visible. Solo suma al total de PRESUPUESTO (los gastos en crédito ya
     // fueron contados como gasto real el día que se cargaron).
@@ -168,7 +178,7 @@
                   )
                 : Promise.resolve(null),
             query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1'),
-            query('SELECT id, nombre FROM categoria WHERE perfil_id=1'),
+            query('SELECT id, nombre, es_ahorro FROM categoria WHERE perfil_id=1'),
             query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
             query(CUOTAS_MES, [n]),
             query(
@@ -205,7 +215,10 @@
         const nombreSub: Record<number, string> = {};
         for (const s of subs) nombreSub[s.id] = s.nombre;
         const nombreCat: Record<number, string> = {};
-        for (const c of cats) nombreCat[c.id] = c.nombre;
+        const esAhorroCat: Record<number, boolean> = {};
+        for (const c of cats) { nombreCat[c.id] = c.nombre; esAhorroCat[c.id] = !!c.es_ahorro; }
+        const catAhorro = cats.find((c: any) => c.es_ahorro);
+        if (catAhorro) nombreAhorro = catAhorro.nombre;
         const presupMap: Record<number, number> = {};
         const autoMap: Record<number, boolean> = {};
         for (const p of presup) { presupMap[p.subcategoria_id] = p.monto; autoMap[p.subcategoria_id] = !!p.auto; }
@@ -248,9 +261,19 @@
                 catNombre: catId != null ? nombreCat[catId] ?? '(sin categoría)' : '(sin categoría)',
                 n2: a.n2, n1: a.n1, presup: presupVal, real: a.real,
                 autoPresup: a.scid != null ? (autoMap[a.scid] ?? false) : false,
-                estado: desvio(a.real, presupVal)
+                estado: desvio(a.real, presupVal),
+                // Categoría "habitual" de la subcategoría marcada como Ahorro: separa
+                // consumo real de plata apartada, sin tocar el resto de las métricas
+                // (esta fila sigue sumando igual a totales.real/consolidado).
+                esAhorro: catId != null && !!esAhorroCat[catId]
             };
         });
+
+        // Split informativo para el panel "Ingreso disponible": Gasto real vs Ahorro.
+        // No reemplaza a totales.real (que sigue siendo el total de todo, para el
+        // consolidado de abajo) — es solo una apertura de esa misma plata.
+        gastoRealMes = filas.filter((f) => !f.esAhorro).reduce((s, f) => s + f.real, 0);
+        ahorroMes = filas.filter((f) => f.esAhorro).reduce((s, f) => s + f.real, 0);
 
         const map: Record<string, any[]> = {};
         for (const f of filas) (map[f.catNombre] ??= []).push(f);
@@ -537,10 +560,19 @@
                     <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
                 </div>
             {/if}
-            <div class="disp-linea {gastoColor()}"
-                title={totales.presup > 0 ? 'Gasto vs presupuesto' : 'Sin presupuesto: verde si entra en tu ingreso disponible · amarillo entre el disponible y el total · rojo si supera tu ingreso total'}>
-                <span>Gasto total del mes</span><strong>{peso(totales.real)}</strong>
-            </div>
+            <button class="disp-linea disp-linea-btn {gastoColor()}" onclick={() => (gastoAbierto = !gastoAbierto)} aria-expanded={gastoAbierto}
+                title={totales.presup > 0 ? 'Gasto vs presupuesto (tocá para ver el desglose)' : 'Sin presupuesto: verde si entra en tu ingreso disponible · amarillo entre el disponible y el total · rojo si supera tu ingreso total (tocá para ver el desglose)'}>
+                <span><span class="flecha-mini">{gastoAbierto ? '▾' : '▸'}</span> Gasto total del mes</span><strong>{peso(totales.real)}</strong>
+            </button>
+            {#if gastoAbierto}
+                <table class="disp-tabla disp-detalle">
+                    <tbody>
+                        <tr><td>Gasto real</td><td class="num">{peso(gastoRealMes)}</td></tr>
+                        <tr><td>{nombreAhorro}</td><td class="num">{peso(ahorroMes)}</td></tr>
+                        <tr class="disp-total"><td><strong>= Gasto total del mes</strong></td><td class="num"><strong>{peso(totales.real)}</strong></td></tr>
+                    </tbody>
+                </table>
+            {/if}
             {#if creditoMesUsd > 0}
                 <div class="disp-linea disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
             {/if}
@@ -729,6 +761,12 @@
     .usd { color: var(--text-dim); font-size: 0.85em; }
     .disp-usd td { color: var(--text-dim); }
     .disp-usdrow span, .disp-usdrow strong { color: var(--text-dim); font-weight: 600; }
+    /* "Gasto total del mes" como toggle: mismo look de .disp-linea, pero clickeable
+       (reset de estilos de <button>) y con flechita, igual patrón que "Ingreso
+       disponible" de arriba. El detalle (Gasto real / Ahorro) sale en .disp-tabla,
+       sin semáforo por fila — igual criterio visual que el detalle de Ingreso disponible. */
+    .disp-linea-btn { width: 100%; background: none; border: none; padding: 7px 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+    .flecha-mini { color: var(--text-dim); font-size: 0.75rem; margin-right: 2px; }
     .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
     .usd-item { white-space: nowrap; }
     .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
