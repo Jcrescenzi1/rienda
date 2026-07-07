@@ -26,6 +26,7 @@
 
 	// Form unificado (alta + edicion). editId null = alta, numero = edicion.
 	let editId = $state<number | null>(null);
+	let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
 	let fNombre = $state('');
 	let fDetalle = $state('');
 	let fMonto = $state('');
@@ -91,7 +92,8 @@
 		fCategoria = s.categoria;
 		fTipo = s.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
 		mensaje = '';
-		window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+		formAbierto = true;
+		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
@@ -179,6 +181,32 @@
 	<span class="fijo-nota">suma de todos los ingresos fijos activos (USD al MEP)</span>
 </div>
 
+<details class="form-panel" bind:open={formAbierto}>
+	<summary>{editando ? '✏ Editar ingreso fijo' : '➕ Agregar ingreso fijo'}</summary>
+<div class="form" class:edit={editando}>
+	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
+	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Sueldo, Alquiler" /></label>
+	<label>Detalle (como aparece en el ingreso)<input bind:value={fDetalle} placeholder="Ej: Sueldo empresa, Cochera" /></label>
+	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
+	<label>Categoría<select bind:value={fCategoria}>
+		<option value="Ingreso Principal">Ingreso Principal</option>
+		<option value="Ingresos Secundarios">Ingresos Secundarios</option>
+		<option value="Otros">Otros</option>
+	</select></label>
+	<p class="form-nota">El Ingreso Principal marca el ritmo de tus períodos (en modo sueldo). Secundarios y Otros se acomodan a ese mes.</p>
+	<label>Tipo de ingreso<select bind:value={fTipo}>
+		<option value="Sueldo">Regular</option>
+		<option value="Aciclico">Extraordinario</option>
+	</select></label>
+	<p class="form-nota">Regular: recurrente (sueldo, alquiler, renta). Extraordinario: cobros puntuales.</p>
+	<div class="botones">
+		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
+		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
+	</div>
+</div>
+</details>
+
 <div class="grupos">
 	{#each grupos as g (g.cat)}
 		<div class="grupo-cat">{catLabel(g.cat)}</div>
@@ -215,33 +243,11 @@
 			</div>
 		{/each}
 	{/each}
-	{#if fijos.length === 0}<p class="vacio">No hay ingresos fijos. Agregá uno abajo.</p>{/if}
+	{#if fijos.length === 0}<p class="vacio">No hay ingresos fijos. Agregá el primero desde “➕ Agregar ingreso fijo”, arriba.</p>{/if}
 </div>
 {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 
-<h2>{editando ? 'Editar ingreso fijo' : 'Agregar ingreso fijo'}</h2>
-<div class="form" class:edit={editando}>
-	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
-	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Sueldo, Alquiler" /></label>
-	<label>Detalle (como aparece en el ingreso)<input bind:value={fDetalle} placeholder="Ej: Sueldo empresa, Cochera" /></label>
-	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
-	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-	<label>Categoría<select bind:value={fCategoria}>
-		<option value="Ingreso Principal">Ingreso Principal</option>
-		<option value="Ingresos Secundarios">Ingresos Secundarios</option>
-		<option value="Otros">Otros</option>
-	</select></label>
-	<p class="form-nota">El Ingreso Principal marca el ritmo de tus períodos (en modo sueldo). Secundarios y Otros se acomodan a ese mes.</p>
-	<label>Tipo de ingreso<select bind:value={fTipo}>
-		<option value="Sueldo">Regular</option>
-		<option value="Aciclico">Extraordinario</option>
-	</select></label>
-	<p class="form-nota">Regular: recurrente (sueldo, alquiler, renta). Extraordinario: cobros puntuales.</p>
-	<div class="botones">
-		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
-		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
-	</div>
-</div>
+
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
@@ -250,7 +256,11 @@
 	.fijo-total span { font-size: 0.75rem; color: var(--text-dim); }
 	.fijo-total strong { font-size: 1.6rem; }
 	.fijo-nota { font-size: 0.72rem !important; }
-	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
+	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
+	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
+	.form-panel summary::-webkit-details-marker { display: none; }
+	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
+	.form-panel .form { padding: 12px 14px; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }

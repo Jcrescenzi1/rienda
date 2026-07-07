@@ -687,16 +687,17 @@
     .disp-toggle .flecha { color: var(--text-dim); font-size: 0.8rem; width: 12px; display: inline-block; }
     .disp-toggle .disp-titulo { font-family: var(--font-display); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
     .disp-toggle .disp-valor { margin-left: auto; font-family: var(--font-num); font-size: 1.55rem; font-weight: 300; color: var(--text); white-space: nowrap; }
-    .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-    .disp-tabla td { border: none !important; padding: 4px 2px; }
+    .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .disp-tabla td { border: none !important; padding: 4px 2px; color: var(--text-dim); }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
     .disp-tabla .disp-total td { border-top: 1px solid var(--border) !important; padding-top: 7px; }
-    .disp-tabla .disp-total td strong { color: var(--accent); font-size: 1.05rem; }
+    .disp-tabla .disp-total td { color: var(--text); }
+    .disp-tabla .disp-total td strong { color: var(--text); font-size: 0.9rem; }
     .disp-pie { display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: 8px; }
     .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
     .disp-linea:last-child { border-bottom: none; }
-    .disp-linea span { font-size: 0.88rem; }
-    .disp-linea strong { font-family: var(--font-num); font-size: 1rem; font-weight: 500; white-space: nowrap; }
+    .disp-linea span { font-size: 0.84rem; color: var(--text-dim); }
+    .disp-linea strong { font-family: var(--font-num); font-size: 0.92rem; font-weight: 400; white-space: nowrap; }
     .disp-linea.ok strong { color: var(--pos); }
     .disp-linea.warn strong { color: var(--warn); }
     .disp-linea.bad strong { color: var(--neg); }

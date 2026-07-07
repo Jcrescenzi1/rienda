@@ -28,6 +28,7 @@
 
 	// Form unificado (alta + edicion). editId null = alta, numero = edicion.
 	let editId = $state<number | null>(null);
+	let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
 	let fNombre = $state('');
 	let fDetalle = $state('');
 	let fMonto = $state('');
@@ -164,7 +165,8 @@
 		fSubcatId = s.scid != null ? String(s.scid) : '';
 		fTarjetaId = s.tarjeta_id;
 		mensaje = '';
-		window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+		formAbierto = true;
+		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
@@ -249,6 +251,29 @@
 	<span class="fijo-nota">suma de todos los fijos activos (USD al MEP)</span>
 </div>
 
+<details class="form-panel" bind:open={formAbierto}>
+	<summary>{editando ? '✏ Editar gasto fijo' : '➕ Agregar gasto fijo'}</summary>
+<div class="form" class:edit={editando}>
+	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
+	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Netflix" /></label>
+	<label>Detalle (como aparece en el gasto)<input bind:value={fDetalle} onblur={onDetalleChange} placeholder="Ej: Netflix" /></label>
+	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
+	<label>Categoría<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
+	<label>Subcategoría<select bind:value={fSubcatId}>
+		<option value="">— sin asignar —</option>
+		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
+	</select></label>
+	<label>Tarjeta (opcional, solo referencia)
+		<select bind:value={fTarjetaId}><option value={null}>— ninguna —</option>{#each tarjetas as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
+	<div class="botones">
+		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
+		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
+	</div>
+	<p class="form-nota">La subcategoría define en qué línea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
+</div>
+</details>
+
 <label class="disparo-subcat">Subcategoría de los gastos registrados:
 	<select bind:value={dispSubcatId} onchange={() => setMeta('susc_subcat_id', dispSubcatId)}>
 		<option value="">Automática (según diccionario)</option>
@@ -292,30 +317,11 @@
 			</div>
 		{/each}
 	{/each}
-	{#if subs.length === 0}<p class="vacio">No hay gastos fijos. Agregá uno abajo.</p>{/if}
+	{#if subs.length === 0}<p class="vacio">No hay gastos fijos. Agregá el primero desde “➕ Agregar gasto fijo”, arriba.</p>{/if}
 </div>
 {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 
-<h2>{editando ? 'Editar gasto fijo' : 'Agregar gasto fijo'}</h2>
-<div class="form" class:edit={editando}>
-	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
-	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Netflix" /></label>
-	<label>Detalle (como aparece en el gasto)<input bind:value={fDetalle} onblur={onDetalleChange} placeholder="Ej: Netflix" /></label>
-	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
-	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-	<label>Categoría<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
-	<label>Subcategoría<select bind:value={fSubcatId}>
-		<option value="">— sin asignar —</option>
-		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
-	</select></label>
-	<label>Tarjeta (opcional, solo referencia)
-		<select bind:value={fTarjetaId}><option value={null}>— ninguna —</option>{#each tarjetas as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
-	<div class="botones">
-		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
-		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
-	</div>
-	<p class="form-nota">La subcategoría define en qué línea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
-</div>
+
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
@@ -326,7 +332,11 @@
 	.fijo-nota { font-size: 0.72rem !important; }
 	.disparo-subcat { flex-direction: row !important; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 10px; flex-wrap: wrap; }
 	.disparo-subcat select { max-width: 240px; }
-	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
+	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
+	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
+	.form-panel summary::-webkit-details-marker { display: none; }
+	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
+	.form-panel .form { padding: 12px 14px; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
