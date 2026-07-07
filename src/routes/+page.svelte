@@ -547,7 +547,6 @@
                     <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
                     <tr><td>− Pago de Tarjetas del Mes Corriente</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
                     <tr><td>+ Reservado para el Mes Corriente</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
-                    <tr class="disp-total"><td><strong>= Ingreso disponible</strong></td><td class="num"><strong>{peso(ingresoDisponible)}</strong></td></tr>
                     {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
                 </tbody>
             </table>
@@ -569,7 +568,6 @@
                     <tbody>
                         <tr><td>Gasto real</td><td class="num">{peso(gastoRealMes)}</td></tr>
                         <tr><td>{nombreAhorro}</td><td class="num">{peso(ahorroMes)}</td></tr>
-                        <tr class="disp-total"><td><strong>= Gasto total del mes</strong></td><td class="num"><strong>{peso(totales.real)}</strong></td></tr>
                     </tbody>
                 </table>
             {/if}
@@ -598,7 +596,6 @@
                 <tbody>
                     <tr><td>Cuotas a pagar ({mesSigLabel})</td><td class="num">{peso(deudaSig)}{#if deudaSigUsd > 0}<div class="usd">{usd(deudaSigUsd)}</div>{/if}</td></tr>
                     <tr><td>− Reservado para mes siguiente</td><td class="num">{reservaSig ? '−' + peso(reservaSig) : peso(0)}</td></tr>
-                    <tr class="disp-total"><td><strong>= Crédito Neto del Mes Siguiente</strong></td><td class="num"><strong class:alta={deudaAlta}>{peso(descubierto)}</strong></td></tr>
                     {#if deudaSigUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(deudaSigUsd)}</td></tr>{/if}
                 </tbody>
             </table>
@@ -690,9 +687,6 @@
     .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .disp-tabla td { border: none !important; padding: 4px 2px; color: var(--text-dim); }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
-    .disp-tabla .disp-total td { border-top: 1px solid var(--border) !important; padding-top: 7px; }
-    .disp-tabla .disp-total td { color: var(--text); }
-    .disp-tabla .disp-total td strong { color: var(--text); font-size: 0.9rem; }
     .disp-pie { display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: 8px; }
     .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0 7px 20px; border-bottom: 1px solid var(--border); }
     .disp-linea:last-child { border-bottom: none; }
@@ -706,9 +700,7 @@
     .deuda-panel { border: 1px solid transparent; border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 0 0 16px; }
     .deuda-panel.ok { border-left-color: var(--pos); }
     .deuda-panel.warn { border-left-color: var(--warn); }
-    .deuda-panel.ok .disp-total td strong { color: var(--pos); }
     .deuda-panel.ok .disp-valor { color: var(--pos); }
-    .deuda-panel .disp-total td strong.alta { color: var(--warn); }
     .deuda-panel .disp-valor.alta { color: var(--warn); }
 
     /* Checklist de primeros pasos */
