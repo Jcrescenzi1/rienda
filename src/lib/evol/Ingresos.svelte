@@ -374,7 +374,7 @@
 {/if}
 
 <style>
-	h2 { font-size: 1.05rem; margin-top: 24px; }
+	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
 	.vistas select { padding: 5px 8px; }
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }

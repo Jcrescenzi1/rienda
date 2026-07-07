@@ -398,7 +398,7 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	h2 { font-size: 1.05rem; margin-top: 24px; }
+	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.sub { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 8px; }
 	.msg { font-weight: 600; color: var(--pos); margin: 6px 0; }
 	.alta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
@@ -415,13 +415,14 @@
 	.modo-btns { display: flex; gap: 8px; margin: 8px 0; }
 	.modo-exp { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 4px; line-height: 1.35; }
 
-	.acc { border: 1px solid var(--border); border-radius: 8px; margin-top: 10px; overflow: hidden; background: var(--surface); }
+	.acc { border: 1px solid transparent; border-radius: 8px; margin-top: 10px; overflow: hidden; background: var(--surface); }
 	.acc-h {
-		width: 100%; text-align: left; background: var(--surface-2); color: var(--text);
-		border: none; padding: 11px 14px; font-size: 0.98rem; font-weight: 600; cursor: pointer;
+		width: 100%; text-align: left; background: none; color: var(--text);
+		border: none; padding: 12px 14px; font-family: var(--font-display); font-size: 0.95rem; font-weight: 600; cursor: pointer;
 		display: flex; align-items: center; gap: 8px;
+		transition: background 0.12s ease;
 	}
-	.acc-h:hover { background: var(--surface); }
+	.acc-h:hover { background: var(--surface-2); }
 	.flecha { color: var(--text-dim); font-size: 0.85rem; width: 14px; display: inline-block; }
 	.acc-body { padding: 12px 14px; }
 	.acc-body table { margin-bottom: 0; }

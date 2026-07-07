@@ -187,7 +187,7 @@
 
 <style>
 :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	h2 { font-size: 1.05rem; margin-top: 24px; }
+	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
 	.fotoform { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 9px; max-width: 420px; }
 	.calc { margin: 0; font-size: 0.9rem; }

@@ -326,7 +326,7 @@
 	.fijo-nota { font-size: 0.72rem !important; }
 	.disparo-subcat { flex-direction: row !important; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 10px; flex-wrap: wrap; }
 	.disparo-subcat select { max-width: 240px; }
-	h2 { font-size: 1.1rem; margin-top: 22px; }
+	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }

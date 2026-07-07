@@ -333,7 +333,7 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	h2 { font-size: 1.05rem; margin-top: 0; }
+	h2 { font-size: 1.02rem; margin-top: 0; border-left: 3px solid var(--accent); padding-left: 12px; }
 
 	/* Estado (fijo arriba) */
 	.estado { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px; display: flex; flex-direction: column; gap: 3px; }

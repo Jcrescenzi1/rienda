@@ -246,8 +246,17 @@
 {/if}
 
 <style>
+	/* ===== Refresh v2: fuentes self-hosted (offline, cacheadas por el SW) =====
+	   Archivo (display: titulos/marca) + Chivo Mono (cifras). Solo estetica. */
+	@font-face { font-family: 'Archivo'; src: url('/fonts/archivo-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+	@font-face { font-family: 'Archivo'; src: url('/fonts/archivo-latin-600-normal.woff2') format('woff2'); font-weight: 600; font-style: normal; font-display: swap; }
+	@font-face { font-family: 'Archivo'; src: url('/fonts/archivo-latin-700-normal.woff2') format('woff2'); font-weight: 700; font-style: normal; font-display: swap; }
+	@font-face { font-family: 'Chivo Mono'; src: url('/fonts/chivo-mono-latin-300-normal.woff2') format('woff2'); font-weight: 300; font-style: normal; font-display: swap; }
+	@font-face { font-family: 'Chivo Mono'; src: url('/fonts/chivo-mono-latin-400-normal.woff2') format('woff2'); font-weight: 400; font-style: normal; font-display: swap; }
+	@font-face { font-family: 'Chivo Mono'; src: url('/fonts/chivo-mono-latin-500-normal.woff2') format('woff2'); font-weight: 500; font-style: normal; font-display: swap; }
+
 	:global(:root) {
-		--bg: #0f1729;
+		--bg: #070b14;
 		--surface: #172033;
 		--surface-2: #1d2942;
 		--border: #2a3a57;
@@ -259,6 +268,9 @@
 		--neg: #f87171;
 		--warn: #fbbf24;
 		--radius: 8px;
+		/* Refresh v2: roles tipograficos (display para titulos, mono para cifras) */
+		--font-display: 'Archivo', system-ui, sans-serif;
+		--font-num: 'Chivo Mono', ui-monospace, 'Cascadia Mono', monospace;
 	}
 
 	:global(body) {
@@ -268,21 +280,28 @@
 		margin: 0;
 	}
 
-	:global(h1) { color: var(--text); }
+	:global(h1) { color: var(--text); font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
 	/* Título con "?" de guía al lado; el cuadro se despliega debajo a lo ancho */
-	:global(.titulo-guia) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 21px 0 12px; }
+	/* Regla vertical (elemento firma del refresh v2) sobre el titulo de cada pantalla */
+	:global(.titulo-guia) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 21px 0 12px; border-left: 3px solid var(--accent); padding-left: 14px; }
 	:global(.titulo-guia h1) { margin: 0; }
-	:global(h2), :global(h3) { color: var(--text); }
+	:global(h2), :global(h3) { color: var(--text); font-family: var(--font-display); font-weight: 600; }
+	/* Regla firma reutilizable para encabezados de seccion */
+	:global(.con-regla) { border-left: 3px solid var(--accent); padding-left: 12px; }
 	:global(p) { color: var(--text); }
 
+	/* ===== Tablas (refresh v2): sin grilla — separadores horizontales,
+	   encabezado utilitario en mayusculas y cifras en mono. Solo estetica. ===== */
 	:global(table) { border-collapse: collapse; }
-	:global(th), :global(td) { border: 1px solid var(--border) !important; }
+	:global(th), :global(td) { border: none !important; border-bottom: 1px solid var(--border) !important; }
 	:global(th) { color: var(--text-dim); font-weight: 600; }
-	:global(thead tr) { background: var(--surface-2); }
-	:global(tbody tr:nth-child(even)) { background: rgba(255, 255, 255, 0.015); }
-	:global(tfoot td) { border-top: 2px solid var(--border) !important; }
+	:global(thead th) { font-family: var(--font-display); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.09em; border-bottom: 1px solid var(--text-dim) !important; }
+	:global(tbody tr:hover) { background: rgba(255, 255, 255, 0.025); }
+	:global(tfoot td) { border-top: 2px solid var(--text-dim) !important; border-bottom: none !important; }
 	/* Item 4: dígitos alineados en columnas de cifras */
 	:global(table), :global(.num), :global(.card strong), :global(.disp-tabla), :global(.reg-monto), :global(.ficha-monto) { font-variant-numeric: tabular-nums; }
+	/* Cifras en mono (celdas numericas y montos destacados) */
+	:global(td.num), :global(.card strong), :global(.reg-monto), :global(.ficha-monto) { font-family: var(--font-num); }
 
 	:global(input), :global(select) {
 		background: var(--surface-2);
@@ -386,7 +405,7 @@
 	:global(td.warn) { color: var(--warn) !important; }
 
 	/* ===== Barra superior ===== */
-	.marca-menu { font-size: 1.6rem; font-weight: 700; color: var(--text); padding: 0 8px 4px; }
+	.marca-menu { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--text); padding: 0 8px 4px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.hamb {
 		position: fixed;
 		top: 16px;

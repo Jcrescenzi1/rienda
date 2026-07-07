@@ -250,7 +250,7 @@
 	.fijo-total span { font-size: 0.75rem; color: var(--text-dim); }
 	.fijo-total strong { font-size: 1.6rem; }
 	.fijo-nota { font-size: 0.72rem !important; }
-	h2 { font-size: 1.1rem; margin-top: 22px; }
+	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }

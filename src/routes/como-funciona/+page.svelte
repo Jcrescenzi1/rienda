@@ -67,7 +67,7 @@
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	.intro { color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; margin: 8px 0 4px; }
 	section { border-top: 1px solid var(--border); padding: 4px 0 2px; margin-top: 14px; }
-	h2 { font-size: 1.05rem; margin: 12px 0 6px; }
+	h2 { font-size: 1.02rem; margin: 14px 0 6px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	p { font-size: 0.9rem; line-height: 1.55; margin: 6px 0; }
 	ul { margin: 6px 0; padding-left: 18px; }
 	li { font-size: 0.9rem; line-height: 1.5; margin: 4px 0; }

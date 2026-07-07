@@ -464,10 +464,12 @@
 :global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
 	h3 { margin: 0 0 4px; font-size: 1rem; }
+	h2 { border-left: 3px solid var(--accent); padding-left: 12px; }
+	.graf h2 { border-left: none; padding-left: 0; }
 	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
-	.preciostamp strong { color: var(--text); }
+	.preciostamp strong { color: var(--text); font-family: var(--font-num); font-weight: 400; }
 	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
 	.moneda-lbl { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
@@ -478,16 +480,19 @@
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
 	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
-	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
-	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
+	.card { border: 1px solid transparent; background: var(--surface); border-radius: 8px; padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.card span { font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
+	.card strong { font-size: clamp(0.85rem, 3.6vw, 1.25rem); font-weight: 400; white-space: nowrap; }
+	/* La cartera total es el numero hero de la pantalla */
+	.resumen .card:first-child { border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+	.resumen .card:first-child strong { font-weight: 300; font-size: clamp(0.95rem, 4.2vw, 1.5rem); }
 
 	/* Franja de liquidez */
 	.liquidez { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 0 0 12px; }
-	.liqcard { border: 1px solid var(--border); background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-	.liqcard span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
+	.liqcard { border: 1px solid transparent; background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+	.liqcard span { font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
 	.liqval { display: flex; align-items: center; gap: 6px; }
-	.liqval strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
+	.liqval strong { font-family: var(--font-num); font-size: clamp(0.82rem, 3.4vw, 1.05rem); font-weight: 400; white-space: nowrap; }
 	.liqedit { display: flex; align-items: center; gap: 4px; }
 	.liqedit input { width: 110px; padding: 3px 5px; font-size: 0.95rem; }
 
@@ -500,7 +505,7 @@
 	table.mix { max-width: 640px; margin-top: 6px; }
 	table.mix td.renta { font-weight: 700; white-space: nowrap; }
 	table.mix tr.concentrado td { color: var(--warn); font-weight: 600; background: rgba(251, 191, 36, 0.08); }
-	th.hl, td.hl { background: rgba(91, 157, 255, 0.08); }
+	th.hl, td.hl { background: rgba(91, 157, 255, 0.06); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
 

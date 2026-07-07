@@ -612,7 +612,7 @@
         <tbody>
             {#each consolidado as c (c.cat)}
                 <tr>
-                    <td><strong>{c.cat}</strong></td>
+                    <td><strong>{c.cat}</strong>{#if c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
                     <td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
                     <td class="num">{peso(c.presup)}</td>
                     <td class="num real {claseEstado(c.estado)}" title={c.estado}>{peso(c.real)}</td>
@@ -680,13 +680,13 @@
 
     /* Panel Ingreso disponible (borrador, pendiente de revisión) */
     .disponible {
-        border: 1px solid var(--border); border-left: 3px solid var(--accent);
-        background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px;
+        border: 1px solid transparent; border-left: 3px solid var(--accent);
+        background: var(--surface); border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 0 0 16px;
     }
-    .disp-toggle { width: 100%; display: flex; align-items: center; gap: 8px; background: none; border: none; padding: 0 0 6px; cursor: pointer; color: var(--text); text-align: left; }
+    .disp-toggle { width: 100%; display: flex; align-items: baseline; gap: 8px; background: none; border: none; padding: 0 0 6px; cursor: pointer; color: var(--text); text-align: left; }
     .disp-toggle .flecha { color: var(--text-dim); font-size: 0.8rem; width: 12px; display: inline-block; }
-    .disp-toggle .disp-titulo { font-size: 0.98rem; font-weight: 600; }
-    .disp-toggle .disp-valor { margin-left: auto; font-size: 1.1rem; font-weight: 700; color: var(--accent); white-space: nowrap; }
+    .disp-toggle .disp-titulo { font-family: var(--font-display); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+    .disp-toggle .disp-valor { margin-left: auto; font-family: var(--font-num); font-size: 1.55rem; font-weight: 300; color: var(--text); white-space: nowrap; }
     .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     .disp-tabla td { border: none !important; padding: 4px 2px; }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
@@ -696,13 +696,14 @@
     .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
     .disp-linea:last-child { border-bottom: none; }
     .disp-linea span { font-size: 0.88rem; }
-    .disp-linea strong { font-size: 1.05rem; white-space: nowrap; }
+    .disp-linea strong { font-family: var(--font-num); font-size: 1rem; font-weight: 500; white-space: nowrap; }
     .disp-linea.ok strong { color: var(--pos); }
     .disp-linea.warn strong { color: var(--warn); }
     .disp-linea.bad strong { color: var(--neg); }
     .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
     .disp-nota a { color: var(--accent); }
-    .deuda-panel { border: 1px solid var(--border); border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 8px; padding: 12px 14px; margin: 0 0 16px; }
+    .deuda-panel { border: 1px solid transparent; border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 0 0 16px; }
+    .deuda-panel .disp-valor { font-size: 1.2rem; }
     .deuda-panel.ok { border-left-color: var(--pos); }
     .deuda-panel.warn { border-left-color: var(--warn); }
     .deuda-panel.ok .disp-total td strong { color: var(--pos); }
@@ -733,7 +734,7 @@
         border: 1px dashed var(--warn); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px;
     }
     .aviso-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex-shrink: 0; }
-    h2 { font-size: 1.05rem; margin-top: 20px; }
+    h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
@@ -747,7 +748,13 @@
         text-align: right; white-space: nowrap;
     }
     td.ind { padding-left: 20px; }
-    tr.cat td { background: var(--surface-2); font-weight: 700; color: var(--text); white-space: normal; overflow: visible; }
+    tr.cat td { background: none; font-family: var(--font-display); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); padding-top: 14px; white-space: normal; overflow: visible; }
+    /* Mini-barra de presupuesto por categoria (solo visual: real / presupuesto) */
+    .presubar { display: block; height: 3px; background: var(--surface-2); border-radius: 2px; margin-top: 5px; max-width: 140px; }
+    .presubar i { display: block; height: 100%; border-radius: 2px; background: var(--text-dim); }
+    .presubar.ok i { background: var(--pos); }
+    .presubar.warn i { background: var(--warn); }
+    .presubar.bad i { background: var(--neg); }
     input.presup { width: 100%; max-width: 90px; text-align: right; padding: 3px 4px; box-sizing: border-box; }
     .auto-presup { font-size: 0.82rem; color: var(--text-dim); white-space: nowrap; }
     .auto-presup em { font-style: normal; font-size: 0.65rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
