@@ -686,7 +686,7 @@
     .disp-toggle { width: 100%; display: flex; align-items: baseline; gap: 8px; background: none; border: none; padding: 0 0 6px; cursor: pointer; color: var(--text); text-align: left; }
     .disp-toggle .flecha { color: var(--text-dim); font-size: 0.8rem; width: 12px; display: inline-block; }
     .disp-toggle .disp-titulo { font-family: var(--font-display); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
-    .disp-toggle .disp-valor { margin-left: auto; font-family: var(--font-num); font-size: 1.55rem; font-weight: 300; color: var(--text); white-space: nowrap; }
+    .disp-toggle .disp-valor { margin-left: auto; font-family: var(--font-num); font-size: 1.35rem; font-weight: 300; color: var(--text); white-space: nowrap; }
     .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .disp-tabla td { border: none !important; padding: 4px 2px; color: var(--text-dim); }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
@@ -694,17 +694,16 @@
     .disp-tabla .disp-total td { color: var(--text); }
     .disp-tabla .disp-total td strong { color: var(--text); font-size: 0.9rem; }
     .disp-pie { display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: 8px; }
-    .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+    .disp-linea { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 7px 0 7px 20px; border-bottom: 1px solid var(--border); }
     .disp-linea:last-child { border-bottom: none; }
-    .disp-linea span { font-size: 0.84rem; color: var(--text-dim); }
-    .disp-linea strong { font-family: var(--font-num); font-size: 0.92rem; font-weight: 400; white-space: nowrap; }
+    .disp-linea span { font-family: var(--font-display); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+    .disp-linea strong { font-family: var(--font-num); font-size: 1.35rem; font-weight: 300; white-space: nowrap; }
     .disp-linea.ok strong { color: var(--pos); }
     .disp-linea.warn strong { color: var(--warn); }
     .disp-linea.bad strong { color: var(--neg); }
     .disp-nota { font-size: 0.76rem; color: var(--text-dim); margin: 8px 0 0; }
     .disp-nota a { color: var(--accent); }
     .deuda-panel { border: 1px solid transparent; border-left: 3px solid var(--text-dim); background: var(--surface); border-radius: 0 8px 8px 0; padding: 12px 14px; margin: 0 0 16px; }
-    .deuda-panel .disp-valor { font-size: 1.2rem; }
     .deuda-panel.ok { border-left-color: var(--pos); }
     .deuda-panel.warn { border-left-color: var(--warn); }
     .deuda-panel.ok .disp-total td strong { color: var(--pos); }
@@ -769,12 +768,14 @@
     .usd { color: var(--text-dim); font-size: 0.85em; }
     .disp-usd td { color: var(--text-dim); }
     .disp-usdrow span, .disp-usdrow strong { color: var(--text-dim); font-weight: 600; }
+    .disp-usdrow strong { font-size: 0.9rem; font-weight: 400; }
     /* "Gasto total del mes" como toggle: mismo look de .disp-linea, pero clickeable
        (reset de estilos de <button>) y con flechita, igual patrón que "Ingreso
        disponible" de arriba. El detalle (Gasto real / Ahorro) sale en .disp-tabla,
        sin semáforo por fila — igual criterio visual que el detalle de Ingreso disponible. */
     .disp-linea-btn { width: 100%; background: none; border: none; padding: 7px 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
-    .flecha-mini { color: var(--text-dim); font-size: 0.75rem; margin-right: 2px; }
+    .disp-linea.disp-linea-btn { padding-left: 0; }
+    .flecha-mini { color: var(--text-dim); font-size: 0.75rem; width: 12px; display: inline-block; margin-right: 8px; letter-spacing: 0; }
     .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
     .usd-item { white-space: nowrap; }
     .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
