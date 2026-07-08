@@ -55,7 +55,8 @@
     // Aviso de backup: null = no mostrar; -1 = nunca exportó; >0 = días sin exportar
     let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
-    let pasos = $state<{ ingreso: boolean; gasto: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean } | null>(null);
+    let pasos = $state<{ ingreso: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean; fijos: boolean; ingresosFijos: boolean } | null>(null);
+    let pasosAbierto = $state(false); // desplegable del checklist (colapsado por defecto)
     let rango = $state('');
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
@@ -357,11 +358,13 @@
         // sembrada (Genérica), así que contar tarjetas siempre daría "hecho".
         const catVisto = (await query("SELECT valor FROM meta WHERE clave='paso_categorias'")) as any[];
         const tarjVisto = (await query("SELECT valor FROM meta WHERE clave='paso_tarjeta'")) as any[];
-        const ng = (await query('SELECT COUNT(*) AS n FROM gasto WHERE perfil_id=1')) as any[];
         const ni = (await query('SELECT COUNT(*) AS n FROM ingreso WHERE perfil_id=1')) as any[];
+        const nf = (await query('SELECT COUNT(*) AS n FROM suscripcion WHERE perfil_id=1')) as any[];
+        const nif = (await query('SELECT COUNT(*) AS n FROM ingreso_fijo WHERE perfil_id=1')) as any[];
         // 'instalar' se autocompleta si la app ya corre instalada (standalone).
-        const p = { ingreso: ni[0].n > 0, gasto: ng[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0, instalar: pwa.standalone };
-        if (p.ingreso && p.gasto && p.categorias && p.tarjeta && p.instalar) return; // todo hecho: no molestar
+        // 'ingreso' ya no se muestra como paso: solo alimenta el halo de "Cargar ingreso".
+        const p = { ingreso: ni[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0, instalar: pwa.standalone, fijos: nf[0].n > 0, ingresosFijos: nif[0].n > 0 };
+        if (p.categorias && p.instalar && p.fijos && p.ingresosFijos && p.tarjeta) return; // setup completo: no molestar
         pasos = p;
     }
 
@@ -473,23 +476,23 @@
     <h1>Cuenta Corriente</h1>
     <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares recurrentes (fijos, cuotas) entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
 </div>
-{#if nombre}<p class="saludo">Hola, {nombre}</p>{/if}
+{#if nombre}<p class="saludo">Hola, {nombre}!{#if pasos}<button class="saludo-link" onclick={() => (pasosAbierto = !pasosAbierto)} aria-expanded={pasosAbierto}>{pasosAbierto ? '▾' : '▸'} Aprendé a aprovechar la app al máximo</button>{/if}</p>{/if}
 
-{#if pasos}
+{#if pasos && pasosAbierto}
     <div class="pasos">
         <div class="pasos-top">
-            <strong>Cómo aprovechar la app al máximo</strong>
-            <button class="pasos-cerrar" onclick={ocultarPasos} title="Ocultar" aria-label="Ocultar">✕</button>
+            <strong>Checklist de configuración</strong>
+            <button class="pasos-cerrar" onclick={ocultarPasos} title="No mostrar más" aria-label="No mostrar más">✕</button>
         </div>
-        <a href="/carga-ingresos" class:hecho={pasos.ingreso}>{pasos.ingreso ? '✓' : '①'} Cargá tu primer ingreso</a>
-        <a href="/gastos" class:hecho={pasos.gasto}>{pasos.gasto ? '✓' : '②'} Cargá tu primer gasto</a>
-        <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '③'} Revisá y ajustá tus categorías</a>
-        <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '④'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
+        <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '①'} Revisá y ajustá tus categorías</a>
         {#if pasos.instalar}
             <span class="paso-done">✓ Instalá la app</span>
         {:else}
-            <button class="paso-btn" onclick={instalarDesdeChecklist}>⑤ Instalá la app en tu teléfono</button>
+            <button class="paso-btn" onclick={instalarDesdeChecklist}>② Instalá la app en tu teléfono</button>
         {/if}
+        <a href="/suscripciones" class:hecho={pasos.fijos}>{pasos.fijos ? '✓' : '③'} Cargá tus gastos fijos</a>
+        <a href="/ingresos-fijos" class:hecho={pasos.ingresosFijos}>{pasos.ingresosFijos ? '✓' : '④'} Cargá tus ingresos fijos</a>
+        <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '⑤'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
     </div>
 {/if}
 
@@ -670,7 +673,9 @@
        nativo (dropdown), pero el usuario ve el texto formateado de abajo. */
     .periodo-overlay { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
-    .saludo { font-size: 0.9rem; color: var(--accent); font-weight: 600; margin: 2px 0 14px; }
+    .saludo { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; font-family: var(--font-display); font-size: 1.15rem; color: var(--text); font-weight: 600; margin: 2px 0 14px; }
+    .saludo-link { background: none; border: none; padding: 0; color: var(--accent); font-size: 0.84rem; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; }
+    .saludo-link:hover { text-decoration: underline; }
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 
     /* Tarjetas de resumen del período */
