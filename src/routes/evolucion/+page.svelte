@@ -139,12 +139,6 @@
 {:else if snaps.length < 2}
 	<p>Necesitás al menos 2 fotos para ver evolución.</p>
 {:else}
-	<div class="periodos">
-		{#each periodos as [k, lbl]}
-			<button class:activo={periodo === k} onclick={() => (periodo = k as any)}>{lbl}</button>
-		{/each}
-	</div>
-
 	<div class="resumen">
 		<div class="card big"><span>TWR del período</span><strong class={twrVentana >= 0 ? 'pos' : 'neg'}>{pct(twrVentana)}</strong></div>
 		<div class="card"><span>Valor actual</span><strong>{usd(actual.valor_usd)}</strong></div>
@@ -167,6 +161,12 @@
 	{:else}
 		<p class="nota">No hay suficientes fotos en este período para graficar.</p>
 	{/if}
+
+	<div class="periodos">
+		{#each periodos as [k, lbl]}
+			<button class:activo={periodo === k} onclick={() => (periodo = k as any)}>{lbl}</button>
+		{/each}
+	</div>
 
 	<h2>Ganancia realizada por mes (USD)</h2>
 	{#if realizadoMes.length}
@@ -196,7 +196,7 @@
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
 	.botones { display: flex; gap: 8px; }
 	.msg { font-weight: 600; margin: 0; }
-	.periodos { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 12px; }
+	.periodos { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 4px; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }
 	.card.big strong { font-size: 1.5rem; }
