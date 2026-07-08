@@ -505,7 +505,7 @@
 
 <div class="accesos">
     <a href="/gastos" class="btn btn-primary">➕ Cargar gasto</a>
-    <a href="/carga-ingresos" class="btn btn-primary">➕ Cargar ingreso</a>
+    <a href="/carga-ingresos" class="btn btn-primary" class:pulsa={pasos !== null && !pasos.ingreso}>➕ Cargar ingreso</a>
     <a href="/suscripciones" class="btn btn-secondary">Gastos Fijos</a>
     <a href="/ingresos-fijos" class="btn btn-secondary">Ingresos Fijos</a>
     <a href="/credito" class="btn btn-secondary">Crédito</a>
@@ -757,6 +757,14 @@
     td.real.none { color: inherit; font-weight: 400; }
     tfoot td { border-top: 2px solid var(--border); font-weight: 600; }
     .accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 4px 0 14px; }
+    /* Halo que respira sobre "Cargar ingreso" hasta el primer ingreso (se apaga
+       solo al cargarlo o al cerrar el checklist de primeros pasos). Solo visual. */
+    .accesos a.pulsa { animation: halo-ingreso 2s ease-in-out infinite; }
+    @keyframes halo-ingreso {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(91, 157, 255, 0); }
+        50% { box-shadow: 0 0 14px 2px rgba(91, 157, 255, 0.55); }
+    }
+    @media (prefers-reduced-motion: reduce) { .accesos a.pulsa { animation: none; } }
     .usd { color: var(--text-dim); font-size: 0.85em; }
     .disp-usd td { color: var(--text-dim); }
     .disp-usdrow span, .disp-usdrow strong { color: var(--text-dim); font-weight: 600; }

@@ -77,7 +77,7 @@
 		if (!nombreNuevo.trim()) { bienvenidaMsg = 'Escribí tu nombre.'; return; }
 		if (!modoNuevo) { bienvenidaMsg = 'Elegí una opción de ingresos.'; return; }
 		creando = true; bienvenidaMsg = '';
-		try { await crearPerfil(nombreNuevo, modoNuevo); location.reload(); }
+		try { await crearPerfil(nombreNuevo, modoNuevo); location.href = '/'; } // salir del onboarding siempre en Cuenta Corriente
 		catch (e: any) { bienvenidaMsg = e?.message ?? String(e); creando = false; }
 	}
 
@@ -92,7 +92,7 @@
 			await importarDatos(file);
 			await setMeta('ultima_importacion', new Date().toISOString());
 			alert('Importación completa. La página se va a recargar.');
-			location.reload();
+			location.href = '/'; // salir del onboarding siempre en Cuenta Corriente
 		} catch (err: any) {
 			alert(err?.message ?? String(err));
 		} finally {
