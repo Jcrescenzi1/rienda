@@ -381,6 +381,15 @@
 	}
 	:global(.modo-btns button.activo), :global(.medio button.activo), :global(.acciones button.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
 
+	/* ===== Ficha de carga estandarizada (una sola definicion para toda la app):
+	   card estilo v2, alineada a la izquierda, 360px, mismo gap de campos ===== */
+	:global(.form) {
+		display: flex; flex-direction: column; gap: 9px;
+		max-width: 360px; margin: 12px 0;
+		background: var(--surface); border: 1px solid transparent; border-radius: 8px;
+		padding: 14px 16px;
+	}
+
 	/* Links de navegacion / texto */
 	:global(.btn-volver) { display: inline-block; background: none; border: none; cursor: pointer; padding: 0; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
 	:global(.btn-volver:hover) { text-decoration: underline; }

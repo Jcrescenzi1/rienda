@@ -229,7 +229,6 @@
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
-	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }

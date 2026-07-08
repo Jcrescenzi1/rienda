@@ -348,7 +348,6 @@
 
 <style>
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-    .form { display: flex; flex-direction: column; gap: 10px; max-width: 360px; margin: 0 auto; }
     label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
     input, select { padding: 7px; font-size: 1rem; }
     .medio { display: flex; gap: 8px; }

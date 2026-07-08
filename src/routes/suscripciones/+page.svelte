@@ -336,9 +336,8 @@
 	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
 	.form-panel summary::-webkit-details-marker { display: none; }
 	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
-	.form-panel .form { padding: 12px 14px; }
-	.form { display: flex; flex-direction: column; gap: 8px; max-width: 340px; }
-	.form.edit { border: 1px solid var(--accent); border-radius: 8px; padding: 12px; background: var(--surface); }
+	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+	.form.edit { border-color: var(--accent); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
 	input.mini { width: 110px; padding: 3px 5px; display: inline-block; }
