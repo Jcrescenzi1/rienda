@@ -110,6 +110,7 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
+	<div class="tabla-scroll">
 	<table>
 		<thead><tr><th>Activo</th><th>Tipo</th><th>Moneda</th><th>Exposición</th><th>Símbolo data912</th><th class="num">Precio fuente</th><th class="num">Precio guardado</th></tr></thead>
 		<tbody>
@@ -159,6 +160,7 @@
 			{#if activos.length === 0}<tr><td colspan="7" class="vacio">No tenés activos cargados.</td></tr>{/if}
 		</tbody>
 	</table>
+	</div>
 	<p class="nota">El precio se guarda en la moneda que implica el símbolo. Si "Precio fuente" dice <span class="bad">sin match</span>, revisá el símbolo (mayúsculas, sufijo D/C). Nombre y moneda se guardan al salir del campo; <strong>cambiar la moneda reinterpreta los precios de ese activo en la nueva moneda</strong>.</p>
 {/if}
 

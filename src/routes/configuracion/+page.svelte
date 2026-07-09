@@ -240,6 +240,7 @@
 					<select bind:value={ntTipo}><option value="credito">Crédito</option><option value="debito">Débito</option></select>
 					<button class="btn btn-primary" onclick={crearTar}>+ Agregar</button>
 				</div>
+				<div class="tabla-scroll">
 				<table>
 					<thead><tr><th>Nombre</th><th>Proveedor</th><th>Tipo</th><th class="num">Usos</th><th></th></tr></thead>
 					<tbody>
@@ -269,6 +270,7 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 			</div>
 		{/if}
 	</section>
@@ -283,6 +285,7 @@
 					<input bind:value={nuevaCat} placeholder="Nueva categoría" onkeydown={(e) => e.key === 'Enter' && crearCat()} />
 					<button class="btn btn-primary" onclick={crearCat}>+ Agregar</button>
 				</div>
+				<div class="tabla-scroll">
 				<table>
 					<thead><tr><th>Nombre</th><th class="num">Gastos</th><th></th></tr></thead>
 					<tbody>
@@ -306,6 +309,7 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 				<p class="nota">Renombrar no afecta los gastos ya cargados. Solo se puede eliminar lo que no tenga registros asociados.</p>
 			</div>
 		{/if}
@@ -321,6 +325,7 @@
 					<input bind:value={nuevaSub} placeholder="Nueva subcategoría" onkeydown={(e) => e.key === 'Enter' && crearSub()} />
 					<button class="btn btn-primary" onclick={crearSub}>+ Agregar</button>
 				</div>
+				<div class="tabla-scroll">
 				<table>
 					<thead><tr><th>Nombre</th><th class="num">Usos</th><th></th></tr></thead>
 					<tbody>
@@ -344,6 +349,7 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 				<p class="nota">Podés crear o renombrar subcategorías aunque todavía no tengan detalle ni gasto.</p>
 			</div>
 		{/if}
@@ -363,6 +369,7 @@
 					</select>
 					<input placeholder="Buscar detalle…" bind:value={buscador} />
 				</div>
+				<div class="tabla-scroll">
 				<table>
 					<thead><tr><th>Detalle</th><th>Subcategoría</th></tr></thead>
 					<tbody>
@@ -391,6 +398,7 @@
 						{/each}
 					</tbody>
 				</table>
+				</div>
 			</div>
 		{/if}
 	</section>

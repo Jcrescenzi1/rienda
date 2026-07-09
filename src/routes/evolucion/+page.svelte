@@ -170,6 +170,7 @@
 
 	<h2>Ganancia realizada por mes (USD)</h2>
 	{#if realizadoMes.length}
+		<div class="tabla-scroll">
 		<table class="chica">
 			<thead><tr><th>Mes</th><th class="num">Realizado</th></tr></thead>
 			<tbody>
@@ -178,6 +179,7 @@
 				{/each}
 			</tbody>
 		</table>
+		</div>
 	{:else}
 		<p class="nota">Todavía no hay ventas registradas.</p>
 	{/if}

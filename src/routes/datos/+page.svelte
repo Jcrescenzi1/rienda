@@ -185,6 +185,7 @@
 	{#if comparando && fechasBackup}
 		<div class="comparacion">
 			<h2>Comparación antes de restaurar</h2>
+			<div class="tabla-scroll">
 			<table>
 				<thead><tr><th></th><th>Tu base actual</th><th>La copia</th></tr></thead>
 				<tbody>
@@ -204,6 +205,7 @@
 					</tr>
 				</tbody>
 			</table>
+			</div>
 
 			{#if !fechasBackup.tieneMeta}
 				<p class="aviso">Esta copia es de una versión anterior y no tiene información de fechas, así que no se puede comparar. Revisá bien antes de continuar.</p>
@@ -233,6 +235,7 @@
 			</div>
 			<details class="subsec">
 				<summary>Detalle de fechas</summary>
+				<div class="tabla-scroll">
 				<table class="fechas">
 					<tbody>
 						<tr><td>Última importación</td><td class="val">{fmt(meta.ultima_importacion)}</td></tr>
@@ -240,6 +243,7 @@
 						<tr><td>Última edición de Inversiones</td><td class="val">{fmt(meta.ultima_edicion_inversiones)}</td></tr>
 					</tbody>
 				</table>
+				</div>
 				<p class="nota">"Última edición" = cuándo cargaste o modificaste datos, por módulo. Actualizar cotizaciones no cuenta.</p>
 			</details>
 		</div>

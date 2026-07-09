@@ -283,8 +283,8 @@
 	:global(h1) { color: var(--text); font-family: var(--font-display); font-weight: 600; letter-spacing: -0.01em; }
 	/* Título con "?" de guía al lado; el cuadro se despliega debajo a lo ancho */
 	/* Regla vertical (elemento firma del refresh v2) sobre el titulo de cada pantalla */
-	:global(.titulo-guia) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 21px 0 12px; border-left: 3px solid var(--accent); padding-left: 14px; }
-	:global(.titulo-guia h1) { margin: 0; }
+	:global(.titulo-guia) { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 14px 0 12px; border-left: 3px solid var(--accent); padding-left: 14px; }
+	:global(.titulo-guia h1) { margin: 0; line-height: 1.15; }
 	:global(h2), :global(h3) { color: var(--text); font-family: var(--font-display); font-weight: 600; }
 	/* Regla firma reutilizable para encabezados de seccion */
 	:global(.con-regla) { border-left: 3px solid var(--accent); padding-left: 12px; }
@@ -298,6 +298,10 @@
 	:global(thead th) { font-family: var(--font-display); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.09em; border-bottom: 1px solid var(--text-dim) !important; }
 	:global(tbody tr:hover) { background: rgba(255, 255, 255, 0.025); }
 	:global(tfoot td) { border-top: 2px solid var(--text-dim) !important; border-bottom: none !important; }
+	/* Contenedor estandar para tablas anchas: scroll horizontal DENTRO del marco,
+	   sin arrastrar el ancho del resto de la pagina. Se aplica envolviendo la tabla
+	   en <div class="tabla-scroll">. */
+	:global(.tabla-scroll) { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 	/* Item 4: dígitos alineados en columnas de cifras */
 	:global(table), :global(.num), :global(.card strong), :global(.disp-tabla), :global(.reg-monto), :global(.ficha-monto) { font-variant-numeric: tabular-nums; }
 	/* Cifras en mono (celdas numericas y montos destacados) */
@@ -417,7 +421,7 @@
 	.marca-menu { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--text); padding: 0 8px 4px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.hamb {
 		position: fixed;
-		top: 16px;
+		top: 35px;
 		right: 16px;
 		z-index: 10;
 		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);

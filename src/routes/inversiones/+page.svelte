@@ -326,6 +326,7 @@
 	{#if realizadoPorAnio.length}
 		<details class="por-anio">
 			<summary>Ganancia realizada por año (ciclos cerrados)</summary>
+			<div class="tabla-scroll">
 			<table class="chica">
 				<thead><tr><th>Año</th><th class="num">Realizado (USD)</th></tr></thead>
 				<tbody>
@@ -334,6 +335,7 @@
 					{/each}
 				</tbody>
 			</table>
+			</div>
 		</details>
 	{/if}
 
@@ -363,6 +365,7 @@
 		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · {preciosMsg}{/if}</span>
 	</div>
+	<div class="tabla-scroll">
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th><th class="num hl">Result. Real</th></tr></thead>
@@ -384,6 +387,7 @@
 			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
+	</div>
 	<details class="nota-colapsable">
 		<summary>Descripción de la visual: Cartera actual</summary>
 		<p class="nota">
@@ -439,6 +443,7 @@
 	{/if}
 
 	<h2>Detalle del mix — ranking de concentración</h2>
+	<div class="tabla-scroll">
 	<table class="mix">
 		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th>Exposición</th><th class="num">% del total</th></tr></thead>
 		<tbody>
@@ -454,6 +459,7 @@
 			{#if detalleMix.length === 0}<tr><td colspan="5" class="vacio">Sin posiciones todavía.</td></tr>{/if}
 		</tbody>
 	</table>
+	</div>
 	<details class="nota-colapsable">
 		<summary>Descripción de la visual: Detalle del mix</summary>
 		<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo. La columna <strong>Exposición</strong> muestra a qué tipo de cambio sigue cada fila (Dólar / CER / Peso) — sirve para ver en qué se compone el desglose del gráfico "Exposición al tipo de cambio" de arriba.</p>

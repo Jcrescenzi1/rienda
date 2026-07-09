@@ -592,7 +592,7 @@
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
             <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
             <span class="disp-titulo">Crédito Neto del Mes Siguiente</span>
-            <span class="disp-valor" class:alta={deudaAlta}>{peso(descubierto)}{#if deudaSigUsd > 0} · {usd(deudaSigUsd)}{/if}</span>
+            <span class="disp-valor" class:alta={deudaAlta}><span class="dv-ars">{peso(descubierto)}</span>{#if deudaSigUsd > 0}<span class="dv-usd">{usd(deudaSigUsd)}</span>{/if}</span>
         </button>
         {#if deudaAbierto}
             <table class="disp-tabla disp-detalle">
@@ -607,6 +607,7 @@
     </div>
 
     <h2>Consolidado por categoría</h2>
+    <div class="tabla-scroll">
     <table>
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
@@ -625,8 +626,10 @@
                 <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
+    </div>
 
     <h2>Detalle por subcategoría</h2>
+    <div class="tabla-scroll">
     <table>
         <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
@@ -658,6 +661,7 @@
                 <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
         </tfoot>
     </table>
+    </div>
 {/if}
 
 <style>
@@ -707,6 +711,8 @@
     .deuda-panel.warn { border-left-color: var(--warn); }
     .deuda-panel.ok .disp-valor { color: var(--pos); }
     .deuda-panel .disp-valor.alta { color: var(--warn); }
+    /* Credito neto: ARS y USD en lineas separadas, alineadas a la derecha */
+    .deuda-panel .disp-valor { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 
     /* Checklist de primeros pasos */
     .pasos {
