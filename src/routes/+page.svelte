@@ -507,8 +507,8 @@
 {/if}
 
 <div class="accesos">
-    <a href="/gastos" class="btn btn-primary">➕ Cargar gasto</a>
-    <a href="/carga-ingresos" class="btn btn-primary" class:pulsa={pasos !== null && !pasos.ingreso}>➕ Cargar ingreso</a>
+    <a href="/gastos" class="btn btn-primary">Gastos</a>
+    <a href="/carga-ingresos" class="btn btn-primary" class:pulsa={pasos !== null && !pasos.ingreso}>Ingresos</a>
     <a href="/suscripciones" class="btn btn-secondary">Gastos Fijos</a>
     <a href="/ingresos-fijos" class="btn btn-secondary">Ingresos Fijos</a>
     <a href="/credito" class="btn btn-secondary">Crédito</a>

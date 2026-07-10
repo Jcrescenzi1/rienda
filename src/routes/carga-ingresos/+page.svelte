@@ -14,6 +14,7 @@
 
 	// Form
 	let editandoId = $state<number | null>(null);
+	let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
 	let fecha = $state(hoyISO());
 	let monto = $state('');
 	let moneda = $state('ARS');
@@ -86,6 +87,7 @@
 		detalle = i.detalle ?? '';
 		periodoIngreso = i.periodo ?? periodoRegla(i.fecha, i.categoria);
 		mensaje = '';
+		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
@@ -152,12 +154,13 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>{editandoId ? 'Editar ingreso' : 'Carga de Ingresos'}</h1>
+	<h1>Ingresos</h1>
 	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
 </div>
 <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
-<h2>{editandoId ? 'Editar ingreso' : 'Cargar ingreso'}</h2>
+<details class="form-panel" bind:open={formAbierto}>
+	<summary>{editandoId ? '✏ Editar ingreso' : '➕ Cargar ingreso'}</summary>
 <div class="form">
 	{#if editandoId}<p class="editando">✏ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} onchange={() => (periodoTocado = true)} /></label>
@@ -188,6 +191,7 @@
 	<button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar ingreso' : 'Guardar ingreso'}</button>
 	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
+</details>
 
 <h2>Ingresos cargados</h2>
 <div class="filtros">
@@ -233,6 +237,11 @@
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
+	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
+	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
+	.form-panel summary::-webkit-details-marker { display: none; }
+	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
+	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
 
 	/* Filtros de la lista */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }

@@ -300,7 +300,7 @@
 	<p>Cargando…</p>
 {:else}
 	<div class="topbar">
-		<a href="/carga-inversiones" class="btn btn-primary">➕ Cargar movimiento</a>
+		<a href="/carga-inversiones" class="btn btn-primary">Movimientos</a>
 		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Cartera</button>
 	</div>
 	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}

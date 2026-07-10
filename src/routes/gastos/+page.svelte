@@ -31,6 +31,7 @@
     let subcatNuevaNombre = $state('');
 
     let editandoId = $state<number | null>(null);
+    let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
     let mensaje = $state('');
 
     async function cargarBase() {
@@ -160,6 +161,7 @@
         cuotas = g.cuotas ?? 1;
         mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : mesActual();
         mensaje = '';
+        formAbierto = true;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
@@ -241,11 +243,13 @@
 </script>
 
 <div class="titulo-guia">
-    <h1>{editandoId ? 'Editar gasto' : 'Cargar gasto'}</h1>
+    <h1>Gastos</h1>
     <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'); la primera vez le asignás subcategoría y después se clasifica solo. El gasto se cuenta entero el día que lo hacés —también el crédito—; si pagaste en cuotas, indicá tarjeta y cuotas y la app reparte el vencimiento mes a mes." verMas />
 </div>
 <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
+<details class="form-panel" bind:open={formAbierto}>
+    <summary>{editandoId ? '✏ Editar gasto' : '➕ Cargar gasto'}</summary>
 <div class="form">
     {#if editandoId}<p class="editando">✏ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
@@ -309,6 +313,7 @@
     <button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
     {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 </div>
+</details>
 
 <h2>Últimos gastos</h2>
 <div class="filtros">
@@ -356,6 +361,11 @@
     .hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
     .msg { font-weight: 600; color: var(--text); }
     .editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
+    .form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
+    .form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
+    .form-panel summary::-webkit-details-marker { display: none; }
+    .form-panel[open] summary { border-bottom: 1px solid var(--border); }
+    .form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
 
     /* Filtros de la lista */
     .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
