@@ -1,7 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { parseNum, formatNum, soloNum } from '$lib/format';
+    import { parseNum, formatNum, soloNum, mesActual } from '$lib/format';
+    import { periodoActivoCC } from '$lib/periodo';
     import Guia from '$lib/Guia.svelte';
 
     type Celda = { ars: number; usd: number };
@@ -47,7 +48,11 @@
             else { cell.ars += f.cuota; tcell.ars += f.cuota; }
             (det[f.mes] ??= []).push(f);
         }
-        meses = [...mSet].sort();
+        // Ancla: mismo helper que /suscripciones e /ingresos-fijos, mismo fallback.
+        // Se muestran solo el período activo en adelante (sin tope superior); los
+        // pasados dejan de ser alcanzables desde esta pantalla.
+        const ancla = periodoActivoCC() ?? mesActual();
+        meses = [...mSet].filter((m) => m >= ancla).sort();
         tarjetas = [...tSet].sort();
         matriz = mat;
         totalMes = tot;
