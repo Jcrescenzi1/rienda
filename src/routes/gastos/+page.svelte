@@ -3,6 +3,7 @@
     import { query } from '$lib/db/client';
     import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
+    import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -246,7 +247,10 @@
     <h1>Gastos</h1>
     <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'); la primera vez le asignás subcategoría y después se clasifica solo. El gasto se cuenta entero el día que lo hacés —también el crédito—; si pagaste en cuotas, indicá tarjeta y cuotas y la app reparte el vencimiento mes a mes." verMas />
 </div>
-<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
+<div class="cr-nav">
+    <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
+    <TabsCorrRec activo="corriente" corriente="/gastos" recurrente="/suscripciones" />
+</div>
 
 <details class="form-panel" bind:open={formAbierto}>
     <summary>{editandoId ? '✏ Editar gasto' : '➕ Cargar gasto'}</summary>
@@ -386,4 +390,9 @@
     .ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
     .ficha-acc { white-space: nowrap; flex-shrink: 0; }
     .vacio { color: var(--text-dim); font-style: italic; }
+
+	/* Nav superior de Corriente/Recurrente: volver + tabs (+ selector de periodo si aplica), apilados */
+	.cr-nav { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 4px 0 14px; }
+	.cr-nav :global(.btn-volver) { margin: 0; }
+	.cr-nav :global(.sel) { margin: 0; }
 </style>

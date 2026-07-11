@@ -4,6 +4,7 @@
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { periodoRegla, periodoActivoCC } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
+	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
 	// Arranca en el período activo de Cuenta Corriente (si venís de la Home); si no,
 	// en el mes actual. Solo default inicial; el cambio acá no vuelve a la Home.
@@ -167,13 +168,14 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Ingresos Fijos</h1>
+	<h1>Ingresos</h1>
 	<Guia clave="ingresos-fijos" texto="Tus ingresos recurrentes (sueldo, alquiler, renta, freelance fijo). Solo lo que cobrás todos los meses. 'Registrar Ingreso' lo convierte en un ingreso real del mes elegido, con su categoría y tipo. Si tu sueldo (Principal + Regular) es fijo, registralo desde acá y no lo cargues además a mano el mismo mes." />
 </div>
-
-<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
-
-<label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+<div class="cr-nav">
+	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
+	<TabsCorrRec activo="recurrente" corriente="/carga-ingresos" recurrente="/ingresos-fijos" />
+	<label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+</div>
 
 <div class="fijo-total">
 	<span>Ingreso fijo del mes</span>
@@ -275,7 +277,7 @@
 	.msg { color: var(--text-dim); font-weight: 600; }
 
 	.grupos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-	.grupo-cat { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 700; margin-top: 10px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+	.grupo-cat { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 700; margin-top: 10px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
 	.ficha.inactiva { opacity: 0.45; }
 	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
@@ -286,4 +288,9 @@
 	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); margin-top: 5px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 	.chip { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; font-size: 0.76rem; }
 	.ficha-estado { margin-top: 8px; }
+
+	/* Nav superior de Corriente/Recurrente: volver + tabs (+ selector de periodo si aplica), apilados */
+	.cr-nav { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 4px 0 14px; }
+	.cr-nav :global(.btn-volver) { margin: 0; }
+	.cr-nav :global(.sel) { margin: 0; }
 </style>

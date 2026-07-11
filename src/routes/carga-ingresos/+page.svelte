@@ -2,6 +2,7 @@
 	import { query, queryBatch } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
+	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import { periodoRegla } from '$lib/periodo';
 
 	let ingresos = $state<any[]>([]);
@@ -157,7 +158,10 @@
 	<h1>Ingresos</h1>
 	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
 </div>
-<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
+<div class="cr-nav">
+	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
+	<TabsCorrRec activo="corriente" corriente="/carga-ingresos" recurrente="/ingresos-fijos" />
+</div>
 
 <details class="form-panel" bind:open={formAbierto}>
 	<summary>{editandoId ? '✏ Editar ingreso' : '➕ Cargar ingreso'}</summary>
@@ -264,4 +268,9 @@
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
 	.vacio { color: var(--text-dim); font-style: italic; }
 	.msg { font-weight: 600; color: var(--text); }
+
+	/* Nav superior de Corriente/Recurrente: volver + tabs (+ selector de periodo si aplica), apilados */
+	.cr-nav { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 4px 0 14px; }
+	.cr-nav :global(.btn-volver) { margin: 0; }
+	.cr-nav :global(.sel) { margin: 0; }
 </style>

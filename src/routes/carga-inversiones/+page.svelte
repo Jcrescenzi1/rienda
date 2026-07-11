@@ -18,12 +18,6 @@
 
 	// Panel de carga colapsable (patron estandar: no autocierra al guardar).
 	let formAbierto = $state(false);
-	// Edicion: id + tipo de origen, para enrutar el UPDATE a la tabla correcta.
-	// Convertir NO es editable (solo borrado).
-	let editId = $state<number | null>(null);
-	let editTipo = $state<string | null>(null);
-	const editando = $derived(editId !== null);
-
 	// Formulario
 	let fAccion = $state<'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir'>('Compra');
 	let fCuenta = $state(''); let fCuentaNueva = $state(''); let fActivo = $state('');
@@ -115,47 +109,13 @@
 	}
 
 	function resetForm() {
-		editId = null; editTipo = null;
 		fUnidades = ''; fMonto = ''; fRenta = ''; fAmort = ''; fTcRenta = '';
 		fCuentaNueva = ''; fActivo = ''; naTicker = ''; naNombre = '';
 		fMsg = '';
 	}
 
-	// Cambio de tipo desde la grilla: si el nuevo tipo es de otra tabla que la
-	// fila en edicion, salgo del modo edicion (evita guardar en la tabla equivocada).
-	function grupoDe(x: string) { return x === 'Compra' || x === 'Venta' ? 'trade' : x === 'Renta' ? 'renta' : 'caja'; }
 	function setAccion(ac: 'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir') {
-		if (editId !== null && editTipo && grupoDe(ac) !== grupoDe(editTipo)) { editId = null; editTipo = null; }
 		fAccion = ac;
-	}
-
-	// Precarga el panel con una fila existente para editar. Convertir no entra aca.
-	function iniciarEdit(row: any) {
-		fMsg = '';
-		editId = row.id; editTipo = row.tipo;
-		fFecha = row.fecha;
-		if (row.tipo === 'Compra' || row.tipo === 'Venta') {
-			fAccion = row.tipo;
-			fCuenta = row.cuenta_id != null ? String(row.cuenta_id) : '';
-			fActivo = row.activo_id != null ? String(row.activo_id) : '';
-			fUnidades = formatNum(row.unidades);
-			fPago = (row.moneda_pago ?? 'USD') as 'ARS' | 'USD';
-			fMonto = row.monto_pago != null ? formatNum(row.monto_pago) : '';
-			if (row.valor_dolar != null) fValorDolar = formatNum(row.valor_dolar, 2);
-		} else if (row.tipo === 'Renta') {
-			fAccion = 'Renta';
-			fActivo = row.activo_id != null ? String(row.activo_id) : '';
-			fMoneda = row.moneda;
-			fRenta = row.monto_renta ? formatNum(row.monto_renta) : '';
-			fAmort = row.monto_amort ? formatNum(row.monto_amort) : '';
-			fTcRenta = row.valor_dolar != null ? formatNum(row.valor_dolar, 2) : '';
-		} else if (row.tipo === 'Ingreso' || row.tipo === 'Retiro') {
-			fAccion = row.tipo;
-			fMoneda = row.moneda;
-			fMonto = formatNum(Math.abs(row.monto));
-		}
-		formAbierto = true;
-		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
@@ -175,15 +135,9 @@
 				let vd = Number.isFinite(tcManual) && tcManual > 0 ? tcManual : (await mepDeFecha(fFecha)) ?? NaN;
 				if (necesitaVd && !(Number.isFinite(vd) && vd > 0)) return (fMsg = 'No hay cotización del dólar para esa fecha; cargá el tipo de cambio');
 				const vdVal = necesitaVd && Number.isFinite(vd) ? vd : null;
-				if (editId !== null && editTipo === 'Renta') {
-					await query('UPDATE renta_activo SET activo_id=?, fecha=?, moneda=?, monto_renta=?, monto_amort=?, valor_dolar=? WHERE id=? AND perfil_id=1',
-						[Number(fActivo), fFecha, fMoneda, renta, amort, vdVal, editId]);
-					fMsg = 'Renta y amortización actualizada ✅';
-				} else {
-					await query('INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
-						[Number(fActivo), fFecha, fMoneda, renta, amort, vdVal]);
-					fMsg = 'Renta y amortización guardada ✅';
-				}
+				await query('INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
+					[Number(fActivo), fFecha, fMoneda, renta, amort, vdVal]);
+				fMsg = 'Renta y amortización guardada ✅';
 				resetForm();
 				await cargarBase(); await cargarActivos();
 				return;
@@ -208,11 +162,9 @@
 					activoId = r[0].id; monA = naMoneda;
 				} else { activoId = Number(fActivo); monA = monedaActivo; }
 				if (fAccion === 'Venta') {
-					// En edicion, excluyo la propia fila del neto disponible.
-					const editVenta = editId !== null && editTipo === 'Venta';
 					const neto = (await query(
-						"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?" + (editVenta ? ' AND id<>?' : ''),
-						editVenta ? [activoId, editId] : [activoId])) as any[];
+						"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
+						[activoId])) as any[];
 					if (neto[0].n + 1e-9 < u) return (fMsg = `No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
 				}
 				const montoPago = monto;
@@ -222,31 +174,20 @@
 					montoActivo = monA === 'USD' ? monto / vdN : monto * vdN;
 				}
 				const precio = montoActivo / u;
-				if (editId !== null && (editTipo === 'Compra' || editTipo === 'Venta')) {
-					await query('UPDATE transaccion SET activo_id=?, cuenta_inversion_id=?, fecha=?, operacion=?, unidades=?, precio=?, valor_dolar=?, moneda_pago=?, monto_pago=? WHERE id=? AND perfil_id=1',
-						[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago, editId]);
-					fMsg = `${fAccion} actualizada ✅`;
-				} else {
-					await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
-						[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago]);
-					// Actualiza el precio de mercado solo si esta operacion es igual o mas
-					// nueva que la ultima actualizacion (una carga retroactiva no lo pisa).
-					const pa = (await query('SELECT precio_actualizado_en FROM activo WHERE id=? AND perfil_id=1', [activoId])) as any[];
-					const ultAct = pa[0]?.precio_actualizado_en;
-					if (!ultAct || fFecha >= ultAct) {
-						await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [precio, fFecha, activoId]);
-					}
-					fMsg = `${fAccion} guardada ✅`;
+				await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
+					[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago]);
+				// Actualiza el precio de mercado solo si esta operacion es igual o mas
+				// nueva que la ultima actualizacion (una carga retroactiva no lo pisa).
+				const pa = (await query('SELECT precio_actualizado_en FROM activo WHERE id=? AND perfil_id=1', [activoId])) as any[];
+				const ultAct = pa[0]?.precio_actualizado_en;
+				if (!ultAct || fFecha >= ultAct) {
+					await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [precio, fFecha, activoId]);
 				}
+				fMsg = `${fAccion} guardada ✅`;
 			} else if (fAccion === 'Ingreso' || fAccion === 'Retiro') {
 				const signo = fAccion === 'Ingreso' ? 1 : -1;
-				if (editId !== null && (editTipo === 'Ingreso' || editTipo === 'Retiro')) {
-					await query('UPDATE mov_caja SET fecha=?, accion=?, moneda=?, monto=? WHERE id=? AND perfil_id=1', [fFecha, fAccion, fMoneda, signo * monto, editId]);
-					fMsg = `${fAccion} actualizado ✅`;
-				} else {
-					await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto) VALUES (1,?,?,?,?)', [fFecha, fAccion, fMoneda, signo * monto]);
-					fMsg = `${fAccion} de ${fMoneda} guardado ✅`;
-				}
+				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto) VALUES (1,?,?,?,?)', [fFecha, fAccion, fMoneda, signo * monto]);
+				fMsg = `${fAccion} de ${fMoneda} guardado ✅`;
 			} else if (fAccion === 'Convertir') {
 				const vd = vdN;
 				if (!Number.isFinite(vd) || vd <= 0) return (fMsg = 'Valor dólar inválido');
@@ -271,16 +212,7 @@
 			if (!confirm('¿Eliminar esta operación?')) return;
 			await query('DELETE FROM transaccion WHERE id=? AND perfil_id=1', [m.id]);
 		}
-		if (editId === m.id && editTipo === m.tipo) resetForm();
 		await cargarActivos();
-	}
-
-	async function borrarCaja(m: any) {
-		if (!confirm('¿Eliminar este movimiento de caja?')) return;
-		if (m.grupo) await query('DELETE FROM mov_caja WHERE grupo=? AND perfil_id=1', [m.grupo]);
-		else await query('DELETE FROM mov_caja WHERE id=? AND perfil_id=1', [m.id]);
-		if (editId === m.id && (editTipo === 'Ingreso' || editTipo === 'Retiro')) resetForm();
-		await cargarCaja();
 	}
 
 	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
@@ -289,14 +221,13 @@
 
 <div class="titulo-guia">
 	<h1>Movimientos</h1>
-	<Guia clave="carga-inversiones" texto="Registrá compras, ventas, renta/amortización, ingresos/retiros de caja y conversiones. Abajo tenés dos libros: el diario de activos y la caja. Tocá el lápiz de una fila para editarla (Convertir solo se puede borrar)." />
+	<Guia clave="carga-inversiones" texto="Registrá compras, ventas, renta/amortización, ingresos/retiros de caja y conversiones. Abajo tenés dos libros: el diario de activos, donde podés borrar una fila pero no editarla, y la caja, que es de solo lectura una vez cargada." />
 </div>
 <a href="/inversiones" class="btn-volver">← Volver a Inversiones</a>
 
 <details class="form-panel" bind:open={formAbierto}>
-	<summary>{editando ? '✏ Editar movimiento' : '➕ Cargar movimiento'}</summary>
+	<summary>➕ Cargar movimiento</summary>
 <div class="form">
-	{#if editando}<p class="editando">✏ Editando {editTipo} #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<div class="acciones">
 		{#each ['Compra', 'Venta', 'Renta', 'Ingreso', 'Retiro', 'Convertir'] as ac}
 			<button type="button" class:activo={fAccion === ac} onclick={() => setAccion(ac as any)}>{ac === 'Renta' ? 'Renta y Amort.' : ac}</button>
@@ -355,7 +286,7 @@
 			<p class="hint">Entra {money((Number.isFinite(rentaN) ? rentaN : 0) + (Number.isFinite(amortN) ? amortN : 0), fMoneda, 2)} a Líquido {fMoneda} · corrige el resultado del activo (no mueve unidades).</p>
 		{/if}
 	{/if}
-	<button class="btn btn-success" onclick={guardar}>{editando ? 'Guardar cambios' : 'Guardar'}</button>
+	<button class="btn btn-success" onclick={guardar}>Guardar</button>
 	{#if fMsg}<p class="msg">{fMsg}</p>{/if}
 </div>
 </details>
@@ -375,7 +306,7 @@
 
 <div class="fichas">
 	{#each activosLedger as m (m.tipo + '-' + m.id)}
-		<div class="ficha" class:editrow={editId === m.id && editTipo === m.tipo}>
+		<div class="ficha">
 			<div class="ficha-top">
 				<span class="ficha-nombre">{m.nombre} <span class="ficha-tipo">({m.atipo})</span></span>
 				{#if m.tipo === 'Renta'}
@@ -384,7 +315,6 @@
 					<span class="ficha-monto">{money(m.unidades * m.precio, m.moneda)}</span>
 				{/if}
 				<span class="ficha-acc">
-					<button aria-label="Editar" class="lapiz" onclick={() => iniciarEdit(m)} title="Editar">✏</button>
 					<button aria-label="Eliminar" class="del" onclick={() => borrarActivo(m)} title="Eliminar">✕</button>
 				</span>
 			</div>
@@ -408,14 +338,10 @@
 </div>
 <div class="fichas">
 	{#each cajaLedger as m (m.id)}
-		<div class="ficha" class:editrow={editId === m.id && editTipo === m.tipo}>
+		<div class="ficha">
 			<div class="ficha-top">
 				<span class="ficha-nombre">{m.tipo}</span>
 				<span class="ficha-monto {m.monto >= 0 ? 'pos' : 'neg'}">{money(m.monto, m.moneda)}</span>
-				<span class="ficha-acc">
-					{#if m.tipo !== 'Convertir'}<button aria-label="Editar" class="lapiz" onclick={() => iniciarEdit(m)} title="Editar">✏</button>{/if}
-					<button aria-label="Eliminar" class="del" onclick={() => borrarCaja(m)} title="Eliminar">✕</button>
-				</span>
 			</div>
 			<div class="ficha-meta">{fmtFecha(m.fecha)} · {m.moneda}</div>
 		</div>
@@ -434,7 +360,6 @@
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
-	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0 0 4px; }
 
 	/* Panel de carga colapsable (patron estandar, igual que Fijos) */
 	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
@@ -450,7 +375,6 @@
 	/* Fichas (diario de activos + caja) */
 	.fichas { display: flex; flex-direction: column; gap: 8px; }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
-	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
 	.ficha-top { display: flex; align-items: baseline; gap: 10px; }
 	.ficha-nombre { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.ficha-tipo { font-weight: 400; color: var(--text-dim); font-size: 0.82rem; }
