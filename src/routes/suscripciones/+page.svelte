@@ -181,11 +181,11 @@
 			if (editId) {
 				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, editId]);
-				mensaje = 'Gasto fijo actualizado ✅';
+				mensaje = 'Gasto recurrente actualizado ✅';
 			} else {
 				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id) VALUES (1,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId]);
-				mensaje = 'Gasto fijo agregado ✅';
+				mensaje = 'Gasto recurrente agregado ✅';
 			}
 			// Si se eligio subcategoria, se mapea el detalle (reclasifica historial).
 			if (fSubcatId) {
@@ -202,7 +202,7 @@
 	}
 
 	async function eliminar(s: any) {
-		if (!confirm(`¿Eliminar el gasto fijo "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
+		if (!confirm(`¿Eliminar el gasto recurrente "${s.nombre}"? (no borra los gastos ya registrados)`)) return;
 		await query('DELETE FROM suscripcion_registro WHERE suscripcion_id=?', [s.id]);
 		await query('DELETE FROM suscripcion WHERE id=? AND perfil_id=1', [s.id]);
 		if (editId === s.id) resetForm();
@@ -239,7 +239,7 @@
 
 <div class="titulo-guia">
 	<h1>Gastos</h1>
-	<Guia clave="suscripciones" texto="Tus gastos fijos mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
+	<Guia clave="suscripciones" texto="Tus gastos recurrentes mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
 </div>
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
@@ -248,13 +248,13 @@
 </div>
 
 <div class="fijo-total">
-	<span>Fijo del mes</span>
+	<span>Recurrente del mes</span>
 	<strong>{peso(fijoMesARS)}</strong>
-	<span class="fijo-nota">suma de todos los fijos activos (USD al MEP)</span>
+	<span class="fijo-nota">suma de todos los recurrentes activos (USD al MEP)</span>
 </div>
 
 <details class="form-panel" bind:open={formAbierto}>
-	<summary>{editando ? '✏ Editar gasto fijo' : '➕ Agregar gasto fijo'}</summary>
+	<summary>{editando ? '✏ Editar gasto recurrente' : '➕ Agregar gasto recurrente'}</summary>
 <div class="form" class:edit={editando}>
 	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Netflix" /></label>
@@ -272,7 +272,7 @@
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
 		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
 	</div>
-	<p class="form-nota">La subcategoría define en qué línea del presupuesto cae el fijo (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
+	<p class="form-nota">La subcategoría define en qué línea del presupuesto cae este gasto recurrente (se mapea por detalle, igual que un gasto). Cambiarla reclasifica todo el historial con ese detalle.</p>
 </div>
 </details>
 
@@ -319,7 +319,7 @@
 			</div>
 		{/each}
 	{/each}
-	{#if subs.length === 0}<p class="vacio">No hay gastos fijos. Agregá el primero desde “➕ Agregar gasto fijo”, arriba.</p>{/if}
+	{#if subs.length === 0}<p class="vacio">No hay gastos recurrentes. Agregá el primero desde “➕ Agregar gasto recurrente”, arriba.</p>{/if}
 </div>
 {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 

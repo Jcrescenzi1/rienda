@@ -474,7 +474,7 @@
 
 <div class="titulo-guia">
     <h1>Cuenta Corriente</h1>
-    <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares recurrentes (fijos, cuotas) entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
+    <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares de tus gastos/ingresos recurrentes y de cuotas entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
 </div>
 {#if nombre}<p class="saludo">Hola, {nombre}!{#if pasos}<button class="saludo-link" onclick={() => (pasosAbierto = !pasosAbierto)} aria-expanded={pasosAbierto}>{pasosAbierto ? '▾' : '▸'} Aprendé a aprovechar la app al máximo</button>{/if}</p>{/if}
 
@@ -490,8 +490,8 @@
         {:else}
             <button class="paso-btn" onclick={instalarDesdeChecklist}>② Instalá la app en tu teléfono</button>
         {/if}
-        <a href="/suscripciones" class:hecho={pasos.fijos}>{pasos.fijos ? '✓' : '③'} Cargá tus gastos fijos</a>
-        <a href="/ingresos-fijos" class:hecho={pasos.ingresosFijos}>{pasos.ingresosFijos ? '✓' : '④'} Cargá tus ingresos fijos</a>
+        <a href="/suscripciones" class:hecho={pasos.fijos}>{pasos.fijos ? '✓' : '③'} Cargá tus gastos recurrentes</a>
+        <a href="/ingresos-fijos" class:hecho={pasos.ingresosFijos}>{pasos.ingresosFijos ? '✓' : '④'} Cargá tus ingresos recurrentes</a>
         <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '⑤'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
     </div>
 {/if}
@@ -642,7 +642,7 @@
                             {#if f.scid == null}
                                 —
                             {:else if f.autoPresup}
-                                <span class="auto-presup" title="Definido por tus gastos fijos. Se edita en Gastos Fijos, no acá.">{formatNum(f.presup, 0)} <em>fijo</em></span>
+                                <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup, 0)} <em>recurrente</em></span>
                             {:else}
                                 <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup, 0) : ''} placeholder="—"
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />

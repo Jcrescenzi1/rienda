@@ -1,5 +1,6 @@
 <script lang="ts">
-	// Tabs Corriente/Recurrente compartidas entre Gastos↔Gastos Fijos e Ingresos↔Ingresos Fijos.
+	// Tabs Corriente/Recurrente compartidas entre Gastos y Ingresos (la vista "Recurrente"
+	// muestra /suscripciones o /ingresos-fijos, rutas internas sin renombrar).
 	// Navegacion real entre rutas (no estado compartido): cada pestaña es un link a la
 	// ruta correspondiente, y el mismo header se repite en ambas rutas para que se
 	// sienta una sola pantalla con dos vistas. Los deep-links a /suscripciones e

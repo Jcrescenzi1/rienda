@@ -215,7 +215,7 @@
 
 <div class="fichas">
 	{#each ingresos as i (i.id)}
-		<div class="ficha" class:principal={i.categoria === 'Ingreso Principal'} class:editrow={editandoId === i.id}>
+		<div class="ficha" class:destacado={i.categoria === 'Ingreso Principal' && i.tipo === 'Sueldo'} class:editrow={editandoId === i.id}>
 			<div class="ficha-top">
 				<span class="ficha-detalle">{i.detalle ?? '—'}</span>
 				<span class="ficha-monto">{peso(i.monto, i.moneda)}</span>
@@ -258,7 +258,8 @@
 	/* Fichas de ingresos cargados */
 	.fichas { display: flex; flex-direction: column; gap: 8px; }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; border-left: 3px solid transparent; }
-	.ficha.principal { background: rgba(255, 255, 255, 0.04); border-color: var(--text-dim); }
+	/* Elemento firma del sistema de diseño: regla de acento a la izquierda, solo Principal+Regular */
+	.ficha.destacado { border-left-color: var(--accent); }
 	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
 	.ficha-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 	.ficha-detalle { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -30,7 +30,7 @@
 	<h2>Dólares: recurrente vs puntual</h2>
 	<p>Rienda decide el trato del dólar por <strong>recurrente vs puntual</strong>, no por la moneda:</p>
 	<ul>
-		<li><strong>Recurrente</strong> (fijos, cuotas, ingresos recurrentes): se pesifica al dólar MEP y entra a tu flujo en pesos.</li>
+		<li><strong>Recurrente</strong> (gastos e ingresos periódicos, cuotas): se pesifica al dólar MEP y entra a tu flujo en pesos.</li>
 		<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD): sale de tu stock de dólares, queda aparte del cálculo en pesos y se muestra informativo en USD.</li>
 	</ul>
 	<p>El dólar de referencia es el <strong>MEP (bolsa)</strong>, y cada conversión usa el valor del día del propio movimiento (no flota con el dólar de hoy).</p>

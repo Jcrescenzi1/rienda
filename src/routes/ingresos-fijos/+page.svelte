@@ -107,11 +107,11 @@
 			if (editId) {
 				await query('UPDATE ingreso_fijo SET nombre=?, detalle=?, monto=?, moneda=?, categoria=?, tipo=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, editId]);
-				mensaje = 'Ingreso fijo actualizado ✅';
+				mensaje = 'Ingreso recurrente actualizado ✅';
 			} else {
 				await query('INSERT INTO ingreso_fijo (perfil_id,nombre,detalle,monto,moneda,categoria,tipo) VALUES (1,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo]);
-				mensaje = 'Ingreso fijo agregado ✅';
+				mensaje = 'Ingreso recurrente agregado ✅';
 			}
 			resetForm();
 			await cargar();
@@ -121,7 +121,7 @@
 	}
 
 	async function eliminar(s: any) {
-		if (!confirm(`¿Eliminar el ingreso fijo "${s.nombre}"? (no borra los ingresos ya registrados)`)) return;
+		if (!confirm(`¿Eliminar el ingreso recurrente "${s.nombre}"? (no borra los ingresos ya registrados)`)) return;
 		await query('DELETE FROM ingreso_fijo_registro WHERE ingreso_fijo_id=?', [s.id]);
 		await query('DELETE FROM ingreso_fijo WHERE id=? AND perfil_id=1', [s.id]);
 		if (editId === s.id) resetForm();
@@ -169,7 +169,7 @@
 
 <div class="titulo-guia">
 	<h1>Ingresos</h1>
-	<Guia clave="ingresos-fijos" texto="Tus ingresos recurrentes (sueldo, alquiler, renta, freelance fijo). Solo lo que cobrás todos los meses. 'Registrar Ingreso' lo convierte en un ingreso real del mes elegido, con su categoría y tipo. Si tu sueldo (Principal + Regular) es fijo, registralo desde acá y no lo cargues además a mano el mismo mes." />
+	<Guia clave="ingresos-fijos" texto="Tus ingresos recurrentes (sueldo, alquiler, renta, freelance recurrente). Solo lo que cobrás todos los meses. 'Registrar Ingreso' lo convierte en un ingreso real del mes elegido, con su categoría y tipo. Si tu sueldo (Principal + Regular) es recurrente, registralo desde acá y no lo cargues además a mano el mismo mes." />
 </div>
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
@@ -178,13 +178,13 @@
 </div>
 
 <div class="fijo-total">
-	<span>Ingreso fijo del mes</span>
+	<span>Ingreso recurrente del mes</span>
 	<strong>{peso(fijoMesARS)}</strong>
-	<span class="fijo-nota">suma de todos los ingresos fijos activos (USD al MEP)</span>
+	<span class="fijo-nota">suma de todos los ingresos recurrentes activos (USD al MEP)</span>
 </div>
 
 <details class="form-panel" bind:open={formAbierto}>
-	<summary>{editando ? '✏ Editar ingreso fijo' : '➕ Agregar ingreso fijo'}</summary>
+	<summary>{editando ? '✏ Editar ingreso recurrente' : '➕ Agregar ingreso recurrente'}</summary>
 <div class="form" class:edit={editando}>
 	{#if editando}<p class="editando">✏ Editando #{editId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Nombre<input bind:value={fNombre} placeholder="Ej: Sueldo, Alquiler" /></label>
@@ -245,7 +245,7 @@
 			</div>
 		{/each}
 	{/each}
-	{#if fijos.length === 0}<p class="vacio">No hay ingresos fijos. Agregá el primero desde “➕ Agregar ingreso fijo”, arriba.</p>{/if}
+	{#if fijos.length === 0}<p class="vacio">No hay ingresos recurrentes. Agregá el primero desde “➕ Agregar ingreso recurrente”, arriba.</p>{/if}
 </div>
 {#if mensaje}<p class="msg">{mensaje}</p>{/if}
 
