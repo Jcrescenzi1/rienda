@@ -4,8 +4,8 @@
 	import { crearAutobackup, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 	import {
-		descargarArchivo, importarExcel,
-		exportarGastosCSV, exportarIngresosCSV, exportarInversionesCSV
+		descargarArchivo, descargarBlob, importarExcel,
+		exportarGastosCSV, exportarIngresosCSV, exportarInversionesXLSX
 	} from '$lib/db/precarga';
 	import { hoyISO } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
@@ -141,6 +141,12 @@
 		} catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
 	}
 
+	async function onExportarInversiones() {
+		try {
+			descargarBlob(`rienda-inversiones-${hoyISO()}.xlsx`, await exportarInversionesXLSX());
+		} catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
+	}
+
 	// ----- Borrado total -----
 	function abrirReset() {
 		textoConfirm = '';
@@ -264,7 +270,7 @@
 			<div class="acc">
 				<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ CSV Gastos</button>
 				<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ CSV Ingresos</button>
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('inversiones', exportarInversionesCSV)}>⬇ CSV Inversiones</button>
+				<button class="btn btn-secondary" onclick={onExportarInversiones}>⬇ Excel Inversiones</button>
 			</div>
 		</div>
 	</details>

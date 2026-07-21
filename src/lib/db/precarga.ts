@@ -25,7 +25,11 @@ type Fila = Record<string, string>;
 const BOM = '﻿'; // para que Excel abra el CSV exportado como UTF-8 (acentos OK)
 
 export function descargarArchivo(nombre: string, contenido: string) {
-	const blob = new Blob([contenido], { type: 'text/csv;charset=utf-8' });
+	descargarBlob(nombre, new Blob([contenido], { type: 'text/csv;charset=utf-8' }));
+}
+
+// Igual que descargarArchivo pero para binarios (p. ej. el .xlsx de inversiones).
+export function descargarBlob(nombre: string, blob: Blob) {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
@@ -425,17 +429,55 @@ export async function exportarIngresosCSV(): Promise<string> {
 	);
 }
 
-export async function exportarInversionesCSV(): Promise<string> {
-	const rows = (await query(`
+// Exporta TODO el flujo de inversiones en un solo .xlsx de tres hojas
+// (Activos · Renta y amortización · Caja) para conciliar contra el extracto
+// del broker. Las tres hojas van siempre con su encabezado, aunque queden
+// vacías (consistencia para el parseo). Fechas y montos: mismo tratamiento
+// que la hoja Activos de siempre (formatNum, sin reformatear aparte).
+export async function exportarInversionesXLSX(): Promise<Blob> {
+	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
+
+	// Hoja 1 — Activos (compra/venta): idéntica a como salía en el CSV.
+	const activos = (await query(`
 		SELECT t.fecha, t.operacion, a.ticker, a.nombre, a.tipo, a.renta, a.moneda,
 		       c.nombre AS cuenta, t.unidades, t.unidades * t.precio AS monto_total, t.valor_dolar
 		FROM transaccion t
 		JOIN activo a ON a.id = t.activo_id
 		JOIN cuenta_inversion c ON c.id = t.cuenta_inversion_id
 		WHERE t.perfil_id = 1 ORDER BY t.fecha, t.id`)) as any[];
-	return armarCSV(
+	const hojaActivos = [
 		['fecha', 'operacion', 'ticker', 'nombre', 'tipo', 'renta', 'moneda', 'cuenta', 'unidades', 'monto_total', 'valor_dolar'],
-		rows.map((r) => [r.fecha, r.operacion, r.ticker, r.nombre, r.tipo, r.renta, r.moneda, r.cuenta,
+		...activos.map((r) => [r.fecha, r.operacion, r.ticker, r.nombre, r.tipo, r.renta, r.moneda, r.cuenta,
 			formatNum(r.unidades, 4), formatNum(r.monto_total), r.valor_dolar != null ? formatNum(r.valor_dolar, 2) : ''])
-	);
+	];
+
+	// Hoja 2 — Renta y amortización: renta_activo + JOIN activo por activo_id.
+	const renta = (await query(`
+		SELECT ra.fecha, a.ticker, a.nombre, a.tipo, a.renta, ra.moneda,
+		       ra.monto_renta, ra.monto_amort, ra.valor_dolar
+		FROM renta_activo ra
+		JOIN activo a ON a.id = ra.activo_id
+		WHERE ra.perfil_id = 1 ORDER BY ra.fecha, ra.id`)) as any[];
+	const hojaRenta = [
+		['fecha', 'ticker', 'nombre', 'tipo', 'renta', 'moneda', 'monto_renta', 'monto_amort', 'valor_dolar'],
+		...renta.map((r) => [r.fecha, r.ticker, r.nombre, r.tipo, r.renta, r.moneda,
+			formatNum(r.monto_renta), formatNum(r.monto_amort), r.valor_dolar != null ? formatNum(r.valor_dolar, 2) : ''])
+	];
+
+	// Hoja 3 — Caja: mov_caja directo, sin joins. Las conversiones son dos filas
+	// con el mismo grupo y se exportan tal cual (no se aparean ni se netean).
+	const caja = (await query(
+		'SELECT fecha, accion, moneda, monto, grupo, nota FROM mov_caja WHERE perfil_id = 1 ORDER BY fecha, id'
+	)) as any[];
+	const hojaCaja = [
+		['fecha', 'accion', 'moneda', 'monto', 'grupo', 'nota'],
+		...caja.map((r) => [r.fecha, r.accion, r.moneda, formatNum(r.monto), r.grupo ?? '', r.nota ?? ''])
+	];
+
+	const wb = XLSX.utils.book_new();
+	XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hojaActivos), 'Activos');
+	XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hojaRenta), 'Renta y amortización');
+	XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hojaCaja), 'Caja');
+	const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+	return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
