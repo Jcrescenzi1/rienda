@@ -127,6 +127,22 @@ async function init() {
 		db.exec('ALTER TABLE ingreso_fijo ADD COLUMN dia_esperado INTEGER');
 	}
 
+	// Reset one-time de dia_esperado (v38 → v39). La primera versión cargó el campo
+	// con semántica de POSICIÓN en el período (modo sueldo: 1 = día de cobro, 2 = el
+	// siguiente…). v39 lo redefine como día CALENDARIO real (1-31) en todos los modos,
+	// así que los valores viejos quedan corruptos con la interpretación nueva. Se
+	// resetean a NULL una sola vez, guardado por un flag en meta: sin el guard cada
+	// arranque volvería a borrar lo que el usuario recargue con la semántica nueva.
+	const resetFlag = db.exec({
+		sql: "SELECT valor FROM meta WHERE clave='reset_dia_esperado_v2'",
+		rowMode: 'object', returnValue: 'resultRows'
+	});
+	if (resetFlag.length === 0) {
+		db.exec('UPDATE suscripcion SET dia_esperado = NULL');
+		db.exec('UPDATE ingreso_fijo SET dia_esperado = NULL');
+		db.exec("INSERT INTO meta (clave, valor) VALUES ('reset_dia_esperado_v2', '1')");
+	}
+
 	// Columna auto en presupuesto (Item 2: el presupuesto de una subcat con pago
 	// fijo se autocompleta y no se edita desde la tabla; auto=1 lo marca).
 	const prcols = db.exec({ sql: 'PRAGMA table_info(presupuesto)', rowMode: 'object', returnValue: 'resultRows' });

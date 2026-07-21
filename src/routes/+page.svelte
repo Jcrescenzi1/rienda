@@ -388,34 +388,26 @@
     // cae en la ventana [hoy, mañana] inclusive. Es un aviso, no un cálculo: no toca
     // ningún total ni el disparo de registro.
     //
-    // Cómo se estima la fecha, según el modo del perfil:
-    //   calendario → próxima vez que cae ese día del mes, igual o posterior a hoy
-    //                (proximaOcurrencia ya salta al mes siguiente si el día pasó, así
-    //                que un fijo de día 1 se avisa el 31 del mes anterior).
-    //   sueldo     → fecha del último Ingreso Principal Regular + (día − 1). Si todavía
-    //                no registraste el sueldo que ancla el período corriente, la
-    //                referencia queda vieja, ninguna fecha cae en la ventana y no se
-    //                muestra nada; al registrarlo se recalcula en el próximo render.
-    //
-    // No hay regla de vencidos: lo que ya pasó y no se registró no aparece.
+    // Fecha estimada = proximaOcurrencia(dia_esperado, hoy): la próxima vez que cae
+    // ese día del mes, igual o posterior a hoy. Como dia_esperado ahora es día
+    // CALENDARIO real (1-31), la fecha en que cae un recurrente es "el día N del mes
+    // que corresponda" y NO depende del modo ni del día de cobro (el cobro solo rota
+    // la LISTA, no construye fechas). Por eso el cálculo es el mismo en ambos modos.
+    // proximaOcurrencia salta al mes siguiente si el día ya pasó (un fijo de día 1 se
+    // avisa el 31 del mes anterior) y clampea a fin de mes; así no hay punto ciego de
+    // fin de mes ni regla de vencidos que aplicar (nunca devuelve una fecha < hoy).
     async function cargarProximos() {
         const hoy = hoyISO();
         const manana = addDias(hoy, 1);
-        const [gs, is, ancla] = (await Promise.all([
+        const [gs, is] = (await Promise.all([
             query('SELECT dia_esperado FROM suscripcion WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL'),
-            query('SELECT dia_esperado FROM ingreso_fijo WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL'),
-            modo === 'sueldo'
-                ? query("SELECT fecha FROM ingreso WHERE perfil_id=1 AND categoria='Ingreso Principal' AND tipo='Sueldo' ORDER BY fecha DESC LIMIT 1")
-                : Promise.resolve([] as any[])
+            query('SELECT dia_esperado FROM ingreso_fijo WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL')
         ])) as any[][];
 
-        const base: string | null = modo === 'sueldo' ? (ancla[0]?.fecha ?? null) : null;
         const contar = (rows: any[]) =>
             rows.reduce((n: number, r: any) => {
-                const f = modo === 'calendario'
-                    ? proximaOcurrencia(r.dia_esperado, hoy)
-                    : base ? addDias(base, r.dia_esperado - 1) : null;
-                return f !== null && f >= hoy && f <= manana ? n + 1 : n;
+                const f = proximaOcurrencia(r.dia_esperado, hoy);
+                return f >= hoy && f <= manana ? n + 1 : n;
             }, 0);
 
         proxGastos = contar(gs);

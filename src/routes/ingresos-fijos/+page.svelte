@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
-	import { periodoRegla, periodoActivoCC, cargarModo, etiquetaDia, opcionesDia, type ModoPeriodo } from '$lib/periodo';
+	import { periodoRegla, periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
@@ -11,10 +11,12 @@
 	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let fijos = $state<any[]>([]);
-	// Modo del perfil: solo define cómo se ETIQUETA el día esperado. El entero
-	// guardado es el mismo en ambos modos.
 	let modo = $state<ModoPeriodo>('sueldo');
-	const opcsDia = $derived(opcionesDia(modo));
+	// Día de cobro que ancla la rotación de la lista (solo modo sueldo con ingreso
+	// principal cargado). null = orden crudo 1→31. El día guardado es día calendario
+	// real (1-31) en ambos modos.
+	let cobroDia = $state<number | null>(null);
+	const OPCIONES_DIA = Array.from({ length: 31 }, (_, i) => i + 1);
 	let registradas = $state<Record<number, boolean>>({});
 	let fijoMesARS = $state(0);   // total de ingresos fijos activos del mes, en ARS (USD al MEP)
 	let dolar = $state(0);
@@ -35,21 +37,33 @@
 	let fDetalle = $state('');
 	let fMonto = $state('');
 	let fMoneda = $state('ARS');
-	let fCategoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros'>('Ingreso Principal');
+	let fCategoria = $state<'' | 'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros'>('');
 	let fTipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
 	let fDiaEsperado = $state(''); // '' = sin especificar -> NULL
 
 	let mensaje = $state('');
 	const editando = $derived(editId !== null);
 
+	// Orden de presentación: activos primero, rotados por día de cobro (ordenDia),
+	// los sin-día al final; inactivos al fondo. Rotación en JS porque el día de cobro
+	// es runtime. Mismo patrón que Gastos Fijos.
+	const ordenadas = $derived.by(() =>
+		[...fijos].sort((a, b) => {
+			if (a.activa !== b.activa) return b.activa - a.activa;
+			const ka = ordenDia(a.dia_esperado, cobroDia), kb = ordenDia(b.dia_esperado, cobroDia);
+			if (ka !== kb) return ka - kb;
+			return String(a.nombre).localeCompare(String(b.nombre), 'es');
+		})
+	);
+
 	// Lista plana con separadores tenues: "Sin día estimado" antes del primer activo
-	// sin día, e "Inactivos" antes del primer pausado (el orden pone activa DESC
-	// primero, así que sin ese segundo corte un inactivo CON día quedaría colgado
-	// debajo de "Sin día estimado"). Mismo patrón que Gastos Fijos.
+	// sin día, e "Inactivos" antes del primer pausado (el orden pone activos primero,
+	// así que sin ese segundo corte un inactivo CON día quedaría colgado debajo de
+	// "Sin día estimado"). Mismo patrón que Gastos Fijos.
 	const filas = $derived.by(() => {
 		const out: { sep?: string; s?: any }[] = [];
 		let sepSinDia = false, sepInactivos = false;
-		for (const s of fijos) {
+		for (const s of ordenadas) {
 			if (!s.activa) {
 				if (!sepInactivos) { out.push({ sep: 'Inactivos' }); sepInactivos = true; }
 			} else if (s.dia_esperado == null && !sepSinDia) {
@@ -74,10 +88,12 @@
 
 	async function cargar() {
 		modo = await cargarModo();
+		// Día de cobro para rotar la lista: solo en modo sueldo (en calendario no rota).
+		cobroDia = modo === 'sueldo' ? await diaCobroActivo() : null;
 		fijos = (await query(`
 			SELECT id, nombre, detalle, monto, moneda, categoria, tipo, activa, dia_esperado
 			FROM ingreso_fijo WHERE perfil_id=1
-			ORDER BY activa DESC, dia_esperado IS NULL, dia_esperado, nombre`)) as any[];
+			ORDER BY nombre`)) as any[];
 
 		const reg = (await query('SELECT ingreso_fijo_id FROM ingreso_fijo_registro WHERE periodo=?', [periodo])) as any[];
 		const r: Record<number, boolean> = {};
@@ -98,7 +114,7 @@
 		fDetalle = '';
 		fMonto = '';
 		fMoneda = 'ARS';
-		fCategoria = 'Ingreso Principal';
+		fCategoria = '';   // arranca vacía: obligatoria, se elige a mano
 		fTipo = 'Sueldo';
 		fDiaEsperado = '';
 	}
@@ -122,6 +138,7 @@
 		const m = parseNum(fMonto);
 		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
+		if (!fCategoria) return (mensaje = 'Elegí categoría');
 		const detalle = fDetalle.trim() || null;
 		const dia = fDiaEsperado ? Number(fDiaEsperado) : null;
 		try {
@@ -213,6 +230,7 @@
 	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 	<label>Categoría<select bind:value={fCategoria}>
+		<option value="">— elegí una —</option>
 		<option value="Ingreso Principal">Ingreso Principal</option>
 		<option value="Ingresos Secundarios">Ingresos Secundarios</option>
 		<option value="Otros">Otros</option>
@@ -223,10 +241,10 @@
 		<option value="Aciclico">Extraordinario</option>
 	</select></label>
 	<p class="form-nota">Regular: recurrente (sueldo, alquiler, renta). Extraordinario: cobros puntuales.</p>
-	<label>{modo === 'calendario' ? 'Día esperado de cobro' : 'Día esperado de cobro (dentro del período)'}
+	<label>Día esperado de cobro
 		<select bind:value={fDiaEsperado}>
 			<option value="">— sin especificar —</option>
-			{#each opcsDia as o (o.valor)}<option value={String(o.valor)}>{o.label}</option>{/each}
+			{#each OPCIONES_DIA as d (d)}<option value={String(d)}>Día {d}</option>{/each}
 		</select></label>
 	<div class="botones">
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
@@ -252,7 +270,7 @@
 				</div>
 				<div class="ficha-meta">
 					<span class="chip">{tipoLabel(s.tipo)}</span>
-					{` · ${catLabel(s.categoria)}`}{s.dia_esperado != null ? ` · ${etiquetaDia(s.dia_esperado, modo)}` : ''}
+					{` · ${catLabel(s.categoria)}`}{s.dia_esperado != null ? ` · Día ${s.dia_esperado}` : ''}
 				</div>
 				<div class="ficha-estado">
 					{#if !s.activa}

@@ -3,7 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
-	import { periodoActivoCC, cargarModo, etiquetaDia, opcionesDia, type ModoPeriodo } from '$lib/periodo';
+	import { periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
@@ -13,10 +13,13 @@
 	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let subs = $state<any[]>([]);
-	// Modo del perfil: solo define cómo se ETIQUETA el día esperado (día del mes vs
-	// posición dentro del período). El entero guardado es el mismo en ambos modos.
 	let modo = $state<ModoPeriodo>('sueldo');
-	const opcsDia = $derived(opcionesDia(modo));
+	// Día de cobro que ancla la rotación de la lista (solo en modo sueldo con ingreso
+	// principal cargado). null = orden crudo 1→31. El día esperado guardado es día
+	// calendario real (1-31) en ambos modos; la rotación es puro reordenamiento visual.
+	let cobroDia = $state<number | null>(null);
+	// Opciones del selector: día calendario 1-31, igual en los dos modos.
+	const OPCIONES_DIA = Array.from({ length: 31 }, (_, i) => i + 1);
 	let categorias = $state<any[]>([]);
 	let tarjetas = $state<any[]>([]);
 	let subcategorias = $state<any[]>([]);
@@ -45,14 +48,26 @@
 	let mensaje = $state('');
 	const editando = $derived(editId !== null);
 
+	// Orden de presentación: activos primero, dentro de ellos rotados por día de cobro
+	// (ordenDia), los sin-día al final; los inactivos al fondo. La rotación es JS y no
+	// SQL porque el día de cobro es un valor de runtime (no está en la fila).
+	const ordenadas = $derived.by(() =>
+		[...subs].sort((a, b) => {
+			if (a.activa !== b.activa) return b.activa - a.activa;
+			const ka = ordenDia(a.dia_esperado, cobroDia), kb = ordenDia(b.dia_esperado, cobroDia);
+			if (ka !== kb) return ka - kb;
+			return String(a.nombre).localeCompare(String(b.nombre), 'es');
+		})
+	);
+
 	// Lista plana (sin agrupar por categoría) con dos separadores tenues intercalados:
 	// "Sin día estimado" antes del primer activo sin día, e "Inactivos" antes del
-	// primer pausado. El segundo hace falta porque el orden pone activa DESC primero:
+	// primer pausado. El segundo hace falta porque el orden pone activos primero:
 	// sin él, un inactivo CON día quedaría colgado debajo de "Sin día estimado".
 	const filas = $derived.by(() => {
 		const out: { sep?: string; s?: any }[] = [];
 		let sepSinDia = false, sepInactivos = false;
-		for (const s of subs) {
+		for (const s of ordenadas) {
 			if (!s.activa) {
 				if (!sepInactivos) { out.push({ sep: 'Inactivos' }); sepInactivos = true; }
 			} else if (s.dia_esperado == null && !sepSinDia) {
@@ -74,16 +89,15 @@
 
 	async function cargar() {
 		modo = await cargarModo();
+		// Día de cobro para rotar la lista: solo en modo sueldo (en calendario no rota).
+		cobroDia = modo === 'sueldo' ? await diaCobroActivo() : null;
 		categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		tarjetas = await query('SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		subcategorias = await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		const sc = (await query("SELECT valor FROM meta WHERE clave='susc_subcat_id'")) as any[];
 		dispSubcatId = sc[0]?.valor ?? '';
-		if (fCatId == null) {
-			const f = categorias.find((c: any) => c.nombre === 'Impuestos/Servicios');
-			fCatId = f ? f.id : categorias[0]?.id ?? null;
-		}
-		// Fijos con su subcategoria resuelta por el diccionario (mapeo_detalle).
+		// Fijos con su subcategoria resuelta por el diccionario (mapeo_detalle). El
+		// orden final (rotación por día de cobro) se resuelve en JS -> ordenadas.
 		subs = await query(`
 			SELECT s.id, s.nombre, s.detalle, s.monto, s.moneda, s.activa, s.dia_esperado,
 			       s.categoria_id, c.nombre AS categoria, s.tarjeta_id, t.nombre AS tarjeta,
@@ -94,7 +108,7 @@
 			LEFT JOIN mapeo_detalle m ON m.perfil_id = 1 AND m.detalle = s.detalle
 			LEFT JOIN subcategoria sc ON sc.id = m.subcategoria_id
 			WHERE s.perfil_id = 1
-			ORDER BY s.activa DESC, s.dia_esperado IS NULL, s.dia_esperado, s.nombre`);
+			ORDER BY s.nombre`);
 		const reg = (await query('SELECT suscripcion_id FROM suscripcion_registro WHERE periodo=?', [periodo])) as any[];
 		const r: Record<number, boolean> = {};
 		for (const x of reg) r[x.suscripcion_id] = true;
@@ -146,32 +160,25 @@
 		}
 	}
 
-	function catPorDefecto(): number | null {
-		const f = categorias.find((c: any) => c.nombre === 'Impuestos/Servicios');
-		return f ? f.id : categorias[0]?.id ?? null;
-	}
-
 	function resetForm() {
 		editId = null;
 		fNombre = '';
 		fDetalle = '';
 		fMonto = '';
 		fMoneda = 'ARS';
-		fCatId = catPorDefecto();
+		fCatId = null;   // arranca vacío: la categoría se elige a mano (obligatoria)
 		fSubcatId = '';
 		fTarjetaId = null;
 		fDiaEsperado = '';
 	}
 
-	// Al escribir el detalle: precarga subcat (del diccionario) y categoria (la
-	// mas usada en gastos historicos con ese detalle). Cero tipeo si ya hay datos.
+	// Al escribir el detalle: precarga la subcategoría del diccionario (mapeo_detalle).
+	// La categoría YA NO se autosugiere del historial: se elige siempre a mano.
 	async function onDetalleChange() {
 		const d = fDetalle.trim();
 		if (!d) return;
 		const mp = (await query('SELECT subcategoria_id FROM mapeo_detalle WHERE perfil_id=1 AND detalle=?', [d])) as any[];
 		if (mp.length) fSubcatId = String(mp[0].subcategoria_id);
-		const cg = (await query('SELECT categoria_id, COUNT(*) AS c FROM gasto WHERE perfil_id=1 AND detalle=? GROUP BY categoria_id ORDER BY c DESC LIMIT 1', [d])) as any[];
-		if (cg.length) fCatId = cg[0].categoria_id;
 	}
 
 	function iniciarEdit(s: any) {
@@ -281,17 +288,17 @@
 	<label>Detalle (como aparece en el gasto)<input bind:value={fDetalle} onblur={onDetalleChange} placeholder="Ej: Netflix" /></label>
 	<label>Monto{editando ? ' (lo que dice la factura)' : ''}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-	<label>Categoría<select bind:value={fCatId}>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
+	<label>Categoría<select bind:value={fCatId}><option value={null}>— elegí una —</option>{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}</select></label>
 	<label>Subcategoría<select bind:value={fSubcatId}>
 		<option value="">— sin asignar —</option>
 		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
 	</select></label>
 	<label>Tarjeta (opcional, solo referencia)
 		<select bind:value={fTarjetaId}><option value={null}>— ninguna —</option>{#each tarjetas as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
-	<label>{modo === 'calendario' ? 'Día esperado de pago' : 'Día esperado de pago (dentro del período)'}
+	<label>Día esperado de pago
 		<select bind:value={fDiaEsperado}>
 			<option value="">— sin especificar —</option>
-			{#each opcsDia as o (o.valor)}<option value={String(o.valor)}>{o.label}</option>{/each}
+			{#each OPCIONES_DIA as d (d)}<option value={String(d)}>Día {d}</option>{/each}
 		</select></label>
 	<div class="botones">
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
@@ -325,7 +332,7 @@
 				</div>
 				<div class="ficha-meta">
 					<span class="chip" class:sin={s.scid == null}>{s.subcat ?? '— sin subcategoría —'}</span>
-					{` · ${s.categoria}`}{s.tarjeta ? ` · ${s.tarjeta}` : ''}{s.dia_esperado != null ? ` · ${etiquetaDia(s.dia_esperado, modo)}` : ''}
+					{` · ${s.categoria}`}{s.tarjeta ? ` · ${s.tarjeta}` : ''}{s.dia_esperado != null ? ` · Día ${s.dia_esperado}` : ''}
 				</div>
 				<div class="ficha-estado">
 					{#if !s.activa}

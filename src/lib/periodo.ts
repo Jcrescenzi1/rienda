@@ -44,17 +44,28 @@ export function proximaOcurrencia(dia: number, hoy: string): string {
 	return m === 12 ? enMes(y + 1, 1) : enMes(y, m + 1);
 }
 
-// Etiqueta visible de un dia_esperado, según el modo del perfil.
-//   calendario → "Día 8"      (día del mes)
-//   sueldo     → "8° día"     (posición dentro del período; 1 = el día que cobrás)
-export function etiquetaDia(dia: number, modo: ModoPeriodo): string {
-	if (modo === 'calendario') return `Día ${dia}`;
-	return dia === 1 ? 'Día de cobro' : `${dia}° día`;
+// Día de cobro (1-31) que abre el período activo en modo sueldo: el día del mes de
+// la fecha del último Ingreso Principal Regular (tipo='Sueldo') registrado. null si
+// no hay ninguno (o en modo calendario, donde no se llama). Se usa SOLO para rotar
+// la lista de recurrentes por presentación; no interviene en el cálculo del aviso.
+export async function diaCobroActivo(): Promise<number | null> {
+	const r = (await query(
+		"SELECT fecha FROM ingreso WHERE perfil_id=1 AND categoria='Ingreso Principal' AND tipo='Sueldo' ORDER BY fecha DESC LIMIT 1"
+	)) as any[];
+	const f = r[0]?.fecha;
+	return typeof f === 'string' ? Number(f.slice(8, 10)) : null;
 }
 
-// Las 31 opciones del selector, ya etiquetadas para el modo activo.
-export function opcionesDia(modo: ModoPeriodo): { valor: number; label: string }[] {
-	return Array.from({ length: 31 }, (_, i) => ({ valor: i + 1, label: etiquetaDia(i + 1, modo) }));
+// Clave de orden de un dia_esperado para la lista de recurrentes.
+//   cobro = null (calendario, o sueldo sin ingreso) → orden crudo por día (1→31).
+//   cobro = C (1-31)  → rotación: la lista arranca en C y da la vuelta
+//                       (C, C+1, …, 31, 1, …, C-1). Es puro reordenamiento visual
+//                       sobre el entero guardado; no construye fechas.
+// dia null (sin día) va siempre al final.
+export function ordenDia(dia: number | null, cobro: number | null): number {
+	if (dia == null) return Infinity;
+	if (cobro == null) return dia;
+	return ((dia - cobro) % 31 + 31) % 31;
 }
 
 // Suma/resta meses a un 'yyyy-mm'. addMonths('2025-03', -2) -> '2025-01'.
