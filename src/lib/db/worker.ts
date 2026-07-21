@@ -114,6 +114,19 @@ async function init() {
 		db.exec('UPDATE suscripcion SET detalle = nombre WHERE detalle IS NULL');
 	}
 
+	// Columna dia_esperado en suscripcion e ingreso_fijo: día estimado de pago/cobro
+	// del recurrente, que ordena la lista. Sin backfill (queda NULL = "sin día", va
+	// al final). Ojo: SQLite no permite agregar un CHECK vía ALTER, así que en bases
+	// existentes el rango 1-31 lo garantiza el dropdown de la UI, no la tabla; las
+	// bases nuevas sí lo traen desde el CREATE de schema.ts.
+	if (!scols.some((c: any) => c.name === 'dia_esperado')) {
+		db.exec('ALTER TABLE suscripcion ADD COLUMN dia_esperado INTEGER');
+	}
+	const ifcols = db.exec({ sql: 'PRAGMA table_info(ingreso_fijo)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!ifcols.some((c: any) => c.name === 'dia_esperado')) {
+		db.exec('ALTER TABLE ingreso_fijo ADD COLUMN dia_esperado INTEGER');
+	}
+
 	// Columna auto en presupuesto (Item 2: el presupuesto de una subcat con pago
 	// fijo se autocompleta y no se edita desde la tabla; auto=1 lo marca).
 	const prcols = db.exec({ sql: 'PRAGMA table_info(presupuesto)', rowMode: 'object', returnValue: 'resultRows' });

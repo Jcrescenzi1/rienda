@@ -14,5 +14,19 @@
 </div>
 
 <style>
-	.tabs-cr { margin: 0; }
+	/* Ancho completo y jerarquía de selector: son DOS VISTAS de la misma pantalla,
+	   no un control menor. Antes competía en tamaño con el botón "Volver" y el
+	   selector de mes que lo rodean y pasaba desapercibido.
+	   align-self: stretch estira el componente dentro del .cr-nav de las 4 rutas
+	   (es flex column con align-items: flex-start), así que no hay que tocarlas.
+	   Solo estético: la navegación y los deep-links no cambian. */
+	.tabs-cr { margin: 0; display: flex; width: 100%; align-self: stretch; flex-wrap: nowrap; }
+	.tabs-cr > a {
+		flex: 1;
+		text-align: center;
+		font-size: 0.95rem;
+		font-weight: 600;
+		padding: 11px 8px;
+		border-radius: 8px;
+	}
 </style>

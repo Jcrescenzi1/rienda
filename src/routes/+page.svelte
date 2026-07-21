@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
-    import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+    import { addMonths, cargarModo, cargarCortes, crearAsignador, addDias, proximaOcurrencia, type ModoPeriodo } from '$lib/periodo';
+    import { mesActual, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
     import { leerMeta, setMeta } from '$lib/db/meta';
     import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
@@ -29,6 +29,10 @@
     let gastoUsdMes = $state(0);   // gastos puntuales USD del período (informativo, sin convertir)
     let ingresoUsdMes = $state(0); // ingresos puntuales USD del período (informativo, sin convertir)
     let nombre = $state('');       // nombre del perfil, para el saludo del header
+    // Recurrentes cuya fecha estimada cae entre hoy y mañana (ver cargarProximos).
+    // 0 = la tarjeta de aviso no se renderiza.
+    let proxGastos = $state(0);
+    let proxIngresos = $state(0);
     // Ingresos TOTALES del período visible (primario + secundarios + otros),
     // en ARS (los USD se convierten al dólar del día de cobro).
     let ingresosMes = $state(0);
@@ -379,6 +383,45 @@
         pasos = null;
     }
 
+    // ===== Aviso de recurrentes próximos =====
+    // Cuenta los gastos/ingresos fijos ACTIVOS con día esperado cuya fecha estimada
+    // cae en la ventana [hoy, mañana] inclusive. Es un aviso, no un cálculo: no toca
+    // ningún total ni el disparo de registro.
+    //
+    // Cómo se estima la fecha, según el modo del perfil:
+    //   calendario → próxima vez que cae ese día del mes, igual o posterior a hoy
+    //                (proximaOcurrencia ya salta al mes siguiente si el día pasó, así
+    //                que un fijo de día 1 se avisa el 31 del mes anterior).
+    //   sueldo     → fecha del último Ingreso Principal Regular + (día − 1). Si todavía
+    //                no registraste el sueldo que ancla el período corriente, la
+    //                referencia queda vieja, ninguna fecha cae en la ventana y no se
+    //                muestra nada; al registrarlo se recalcula en el próximo render.
+    //
+    // No hay regla de vencidos: lo que ya pasó y no se registró no aparece.
+    async function cargarProximos() {
+        const hoy = hoyISO();
+        const manana = addDias(hoy, 1);
+        const [gs, is, ancla] = (await Promise.all([
+            query('SELECT dia_esperado FROM suscripcion WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL'),
+            query('SELECT dia_esperado FROM ingreso_fijo WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL'),
+            modo === 'sueldo'
+                ? query("SELECT fecha FROM ingreso WHERE perfil_id=1 AND categoria='Ingreso Principal' AND tipo='Sueldo' ORDER BY fecha DESC LIMIT 1")
+                : Promise.resolve([] as any[])
+        ])) as any[][];
+
+        const base: string | null = modo === 'sueldo' ? (ancla[0]?.fecha ?? null) : null;
+        const contar = (rows: any[]) =>
+            rows.reduce((n: number, r: any) => {
+                const f = modo === 'calendario'
+                    ? proximaOcurrencia(r.dia_esperado, hoy)
+                    : base ? addDias(base, r.dia_esperado - 1) : null;
+                return f !== null && f >= hoy && f <= manana ? n + 1 : n;
+            }, 0);
+
+        proxGastos = contar(gs);
+        proxIngresos = contar(is);
+    }
+
     async function cargarNombre() {
         const r = (await query('SELECT nombre FROM perfil WHERE id=1')) as any[];
         nombre = r[0]?.nombre ?? '';
@@ -452,7 +495,8 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); chequearBackup(); cargarPasos(); cargarNombre(); });
+    // cargarProximos va DESPUÉS de resolverPeriodoInicial: necesita `modo` resuelto.
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarProximos(); chequearBackup(); cargarPasos(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
@@ -578,13 +622,6 @@
         </div>
     </div>
 
-    {#if ingresoUsdMes > 0 || gastoUsdMes > 0}
-        <div class="usd-card">
-            {#if ingresoUsdMes > 0}<span class="usd-item">Ingresos en USD no recurrentes <strong>+ {usd(ingresoUsdMes)}</strong></span>{/if}
-            {#if gastoUsdMes > 0}<span class="usd-item">Gastos en USD no recurrentes <strong>{usd(gastoUsdMes)}</strong></span>{/if}
-        </div>
-    {/if}
-
     <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
     <div class="deuda-panel" class:ok={descubierto <= 0} class:warn={descubierto > 0}>
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
@@ -603,6 +640,29 @@
             <p class="disp-nota">Reservá plata para el pago de próximos vencimientos desde <a href="/credito">Crédito</a>.</p>
         {/if}
     </div>
+
+    <!-- ===== Recurrentes próximos (aviso, sin listar nombres) =====
+         Dos tarjetas independientes y condicionales: cada una aparece solo si su
+         conteo es ≥ 1, así que puede verse una, las dos o ninguna. El link va
+         directo a la ruta del tab Recurrente (/suscripciones, /ingresos-fijos):
+         /gastos e /ingresos caerían en el tab Corriente. -->
+    {#if proxGastos > 0}
+        <a class="usd-card aviso-card" href="/suscripciones">
+            <span class="usd-item">Entre hoy y mañana tenés <strong>{proxGastos}</strong> {proxGastos === 1 ? 'gasto fijo' : 'gastos fijos'}</span>
+        </a>
+    {/if}
+    {#if proxIngresos > 0}
+        <a class="usd-card aviso-card" href="/ingresos-fijos">
+            <span class="usd-item">Entre hoy y mañana tenés <strong>{proxIngresos}</strong> {proxIngresos === 1 ? 'ingreso fijo' : 'ingresos fijos'}</span>
+        </a>
+    {/if}
+
+    {#if ingresoUsdMes > 0 || gastoUsdMes > 0}
+        <div class="usd-card">
+            {#if ingresoUsdMes > 0}<span class="usd-item">Ingresos en USD no recurrentes <strong>+ {usd(ingresoUsdMes)}</strong></span>{/if}
+            {#if gastoUsdMes > 0}<span class="usd-item">Gastos en USD no recurrentes <strong>{usd(gastoUsdMes)}</strong></span>{/if}
+        </div>
+    {/if}
 
     <h2>Consolidado por categoría</h2>
     <div class="tabla-scroll">
@@ -788,4 +848,8 @@
     .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
     .usd-item { white-space: nowrap; }
     .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
+    /* Aviso de recurrentes próximos: mismo chasis chico que .usd-card, pero toda
+       la tarjeta es el link. */
+    .aviso-card { display: flex; text-decoration: none; color: var(--text-dim); }
+    .aviso-card:hover { border-color: var(--accent); }
 </style>

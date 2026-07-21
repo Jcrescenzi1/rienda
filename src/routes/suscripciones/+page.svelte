@@ -3,7 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
-	import { periodoActivoCC } from '$lib/periodo';
+	import { periodoActivoCC, cargarModo, etiquetaDia, opcionesDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
@@ -13,7 +13,10 @@
 	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let subs = $state<any[]>([]);
-	let grupos = $state<any[]>([]);
+	// Modo del perfil: solo define cómo se ETIQUETA el día esperado (día del mes vs
+	// posición dentro del período). El entero guardado es el mismo en ambos modos.
+	let modo = $state<ModoPeriodo>('sueldo');
+	const opcsDia = $derived(opcionesDia(modo));
 	let categorias = $state<any[]>([]);
 	let tarjetas = $state<any[]>([]);
 	let subcategorias = $state<any[]>([]);
@@ -37,9 +40,29 @@
 	let fCatId = $state<number | null>(null);
 	let fSubcatId = $state('');
 	let fTarjetaId = $state<number | null>(null);
+	let fDiaEsperado = $state(''); // '' = sin especificar -> NULL
 
 	let mensaje = $state('');
 	const editando = $derived(editId !== null);
+
+	// Lista plana (sin agrupar por categoría) con dos separadores tenues intercalados:
+	// "Sin día estimado" antes del primer activo sin día, e "Inactivos" antes del
+	// primer pausado. El segundo hace falta porque el orden pone activa DESC primero:
+	// sin él, un inactivo CON día quedaría colgado debajo de "Sin día estimado".
+	const filas = $derived.by(() => {
+		const out: { sep?: string; s?: any }[] = [];
+		let sepSinDia = false, sepInactivos = false;
+		for (const s of subs) {
+			if (!s.activa) {
+				if (!sepInactivos) { out.push({ sep: 'Inactivos' }); sepInactivos = true; }
+			} else if (s.dia_esperado == null && !sepSinDia) {
+				out.push({ sep: 'Sin día estimado' });
+				sepSinDia = true;
+			}
+			out.push({ s });
+		}
+		return out;
+	});
 
 	// MEP de referencia del periodo: cotizacion del primer dia del mes corriente.
 	// Es una cotizacion historica fija -> el presupuesto de fijos USD NO flota
@@ -50,6 +73,7 @@
 	}
 
 	async function cargar() {
+		modo = await cargarModo();
 		categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		tarjetas = await query('SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
 		subcategorias = await query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
@@ -61,7 +85,7 @@
 		}
 		// Fijos con su subcategoria resuelta por el diccionario (mapeo_detalle).
 		subs = await query(`
-			SELECT s.id, s.nombre, s.detalle, s.monto, s.moneda, s.activa,
+			SELECT s.id, s.nombre, s.detalle, s.monto, s.moneda, s.activa, s.dia_esperado,
 			       s.categoria_id, c.nombre AS categoria, s.tarjeta_id, t.nombre AS tarjeta,
 			       m.subcategoria_id AS scid, sc.nombre AS subcat
 			FROM suscripcion s
@@ -70,7 +94,7 @@
 			LEFT JOIN mapeo_detalle m ON m.perfil_id = 1 AND m.detalle = s.detalle
 			LEFT JOIN subcategoria sc ON sc.id = m.subcategoria_id
 			WHERE s.perfil_id = 1
-			ORDER BY s.activa DESC, c.nombre, s.nombre`);
+			ORDER BY s.activa DESC, s.dia_esperado IS NULL, s.dia_esperado, s.nombre`);
 		const reg = (await query('SELECT suscripcion_id FROM suscripcion_registro WHERE periodo=?', [periodo])) as any[];
 		const r: Record<number, boolean> = {};
 		for (const x of reg) r[x.suscripcion_id] = true;
@@ -81,13 +105,6 @@
 		fijoMesARS = subs
 			.filter((s: any) => s.activa)
 			.reduce((t: number, s: any) => t + (s.moneda === 'USD' ? s.monto * dolar : s.monto), 0);
-
-		// Agrupar por categoria (headers como separadores).
-		const map: Record<string, any[]> = {};
-		for (const s of subs) (map[s.categoria] ??= []).push(s);
-		grupos = Object.keys(map)
-			.sort((a, b) => a.localeCompare(b, 'es'))
-			.map((cat) => ({ cat, items: map[cat] }));
 
 		// Mantener el presupuesto autocompletado al dia.
 		await recalcPresupuestoFijos();
@@ -143,6 +160,7 @@
 		fCatId = catPorDefecto();
 		fSubcatId = '';
 		fTarjetaId = null;
+		fDiaEsperado = '';
 	}
 
 	// Al escribir el detalle: precarga subcat (del diccionario) y categoria (la
@@ -165,6 +183,7 @@
 		fCatId = s.categoria_id;
 		fSubcatId = s.scid != null ? String(s.scid) : '';
 		fTarjetaId = s.tarjeta_id;
+		fDiaEsperado = s.dia_esperado != null ? String(s.dia_esperado) : '';
 		mensaje = '';
 		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -177,14 +196,15 @@
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		if (!fCatId) return (mensaje = 'Elegí categoría');
 		const detalle = (fDetalle.trim() || fNombre.trim());
+		const dia = fDiaEsperado ? Number(fDiaEsperado) : null;
 		try {
 			if (editId) {
-				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=? WHERE id=? AND perfil_id=1',
-					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, editId]);
+				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=?, dia_esperado=? WHERE id=? AND perfil_id=1',
+					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, dia, editId]);
 				mensaje = 'Gasto recurrente actualizado ✅';
 			} else {
-				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id) VALUES (1,?,?,?,?,?,?)',
-					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId]);
+				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id,dia_esperado) VALUES (1,?,?,?,?,?,?,?)',
+					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, dia]);
 				mensaje = 'Gasto recurrente agregado ✅';
 			}
 			// Si se eligio subcategoria, se mapea el detalle (reclasifica historial).
@@ -268,6 +288,11 @@
 	</select></label>
 	<label>Tarjeta (opcional, solo referencia)
 		<select bind:value={fTarjetaId}><option value={null}>— ninguna —</option>{#each tarjetas as t (t.id)}<option value={t.id}>{t.nombre}</option>{/each}</select></label>
+	<label>{modo === 'calendario' ? 'Día esperado de pago' : 'Día esperado de pago (dentro del período)'}
+		<select bind:value={fDiaEsperado}>
+			<option value="">— sin especificar —</option>
+			{#each opcsDia as o (o.valor)}<option value={String(o.valor)}>{o.label}</option>{/each}
+		</select></label>
 	<div class="botones">
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
 		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
@@ -284,9 +309,11 @@
 </label>
 
 <div class="grupos">
-	{#each grupos as g (g.cat)}
-		<div class="grupo-cat">{g.cat}</div>
-		{#each g.items as s (s.id)}
+	{#each filas as f (f.sep ?? f.s.id)}
+		{#if f.sep}
+			<div class="sep-lista">{f.sep}</div>
+		{:else}
+			{@const s = f.s}
 			<div class="ficha" class:inactiva={!s.activa} class:editrow={editId === s.id}>
 				<div class="ficha-top">
 					<span class="ficha-nombre">{s.nombre}</span>
@@ -298,7 +325,7 @@
 				</div>
 				<div class="ficha-meta">
 					<span class="chip" class:sin={s.scid == null}>{s.subcat ?? '— sin subcategoría —'}</span>
-					{s.tarjeta ? ` · ${s.tarjeta}` : ''}
+					{` · ${s.categoria}`}{s.tarjeta ? ` · ${s.tarjeta}` : ''}{s.dia_esperado != null ? ` · ${etiquetaDia(s.dia_esperado, modo)}` : ''}
 				</div>
 				<div class="ficha-estado">
 					{#if !s.activa}
@@ -317,7 +344,7 @@
 					{/if}
 				</div>
 			</div>
-		{/each}
+		{/if}
 	{/each}
 	{#if subs.length === 0}<p class="vacio">No hay gastos recurrentes. Agregá el primero desde “➕ Agregar gasto recurrente”, arriba.</p>{/if}
 </div>
@@ -353,7 +380,9 @@
 	.msg { color: var(--text-dim); font-weight: 600; }
 
 	.grupos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-	.grupo-cat { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 700; margin-top: 10px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+	/* Separadores tenues de la lista plana. Deliberadamente más discretos que los
+	   viejos headers de categoría: acá no agrupan, solo marcan un corte. */
+	.sep-lista { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); font-weight: 600; margin-top: 14px; padding-bottom: 3px; border-bottom: 1px dashed var(--border); opacity: 0.75; }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
 	.ficha.inactiva { opacity: 0.45; }
 	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }

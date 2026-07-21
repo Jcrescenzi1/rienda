@@ -85,7 +85,13 @@ CREATE TABLE IF NOT EXISTS suscripcion (
   moneda          TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
   categoria_id    INTEGER NOT NULL REFERENCES categoria(id),
   tarjeta_id      INTEGER REFERENCES tarjeta(id),
-  activa          INTEGER NOT NULL DEFAULT 1
+  activa          INTEGER NOT NULL DEFAULT 1,
+  -- Día esperado de pago. Es el MISMO entero en los dos modos de período, solo
+  -- cambia cómo se lee: en 'calendario' es el día del mes (1-31); en 'sueldo' es
+  -- la posición dentro del período (1 = día de cobro, 2 = el siguiente, ...).
+  -- NULL = sin especificar (ordena al final de la lista). No se convierte al
+  -- cambiar de modo: los valores viejos quedan como están.
+  dia_esperado    INTEGER CHECK (dia_esperado IS NULL OR dia_esperado BETWEEN 1 AND 31)
 );
 
 CREATE TABLE IF NOT EXISTS suscripcion_registro (
@@ -107,7 +113,9 @@ CREATE TABLE IF NOT EXISTS ingreso_fijo (
   moneda      TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
   categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros')),
   tipo        TEXT NOT NULL DEFAULT 'Sueldo' CHECK (tipo IN ('Sueldo','Aciclico')),
-  activa      INTEGER NOT NULL DEFAULT 1
+  activa      INTEGER NOT NULL DEFAULT 1,
+  -- Día esperado de cobro. Misma semántica que suscripcion.dia_esperado.
+  dia_esperado INTEGER CHECK (dia_esperado IS NULL OR dia_esperado BETWEEN 1 AND 31)
 );
 
 -- Marca qué ingreso fijo ya se registró en qué período (evita duplicar el mes).

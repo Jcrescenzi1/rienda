@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
 	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
-	import { periodoRegla, periodoActivoCC } from '$lib/periodo';
+	import { periodoRegla, periodoActivoCC, cargarModo, etiquetaDia, opcionesDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 
@@ -11,7 +11,10 @@
 	let periodo = $state(periodoActivoCC() ?? mesActual());
 
 	let fijos = $state<any[]>([]);
-	let grupos = $state<any[]>([]);
+	// Modo del perfil: solo define cómo se ETIQUETA el día esperado. El entero
+	// guardado es el mismo en ambos modos.
+	let modo = $state<ModoPeriodo>('sueldo');
+	const opcsDia = $derived(opcionesDia(modo));
 	let registradas = $state<Record<number, boolean>>({});
 	let fijoMesARS = $state(0);   // total de ingresos fijos activos del mes, en ARS (USD al MEP)
 	let dolar = $state(0);
@@ -34,11 +37,30 @@
 	let fMoneda = $state('ARS');
 	let fCategoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros'>('Ingreso Principal');
 	let fTipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
+	let fDiaEsperado = $state(''); // '' = sin especificar -> NULL
 
 	let mensaje = $state('');
 	const editando = $derived(editId !== null);
 
-	const ORDEN_CAT = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
+	// Lista plana con separadores tenues: "Sin día estimado" antes del primer activo
+	// sin día, e "Inactivos" antes del primer pausado (el orden pone activa DESC
+	// primero, así que sin ese segundo corte un inactivo CON día quedaría colgado
+	// debajo de "Sin día estimado"). Mismo patrón que Gastos Fijos.
+	const filas = $derived.by(() => {
+		const out: { sep?: string; s?: any }[] = [];
+		let sepSinDia = false, sepInactivos = false;
+		for (const s of fijos) {
+			if (!s.activa) {
+				if (!sepInactivos) { out.push({ sep: 'Inactivos' }); sepInactivos = true; }
+			} else if (s.dia_esperado == null && !sepSinDia) {
+				out.push({ sep: 'Sin día estimado' });
+				sepSinDia = true;
+			}
+			out.push({ s });
+		}
+		return out;
+	});
+
 	const catLabel = (c: string) =>
 		c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundarios' : 'Otros';
 	const tipoLabel = (t: string) => (t === 'Sueldo' ? 'Regular' : 'Extraordinario');
@@ -51,10 +73,11 @@
 	}
 
 	async function cargar() {
+		modo = await cargarModo();
 		fijos = (await query(`
-			SELECT id, nombre, detalle, monto, moneda, categoria, tipo, activa
+			SELECT id, nombre, detalle, monto, moneda, categoria, tipo, activa, dia_esperado
 			FROM ingreso_fijo WHERE perfil_id=1
-			ORDER BY activa DESC, categoria, nombre`)) as any[];
+			ORDER BY activa DESC, dia_esperado IS NULL, dia_esperado, nombre`)) as any[];
 
 		const reg = (await query('SELECT ingreso_fijo_id FROM ingreso_fijo_registro WHERE periodo=?', [periodo])) as any[];
 		const r: Record<number, boolean> = {};
@@ -65,11 +88,6 @@
 		fijoMesARS = fijos
 			.filter((s: any) => s.activa)
 			.reduce((t: number, s: any) => t + (s.moneda === 'USD' ? s.monto * dolar : s.monto), 0);
-
-		// Agrupar por categoria, en orden Principal -> Secundarios -> Otros.
-		const map: Record<string, any[]> = {};
-		for (const s of fijos) (map[s.categoria] ??= []).push(s);
-		grupos = ORDEN_CAT.filter((c) => map[c]?.length).map((cat) => ({ cat, items: map[cat] }));
 	}
 
 	onMount(cargar);
@@ -82,6 +100,7 @@
 		fMoneda = 'ARS';
 		fCategoria = 'Ingreso Principal';
 		fTipo = 'Sueldo';
+		fDiaEsperado = '';
 	}
 
 	function iniciarEdit(s: any) {
@@ -92,6 +111,7 @@
 		fMoneda = s.moneda;
 		fCategoria = s.categoria;
 		fTipo = s.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
+		fDiaEsperado = s.dia_esperado != null ? String(s.dia_esperado) : '';
 		mensaje = '';
 		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -103,14 +123,15 @@
 		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
 		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
 		const detalle = fDetalle.trim() || null;
+		const dia = fDiaEsperado ? Number(fDiaEsperado) : null;
 		try {
 			if (editId) {
-				await query('UPDATE ingreso_fijo SET nombre=?, detalle=?, monto=?, moneda=?, categoria=?, tipo=? WHERE id=? AND perfil_id=1',
-					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, editId]);
+				await query('UPDATE ingreso_fijo SET nombre=?, detalle=?, monto=?, moneda=?, categoria=?, tipo=?, dia_esperado=? WHERE id=? AND perfil_id=1',
+					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, dia, editId]);
 				mensaje = 'Ingreso recurrente actualizado ✅';
 			} else {
-				await query('INSERT INTO ingreso_fijo (perfil_id,nombre,detalle,monto,moneda,categoria,tipo) VALUES (1,?,?,?,?,?,?)',
-					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo]);
+				await query('INSERT INTO ingreso_fijo (perfil_id,nombre,detalle,monto,moneda,categoria,tipo,dia_esperado) VALUES (1,?,?,?,?,?,?,?)',
+					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, dia]);
 				mensaje = 'Ingreso recurrente agregado ✅';
 			}
 			resetForm();
@@ -202,6 +223,11 @@
 		<option value="Aciclico">Extraordinario</option>
 	</select></label>
 	<p class="form-nota">Regular: recurrente (sueldo, alquiler, renta). Extraordinario: cobros puntuales.</p>
+	<label>{modo === 'calendario' ? 'Día esperado de cobro' : 'Día esperado de cobro (dentro del período)'}
+		<select bind:value={fDiaEsperado}>
+			<option value="">— sin especificar —</option>
+			{#each opcsDia as o (o.valor)}<option value={String(o.valor)}>{o.label}</option>{/each}
+		</select></label>
 	<div class="botones">
 		<button class="btn btn-primary" onclick={guardar}>{editando ? 'Guardar cambios' : 'Agregar'}</button>
 		{#if editando}<button class="btn btn-secondary" onclick={resetForm}>Cancelar</button>{/if}
@@ -210,9 +236,11 @@
 </details>
 
 <div class="grupos">
-	{#each grupos as g (g.cat)}
-		<div class="grupo-cat">{catLabel(g.cat)}</div>
-		{#each g.items as s (s.id)}
+	{#each filas as f (f.sep ?? f.s.id)}
+		{#if f.sep}
+			<div class="sep-lista">{f.sep}</div>
+		{:else}
+			{@const s = f.s}
 			<div class="ficha" class:inactiva={!s.activa} class:editrow={editId === s.id}>
 				<div class="ficha-top">
 					<span class="ficha-nombre">{s.nombre}</span>
@@ -224,6 +252,7 @@
 				</div>
 				<div class="ficha-meta">
 					<span class="chip">{tipoLabel(s.tipo)}</span>
+					{` · ${catLabel(s.categoria)}`}{s.dia_esperado != null ? ` · ${etiquetaDia(s.dia_esperado, modo)}` : ''}
 				</div>
 				<div class="ficha-estado">
 					{#if !s.activa}
@@ -243,7 +272,7 @@
 					{/if}
 				</div>
 			</div>
-		{/each}
+		{/if}
 	{/each}
 	{#if fijos.length === 0}<p class="vacio">No hay ingresos recurrentes. Agregá el primero desde “➕ Agregar ingreso recurrente”, arriba.</p>{/if}
 </div>
@@ -277,7 +306,8 @@
 	.msg { color: var(--text-dim); font-weight: 600; }
 
 	.grupos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-	.grupo-cat { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 700; margin-top: 10px; padding-bottom: 2px; border-bottom: 1px solid var(--border); }
+	/* Separadores tenues de la lista plana: no agrupan, solo marcan un corte. */
+	.sep-lista { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); font-weight: 600; margin-top: 14px; padding-bottom: 3px; border-bottom: 1px dashed var(--border); opacity: 0.75; }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
 	.ficha.inactiva { opacity: 0.45; }
 	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
