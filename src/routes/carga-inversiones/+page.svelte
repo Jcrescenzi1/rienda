@@ -4,6 +4,7 @@
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { dolarActual } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
+	import { Toast } from '$lib/toast.svelte';
 
 	let cuentas = $state<any[]>([]);
 	let activosList = $state<any[]>([]);
@@ -32,7 +33,7 @@
 	let fMoneda = $state<'ARS' | 'USD'>('ARS');
 	let naTicker = $state(''); let naNombre = $state(''); let naTipo = $state('Accion');
 	let naRenta = $state('Variable'); let naMoneda = $state('USD');
-	let fMsg = $state('');
+	const toast = new Toast();
 
 	const uN = $derived(parseNum(fUnidades));
 	const mN = $derived(parseNum(fMonto));
@@ -44,6 +45,25 @@
 		return a ? a.moneda : 'USD';
 	});
 	let esTrade = $derived(fAccion === 'Compra' || fAccion === 'Venta');
+
+	// Agrupa los activos por tipo para los selectores: grupos en orden alfabético
+	// y, dentro de cada uno, activos alfabéticos. Sin dato nuevo: usa el campo
+	// `tipo` que ya trae la tabla `activo`.
+	const activosPorTipo = $derived.by(() => {
+		const grupos = new Map<string, any[]>();
+		for (const a of activosList) {
+			const t = a.tipo || 'Otros';
+			if (!grupos.has(t)) grupos.set(t, []);
+			grupos.get(t)!.push(a);
+		}
+		return [...grupos.entries()]
+			.sort((x, y) => x[0].localeCompare(y[0], 'es'))
+			.map(([tipo, items]) => ({
+				tipo,
+				items: [...items].sort((p, q) => String(p.nombre).localeCompare(String(q.nombre), 'es'))
+			}));
+	});
+
 	const rentaN = $derived(parseNum(fRenta));
 	const amortN = $derived(parseNum(fAmort));
 
@@ -111,7 +131,6 @@
 	function resetForm() {
 		fUnidades = ''; fMonto = ''; fRenta = ''; fAmort = ''; fTcRenta = '';
 		fCuentaNueva = ''; fActivo = ''; naTicker = ''; naNombre = '';
-		fMsg = '';
 	}
 
 	function setAccion(ac: 'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir') {
@@ -119,36 +138,36 @@
 	}
 
 	async function guardar() {
-		fMsg = '';
+		toast.limpiar();
 		const monto = mN;
-		if (!fFecha) return (fMsg = 'Falta la fecha');
-		if (fAccion !== 'Renta' && (!Number.isFinite(monto) || monto <= 0)) return (fMsg = 'Monto inválido');
+		if (!fFecha) return toast.error('Falta la fecha');
+		if (fAccion !== 'Renta' && (!Number.isFinite(monto) || monto <= 0)) return toast.error('Monto inválido');
 		try {
 			if (fAccion === 'Renta') {
-				if (!fActivo || fActivo === 'nuevo') return (fMsg = 'Elegí un activo');
+				if (!fActivo || fActivo === 'nuevo') return toast.error('Elegí un activo');
 				const renta = Number.isFinite(rentaN) && rentaN > 0 ? rentaN : 0;
 				const amort = Number.isFinite(amortN) && amortN > 0 ? amortN : 0;
-				if (renta + amort <= 0) return (fMsg = 'Cargá al menos un monto (renta o amortización)');
+				if (renta + amort <= 0) return toast.error('Cargá al menos un monto (renta o amortización)');
 				const aMon = monedaActivo;
 				const necesitaVd = !(fMoneda === 'USD' && aMon === 'USD');
 				const tcManual = parseNum(fTcRenta);
 				let vd = Number.isFinite(tcManual) && tcManual > 0 ? tcManual : (await mepDeFecha(fFecha)) ?? NaN;
-				if (necesitaVd && !(Number.isFinite(vd) && vd > 0)) return (fMsg = 'No hay cotización del dólar para esa fecha; cargá el tipo de cambio');
+				if (necesitaVd && !(Number.isFinite(vd) && vd > 0)) return toast.error('No hay cotización del dólar para esa fecha; cargá el tipo de cambio');
 				const vdVal = necesitaVd && Number.isFinite(vd) ? vd : null;
 				await query('INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
 					[Number(fActivo), fFecha, fMoneda, renta, amort, vdVal]);
-				fMsg = 'Renta y amortización guardada ✅';
+				toast.exito('Renta y amortización guardada ✅');
 				resetForm();
 				await cargarBase(); await cargarActivos();
 				return;
 			}
 			if (esTrade) {
 				const u = uN;
-				if (!Number.isFinite(u) || u <= 0) return (fMsg = 'Unidades inválidas');
-				if (!fCuenta) return (fMsg = 'Elegí cuenta');
-				if (!fActivo) return (fMsg = 'Elegí activo');
-				if (fCuenta === 'nueva' && !fCuentaNueva.trim()) return (fMsg = 'Nombre de cuenta');
-				if (fActivo === 'nuevo' && (!naTicker.trim() || !naNombre.trim())) return (fMsg = 'Completá ticker y nombre');
+				if (!Number.isFinite(u) || u <= 0) return toast.error('Unidades inválidas');
+				if (!fCuenta) return toast.error('Elegí cuenta');
+				if (!fActivo) return toast.error('Elegí activo');
+				if (fCuenta === 'nueva' && !fCuentaNueva.trim()) return toast.error('Nombre de cuenta');
+				if (fActivo === 'nuevo' && (!naTicker.trim() || !naNombre.trim())) return toast.error('Completá ticker y nombre');
 				let cuentaId: number;
 				if (fCuenta === 'nueva') {
 					const r = (await query("INSERT INTO cuenta_inversion (perfil_id,nombre,tipo) VALUES (1,?,'broker') RETURNING id", [fCuentaNueva.trim()])) as any[];
@@ -165,12 +184,12 @@
 					const neto = (await query(
 						"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
 						[activoId])) as any[];
-					if (neto[0].n + 1e-9 < u) return (fMsg = `No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
+					if (neto[0].n + 1e-9 < u) return toast.error(`No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
 				}
 				const montoPago = monto;
 				let montoActivo = monto;
 				if (fPago !== monA) {
-					if (!Number.isFinite(vdN) || vdN <= 0) return (fMsg = 'Valor dólar inválido');
+					if (!Number.isFinite(vdN) || vdN <= 0) return toast.error('Valor dólar inválido');
 					montoActivo = monA === 'USD' ? monto / vdN : monto * vdN;
 				}
 				const precio = montoActivo / u;
@@ -183,25 +202,25 @@
 				if (!ultAct || fFecha >= ultAct) {
 					await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [precio, fFecha, activoId]);
 				}
-				fMsg = `${fAccion} guardada ✅`;
+				toast.exito(`${fAccion} guardada ✅`);
 			} else if (fAccion === 'Ingreso' || fAccion === 'Retiro') {
 				const signo = fAccion === 'Ingreso' ? 1 : -1;
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto) VALUES (1,?,?,?,?)', [fFecha, fAccion, fMoneda, signo * monto]);
-				fMsg = `${fAccion} de ${fMoneda} guardado ✅`;
+				toast.exito(`${fAccion} de ${fMoneda} guardado ✅`);
 			} else if (fAccion === 'Convertir') {
 				const vd = vdN;
-				if (!Number.isFinite(vd) || vd <= 0) return (fMsg = 'Valor dólar inválido');
+				if (!Number.isFinite(vd) || vd <= 0) return toast.error('Valor dólar inválido');
 				const destinoMon = fMoneda === 'ARS' ? 'USD' : 'ARS';
 				const montoDestino = fMoneda === 'ARS' ? monto / vd : monto * vd;
 				// id de grupo unico sin usar fechas "ahora": fecha del mov + aleatorio.
 				const grupo = 'conv-' + fFecha + '-' + Math.floor(Math.random() * 1e9);
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', fMoneda, -monto, grupo]);
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', destinoMon, montoDestino, grupo]);
-				fMsg = `Convertido ${fMoneda}→${destinoMon} ✅`;
+				toast.exito(`Convertido ${fMoneda}→${destinoMon} ✅`);
 			}
 			resetForm();
 			await cargarBase(); await cargarActivos(); await cargarCaja();
-		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
 	}
 
 	async function borrarActivo(m: any) {
@@ -242,7 +261,7 @@
 		{#if fCuenta === 'nueva'}<label>Nombre cuenta<input bind:value={fCuentaNueva} /></label>{/if}
 		<label>Activo
 			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
-				{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}
+				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
 				<option value="nuevo">+ Activo nuevo…</option></select></label>
 		{#if fActivo === 'nuevo'}
 			<div class="nuevo">
@@ -274,7 +293,7 @@
 	{:else if fAccion === 'Renta'}
 		<label>Activo
 			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
-				{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}
+				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
 			</select></label>
 		<label>Moneda (renta y amortización)<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:soloNum bind:value={fRenta} placeholder="0,00" /></label>
@@ -287,7 +306,7 @@
 		{/if}
 	{/if}
 	<button class="btn btn-success" onclick={guardar}>Guardar</button>
-	{#if fMsg}<p class="msg">{fMsg}</p>{/if}
+	{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 </div>
 </details>
 
@@ -300,7 +319,7 @@
 <label class="filtro-activo">Activo
 	<select bind:value={filtroActivo}>
 		<option value="">Todos</option>
-		{#each activosList as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}
+		{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}</optgroup>{/each}
 	</select>
 </label>
 

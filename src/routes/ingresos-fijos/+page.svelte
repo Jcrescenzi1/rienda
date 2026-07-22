@@ -5,6 +5,7 @@
 	import { periodoRegla, periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
+	import { Toast } from '$lib/toast.svelte';
 
 	// Arranca en el período activo de Cuenta Corriente (si venís de la Home); si no,
 	// en el mes actual. Solo default inicial; el cambio acá no vuelve a la Home.
@@ -41,7 +42,7 @@
 	let fTipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
 	let fDiaEsperado = $state(''); // '' = sin especificar -> NULL
 
-	let mensaje = $state('');
+	const toast = new Toast();
 	const editando = $derived(editId !== null);
 
 	// Orden de presentación: activos primero, rotados por día de cobro (ordenDia),
@@ -128,33 +129,33 @@
 		fCategoria = s.categoria;
 		fTipo = s.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
 		fDiaEsperado = s.dia_esperado != null ? String(s.dia_esperado) : '';
-		mensaje = '';
+		toast.limpiar();
 		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
-		mensaje = '';
+		toast.limpiar();
 		const m = parseNum(fMonto);
-		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
-		if (!fCategoria) return (mensaje = 'Elegí categoría');
+		if (!fNombre.trim()) return toast.error('Falta el nombre');
+		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
+		if (!fCategoria) return toast.error('Elegí categoría');
 		const detalle = fDetalle.trim() || null;
 		const dia = fDiaEsperado ? Number(fDiaEsperado) : null;
 		try {
 			if (editId) {
 				await query('UPDATE ingreso_fijo SET nombre=?, detalle=?, monto=?, moneda=?, categoria=?, tipo=?, dia_esperado=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, dia, editId]);
-				mensaje = 'Ingreso recurrente actualizado ✅';
+				toast.exito('Ingreso recurrente actualizado ✅');
 			} else {
 				await query('INSERT INTO ingreso_fijo (perfil_id,nombre,detalle,monto,moneda,categoria,tipo,dia_esperado) VALUES (1,?,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCategoria, fTipo, dia]);
-				mensaje = 'Ingreso recurrente agregado ✅';
+				toast.exito('Ingreso recurrente agregado ✅');
 			}
 			resetForm();
 			await cargar();
 		} catch (e: any) {
-			mensaje = 'Error: ' + (e?.message ?? String(e));
+			toast.error('Error: ' + (e?.message ?? String(e)));
 		}
 	}
 
@@ -172,7 +173,7 @@
 		dFecha = fechaCobroDefault(periodo);
 		dPeriodoTocado = false;
 		dPeriodo = periodoRegla(dFecha, s.categoria);
-		mensaje = '';
+		toast.limpiar();
 	}
 	// Al cambiar la fecha de cobro, re-sugiere el período por la regla del veinte,
 	// salvo que el usuario ya lo haya editado a mano.
@@ -181,9 +182,9 @@
 	}
 	async function confirmarRegistro(s: any) {
 		const m = parseNum(dMonto);
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
-		if (!dFecha) return (mensaje = 'Falta la fecha');
-		if (!dPeriodo) return (mensaje = 'Falta el período');
+		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
+		if (!dFecha) return toast.error('Falta la fecha');
+		if (!dPeriodo) return toast.error('Falta el período');
 		try {
 			// El ingreso hereda categoria y tipo del fijo. El periodo es UNA sola
 			// fuente (dPeriodo, recomendado por la regla del veinte y editable): lo
@@ -197,9 +198,9 @@
 				{ sql: "INSERT INTO ingreso_fijo_registro (ingreso_fijo_id,ingreso_id,periodo) VALUES (?, last_insert_rowid(), ?)",
 				  bind: [s.id, dPeriodo] }
 			]);
-			registrando = null; mensaje = `"${s.nombre}" registrado (período ${dPeriodo}) ✅`;
+			registrando = null; toast.exito(`"${s.nombre}" registrado (período ${dPeriodo}) ✅`);
 			await cargar();
-		} catch (e: any) { mensaje = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
 	}
 
 	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
@@ -294,7 +295,7 @@
 	{/each}
 	{#if fijos.length === 0}<p class="vacio">No hay ingresos recurrentes. Agregá el primero desde “➕ Agregar ingreso recurrente”, arriba.</p>{/if}
 </div>
-{#if mensaje}<p class="msg">{mensaje}</p>{/if}
+{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 
 
 

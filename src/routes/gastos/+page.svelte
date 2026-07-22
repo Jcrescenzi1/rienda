@@ -4,6 +4,7 @@
     import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import TabsCorrRec from '$lib/TabsCorrRec.svelte';
+    import { Toast } from '$lib/toast.svelte';
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -33,7 +34,7 @@
 
     let editandoId = $state<number | null>(null);
     let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
-    let mensaje = $state('');
+    const toast = new Toast();
 
     async function cargarBase() {
         categorias = await query('SELECT id, nombre FROM categoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre');
@@ -161,7 +162,7 @@
         tarjetaId = g.tarjeta_id;
         cuotas = g.cuotas ?? 1;
         mesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : mesActual();
-        mensaje = '';
+        toast.limpiar();
         formAbierto = true;
         window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -177,16 +178,16 @@
     }
 
     async function guardar() {
-        mensaje = '';
+        toast.limpiar();
         const m = parseNum(monto);
-        if (!fecha) return (mensaje = 'Falta la fecha');
-        if (!Number.isFinite(m) || m <= 0) return (mensaje = 'El monto debe ser mayor a 0');
-        if (!categoriaId) return (mensaje = 'Elegí una categoría');
-        if (!detalle.trim()) return (mensaje = 'Falta el detalle');
+        if (!fecha) return toast.error('Falta la fecha');
+        if (!Number.isFinite(m) || m <= 0) return toast.error('El monto debe ser mayor a 0');
+        if (!categoriaId) return toast.error('Elegí una categoría');
+        if (!detalle.trim()) return toast.error('Falta el detalle');
         if (medio === 'credito') {
-            if (!tarjetaId) return (mensaje = 'Elegí la tarjeta');
-            if (!cuotas || cuotas < 1) return (mensaje = 'Cuotas inválidas');
-            if (!mesInicio) return (mensaje = 'Falta el mes de inicio de pago');
+            if (!tarjetaId) return toast.error('Elegí la tarjeta');
+            if (!cuotas || cuotas < 1) return toast.error('Cuotas inválidas');
+            if (!mesInicio) return toast.error('Falta el mes de inicio de pago');
         }
         const dTrim = detalle.trim();
         try {
@@ -211,7 +212,7 @@
                     await query('UPDATE gasto SET fecha=?, monto=?, moneda=?, categoria_id=?, detalle=?, medio=?, tarjeta_id=?, cuotas=?, mes_inicio_pago=? WHERE id=? AND perfil_id=1',
                         [fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01', editandoId]);
                 }
-                mensaje = 'Gasto actualizado ✅';
+                toast.exito('Gasto actualizado ✅');
             } else {
                 if (medio === 'debito') {
                     await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas) VALUES (1,?,?,?,?,?,?,1)',
@@ -220,13 +221,13 @@
                     await query('INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,tarjeta_id,cuotas,mes_inicio_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
                         [fecha, m, moneda, categoriaId, dTrim, 'credito', tarjetaId, cuotas, mesInicio + '-01']);
                 }
-                mensaje = 'Gasto guardado ✅';
+                toast.exito('Gasto guardado ✅');
             }
             resetForm();
             await cargarBase();
             await cargarUltimos();
         } catch (e: any) {
-            mensaje = 'Error: ' + (e?.message ?? String(e));
+            toast.error('Error: ' + (e?.message ?? String(e)));
         }
     }
 
@@ -315,7 +316,7 @@
     {/if}
 
     <button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
-    {#if mensaje}<p class="msg">{mensaje}</p>{/if}
+    {#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 </div>
 </details>
 

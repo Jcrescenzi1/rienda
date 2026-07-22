@@ -6,6 +6,7 @@
 	import { periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
+	import { Toast } from '$lib/toast.svelte';
 
 	// Arranca en el período activo de Cuenta Corriente (si venís de la Home); si no,
 	// en el mes actual. Es solo el default inicial: el usuario lo cambia libremente y
@@ -45,7 +46,7 @@
 	let fTarjetaId = $state<number | null>(null);
 	let fDiaEsperado = $state(''); // '' = sin especificar -> NULL
 
-	let mensaje = $state('');
+	const toast = new Toast();
 	const editando = $derived(editId !== null);
 
 	// Orden de presentación: activos primero, dentro de ellos rotados por día de cobro
@@ -191,28 +192,28 @@
 		fSubcatId = s.scid != null ? String(s.scid) : '';
 		fTarjetaId = s.tarjeta_id;
 		fDiaEsperado = s.dia_esperado != null ? String(s.dia_esperado) : '';
-		mensaje = '';
+		toast.limpiar();
 		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
-		mensaje = '';
+		toast.limpiar();
 		const m = parseNum(fMonto);
-		if (!fNombre.trim()) return (mensaje = 'Falta el nombre');
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
-		if (!fCatId) return (mensaje = 'Elegí categoría');
+		if (!fNombre.trim()) return toast.error('Falta el nombre');
+		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
+		if (!fCatId) return toast.error('Elegí categoría');
 		const detalle = (fDetalle.trim() || fNombre.trim());
 		const dia = fDiaEsperado ? Number(fDiaEsperado) : null;
 		try {
 			if (editId) {
 				await query('UPDATE suscripcion SET nombre=?, detalle=?, monto=?, moneda=?, categoria_id=?, tarjeta_id=?, dia_esperado=? WHERE id=? AND perfil_id=1',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, dia, editId]);
-				mensaje = 'Gasto recurrente actualizado ✅';
+				toast.exito('Gasto recurrente actualizado ✅');
 			} else {
 				await query('INSERT INTO suscripcion (perfil_id,nombre,detalle,monto,moneda,categoria_id,tarjeta_id,dia_esperado) VALUES (1,?,?,?,?,?,?,?)',
 					[fNombre.trim(), detalle, m, fMoneda, fCatId, fTarjetaId, dia]);
-				mensaje = 'Gasto recurrente agregado ✅';
+				toast.exito('Gasto recurrente agregado ✅');
 			}
 			// Si se eligio subcategoria, se mapea el detalle (reclasifica historial).
 			if (fSubcatId) {
@@ -224,7 +225,7 @@
 			resetForm();
 			await cargar();
 		} catch (e: any) {
-			mensaje = 'Error: ' + (e?.message ?? String(e));
+			toast.error('Error: ' + (e?.message ?? String(e)));
 		}
 	}
 
@@ -242,12 +243,12 @@
 		// Default editable: hoy montado sobre el mes del selector. El gasto fijo no
 		// abre corte -> el periodo del registro sigue siendo el del selector (guard).
 		dFecha = fechaCobroDefault(periodo);
-		mensaje = '';
+		toast.limpiar();
 	}
 	async function confirmarDisparo(s: any) {
 		const m = parseNum(dMonto);
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
-		if (!dFecha) return (mensaje = 'Falta la fecha');
+		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
+		if (!dFecha) return toast.error('Falta la fecha');
 		try {
 			// Si hay una subcategoria macro elegida, el gasto sale con ese override;
 			// si no, queda NULL y se clasifica por diccionario (via el detalle).
@@ -256,9 +257,9 @@
 			const g = (await query("INSERT INTO gasto (perfil_id,fecha,monto,moneda,categoria_id,detalle,medio,cuotas,subcategoria_id) VALUES (1,?,?,?,?,?,'debito',1,?) RETURNING id",
 				[dFecha, m, s.moneda, s.categoria_id, det, scid])) as any[];
 			await query('INSERT INTO suscripcion_registro (suscripcion_id,gasto_id,periodo) VALUES (?,?,?)', [s.id, g[0].id, periodo]);
-			disparando = null; mensaje = `"${s.nombre}" registrada en ${periodo} ✅`;
+			disparando = null; toast.exito(`"${s.nombre}" registrada en ${periodo} ✅`);
 			await cargar();
-		} catch (e: any) { mensaje = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
 	}
 
 	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
@@ -355,7 +356,7 @@
 	{/each}
 	{#if subs.length === 0}<p class="vacio">No hay gastos recurrentes. Agregá el primero desde “➕ Agregar gasto recurrente”, arriba.</p>{/if}
 </div>
-{#if mensaje}<p class="msg">{mensaje}</p>{/if}
+{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 
 
 

@@ -4,9 +4,10 @@
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import { periodoRegla } from '$lib/periodo';
+	import { Toast } from '$lib/toast.svelte';
 
 	let ingresos = $state<any[]>([]);
-	let mensaje = $state('');
+	const toast = new Toast();
 
 	// Filtros de la lista
 	let filtroCategoria = $state<string>('');
@@ -87,17 +88,17 @@
 		tipo = i.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
 		detalle = i.detalle ?? '';
 		periodoIngreso = i.periodo ?? periodoRegla(i.fecha, i.categoria);
-		mensaje = '';
+		toast.limpiar();
 		formAbierto = true;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	}
 
 	async function guardar() {
-		mensaje = '';
+		toast.limpiar();
 		const m = parseNum(monto);
-		if (!fecha) return (mensaje = 'Falta la fecha');
-		if (!Number.isFinite(m) || m <= 0) return (mensaje = 'Monto inválido');
-		if (!periodoIngreso) return (mensaje = 'Falta el período');
+		if (!fecha) return toast.error('Falta la fecha');
+		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
+		if (!periodoIngreso) return toast.error('Falta el período');
 		// tipo se guarda para todas las categorías; solo los Ingreso Principal
 		// con tipo Regular (Sueldo) marcan los cortes de período.
 		const t = tipo;
@@ -108,18 +109,18 @@
 					'UPDATE ingreso SET fecha=?, monto=?, moneda=?, categoria=?, tipo=?, detalle=?, periodo=? WHERE id=? AND perfil_id=1',
 					[fecha, m, moneda, categoria, t, det, periodoIngreso, editandoId]
 				);
-				mensaje = 'Ingreso actualizado ✅';
+				toast.exito('Ingreso actualizado ✅');
 			} else {
 				await query(
 					'INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)',
 					[fecha, m, moneda, categoria, t, det, periodoIngreso]
 				);
-				mensaje = 'Ingreso guardado ✅';
+				toast.exito('Ingreso guardado ✅');
 			}
 			resetForm();
 			await cargar();
 		} catch (e: any) {
-			mensaje = 'Error: ' + (e?.message ?? String(e));
+			toast.error('Error: ' + (e?.message ?? String(e)));
 		}
 	}
 
@@ -193,7 +194,7 @@
 
 	<label>Detalle (opcional)<input bind:value={detalle} placeholder="Ej: Aguinaldo, Cochera, Dólares…" /></label>
 	<button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar ingreso' : 'Guardar ingreso'}</button>
-	{#if mensaje}<p class="msg">{mensaje}</p>{/if}
+	{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 </div>
 </details>
 
