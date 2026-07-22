@@ -31,8 +31,6 @@
 	let fValorDolar = $state('');
 	let fPago = $state<'ARS' | 'USD'>('USD');
 	let fMoneda = $state<'ARS' | 'USD'>('ARS');
-	let naTicker = $state(''); let naNombre = $state(''); let naTipo = $state('Accion');
-	let naRenta = $state('Variable'); let naMoneda = $state('USD');
 	const toast = new Toast();
 
 	const uN = $derived(parseNum(fUnidades));
@@ -40,7 +38,6 @@
 	const vdN = $derived(parseNum(fValorDolar));
 
 	let monedaActivo = $derived.by(() => {
-		if (fActivo === 'nuevo') return naMoneda;
 		const a = activosList.find((x) => String(x.id) === fActivo);
 		return a ? a.moneda : 'USD';
 	});
@@ -69,7 +66,7 @@
 
 	// En Renta, la moneda por defecto es la del activo (editable).
 	$effect(() => {
-		if (fAccion === 'Renta' && fActivo && fActivo !== 'nuevo') fMoneda = monedaActivo as 'ARS' | 'USD';
+		if (fAccion === 'Renta' && fActivo) fMoneda = monedaActivo as 'ARS' | 'USD';
 	});
 
 	async function cargarBase() {
@@ -130,7 +127,7 @@
 
 	function resetForm() {
 		fUnidades = ''; fMonto = ''; fRenta = ''; fAmort = ''; fTcRenta = '';
-		fCuentaNueva = ''; fActivo = ''; naTicker = ''; naNombre = '';
+		fCuentaNueva = ''; fActivo = '';
 	}
 
 	function setAccion(ac: 'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir') {
@@ -144,7 +141,7 @@
 		if (fAccion !== 'Renta' && (!Number.isFinite(monto) || monto <= 0)) return toast.error('Monto inválido');
 		try {
 			if (fAccion === 'Renta') {
-				if (!fActivo || fActivo === 'nuevo') return toast.error('Elegí un activo');
+				if (!fActivo) return toast.error('Elegí un activo');
 				const renta = Number.isFinite(rentaN) && rentaN > 0 ? rentaN : 0;
 				const amort = Number.isFinite(amortN) && amortN > 0 ? amortN : 0;
 				if (renta + amort <= 0) return toast.error('Cargá al menos un monto (renta o amortización)');
@@ -167,19 +164,13 @@
 				if (!fCuenta) return toast.error('Elegí cuenta');
 				if (!fActivo) return toast.error('Elegí activo');
 				if (fCuenta === 'nueva' && !fCuentaNueva.trim()) return toast.error('Nombre de cuenta');
-				if (fActivo === 'nuevo' && (!naTicker.trim() || !naNombre.trim())) return toast.error('Completá ticker y nombre');
 				let cuentaId: number;
 				if (fCuenta === 'nueva') {
 					const r = (await query("INSERT INTO cuenta_inversion (perfil_id,nombre,tipo) VALUES (1,?,'broker') RETURNING id", [fCuentaNueva.trim()])) as any[];
 					cuentaId = r[0].id;
 				} else cuentaId = Number(fCuenta);
-				let activoId: number; let monA: string;
-				if (fActivo === 'nuevo') {
-					const expo = naMoneda === 'USD' || naTipo === 'CEDEAR' || naTipo === 'Indice' ? 'Dolar' : 'Peso';
-					const r = (await query('INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda,exposicion) VALUES (1,?,?,?,?,?,?) RETURNING id',
-						[naTicker.trim(), naNombre.trim(), naTipo, naRenta, naMoneda, expo])) as any[];
-					activoId = r[0].id; monA = naMoneda;
-				} else { activoId = Number(fActivo); monA = monedaActivo; }
+				const activoId = Number(fActivo);
+				const monA = monedaActivo;
 				if (fAccion === 'Venta') {
 					const neto = (await query(
 						"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
@@ -262,16 +253,8 @@
 		<label>Activo
 			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
 				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
-				<option value="nuevo">+ Activo nuevo…</option></select></label>
-		{#if fActivo === 'nuevo'}
-			<div class="nuevo">
-				<label>Ticker<input bind:value={naTicker} /></label>
-				<label>Nombre<input bind:value={naNombre} /></label>
-				<label>Tipo<select bind:value={naTipo}><option>Accion</option><option>CEDEAR</option><option>Bono</option><option>ON</option><option>FCI</option><option>Indice</option></select></label>
-				<label>Renta<select bind:value={naRenta}><option>Variable</option><option>Fija</option><option>Mixta</option><option>Liquido</option></select></label>
-				<label>Moneda<select bind:value={naMoneda}><option>USD</option><option>ARS</option></select></label>
-			</div>
-		{/if}
+			</select></label>
+		<a class="link-crear" href="/config-tickers">¿No está? Crealo en Tickers →</a>
 		<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
 		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} en<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
@@ -374,7 +357,8 @@
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.acciones { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 	.acciones button { width: 100%; box-sizing: border-box; }
-	.nuevo { border: 1px dashed var(--border); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+	.link-crear { display: inline-block; font-size: 0.82rem; color: var(--accent); text-decoration: none; margin: -2px 0 2px; }
+	.link-crear:hover { text-decoration: underline; }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
