@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { previsualizarPrecios, actualizarPrecios, ajustarEscala } from '$lib/db/precios';
+	import { actualizarPrecios } from '$lib/db/precios';
 	import { Toast } from '$lib/toast.svelte';
 	import Guia from '$lib/Guia.svelte';
 
@@ -14,8 +14,6 @@
 
 	let activos = $state<any[]>([]);
 	let cargando = $state(true);
-	let preview = $state<Record<string, number> | null>(null);
-	let probando = $state(false);
 	let actualizando = $state(false);
 	const toast = new Toast();
 
@@ -39,7 +37,7 @@
 		// Todos los activos del perfil (incluidos FCI): esta pantalla es el único
 		// lugar de alta/edición. Orden: por tipo y, dentro, por ticker.
 		activos = (await query(
-			"SELECT id, ticker, nombre, tipo, renta, moneda, precio_actual, simbolo_cotizacion, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY tipo COLLATE NOCASE, ticker COLLATE NOCASE"
+			"SELECT id, ticker, nombre, tipo, renta, moneda, precio_actual, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY tipo COLLATE NOCASE, ticker COLLATE NOCASE"
 		)) as any[];
 		cargando = false;
 	}
@@ -139,20 +137,6 @@
 		}
 	}
 
-	async function probar() {
-		probando = true; preview = null;
-		try { preview = await previsualizarPrecios(); toast.exito('Precios traídos de data912 ✅'); }
-		catch (e: any) { toast.error('Error: ' + (e?.message ?? e)); }
-		probando = false;
-	}
-
-	// Precio de la fuente para un activo, ya escalado (bonos/ONs ÷100).
-	function precioFuente(a: any): number | null {
-		if (!preview || !a.simbolo_cotizacion) return null;
-		const raw = preview[String(a.simbolo_cotizacion).trim().toUpperCase()];
-		return raw == null ? null : ajustarEscala(raw, a.tipo);
-	}
-
 	async function actualizarAhora() {
 		actualizando = true;
 		try { toast.exito(await actualizarPrecios()); await cargar(); }
@@ -194,15 +178,12 @@
 	</div>
 </details>
 
-<p class="nota">
-	Cada instrumento de BYMA tiene tres símbolos: el pelado en <strong>pesos</strong> (ej. <code>GD35</code>),
-	con <strong>D</strong> = dólar MEP (<code>GD35D</code>) y con <strong>C</strong> = dólar CCL (<code>GD35C</code>).
-	Para un activo en <strong>USD</strong>, usá el símbolo con D o C; para uno en <strong>pesos</strong>, el pelado.
-	Los <strong>FCI</strong> no cotizan en data912: dejá su símbolo vacío y actualizá el precio a mano desde Inversiones.
-</p>
+<ul class="nota">
+	<li>El ticker (código) de un instrumento cambia según nombre y moneda de cotización. Validar asegura la carga intra-app de las cotizaciones.</li>
+	<li>Los FCI no se actualizan por aplicación, sus valores deben ajustarse a mano desde la tabla "Cartera Actual".</li>
+</ul>
 
 <div class="acciones">
-	<button class="btn btn-secondary" onclick={probar} disabled={probando}>{probando ? 'Probando…' : '🔎 Probar precios'}</button>
 	<button class="btn btn-primary" onclick={actualizarAhora} disabled={actualizando}>{actualizando ? 'Actualizando…' : '⟳ Actualizar precios ahora'}</button>
 </div>
 
@@ -233,11 +214,7 @@
 				<div class="ficha" class:editrow={editId === a.id}>
 					<div class="ficha-top">
 						<span class="ficha-detalle"><strong class="tk">{a.ticker}</strong> · {a.nombre}</span>
-						<span class="ficha-monto">
-							{#if preview && a.simbolo_cotizacion}
-								{#if precioFuente(a) != null}<span class="ok">{money(precioFuente(a), a.moneda)}</span>{:else}<span class="bad">sin match</span>{/if}
-							{:else}—{/if}
-						</span>
+						<span class="ficha-monto">{money(a.precio_actual, a.moneda)}</span>
 					</div>
 					<div class="ficha-bot">
 						<span class="ficha-meta">{a.moneda} · exp. {a.exposicion}</span>
@@ -250,7 +227,7 @@
 		</div>
 	{/each}
 	{/if}
-	<p class="nota">El precio se guarda en la moneda que implica el símbolo. Si la fuente dice <span class="bad">sin match</span>, revisá el símbolo (mayúsculas, sufijo D/C). <strong>Cambiar la moneda reinterpreta los precios de ese activo en la nueva moneda.</strong></p>
+	<p class="nota">El precio se muestra en la moneda de cotización del activo. <strong>Cambiar la moneda reinterpreta los precios de ese activo en la nueva moneda.</strong></p>
 {/if}
 
 <style>
@@ -265,7 +242,8 @@
 	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin: 12px 0; line-height: 1.5; }
 	.nota strong { color: var(--text); }
-	.nota code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+	ul.nota { padding-left: 18px; }
+	ul.nota li { margin: 4px 0; }
 	.acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
 	.msg { font-weight: 600; color: var(--text); }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
@@ -291,7 +269,5 @@
 	.ficha-bot { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 4px; }
 	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
-	.ok { color: var(--pos); font-weight: 600; }
-	.bad { color: var(--neg); }
 	.vacio { color: var(--text-dim); font-style: italic; }
 </style>
