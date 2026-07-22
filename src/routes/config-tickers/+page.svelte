@@ -19,6 +19,10 @@
 	let actualizando = $state(false);
 	const toast = new Toast();
 
+	// Filtro de la lista (combinable): tipo + texto contra ticker/nombre.
+	let filtroTipo = $state('Todos');
+	let filtroTexto = $state('');
+
 	// Formulario unificado (alta + edición). editId null = alta, número = edición.
 	let formAbierto = $state(false);
 	let editId = $state<number | null>(null);
@@ -27,7 +31,6 @@
 	let fTipo = $state('Accion');
 	let fRenta = $state('Variable');
 	let fMoneda = $state<'ARS' | 'USD'>('ARS');
-	let fSimbolo = $state('');
 	let fExposicion = $state<'Dolar' | 'CER' | 'Peso'>('Peso');
 	// Marca si el usuario tocó la exposición a mano; si no, se sugiere por regla.
 	let fExpoTocada = $state(false);
@@ -42,11 +45,21 @@
 	}
 	onMount(cargar);
 
+	// Filtro combinable: tipo + texto (substring case-insensitive contra ticker y
+	// nombre). Solo reduce qué fichas se ven; no altera orden ni agrupado.
+	const activosFiltrados = $derived.by(() => {
+		const q = filtroTexto.trim().toLowerCase();
+		return activos.filter((a) =>
+			(filtroTipo === 'Todos' || a.tipo === filtroTipo) &&
+			(!q || a.ticker.toLowerCase().includes(q) || a.nombre.toLowerCase().includes(q))
+		);
+	});
+
 	// Agrupa por tipo: grupos en orden alfabético; los ítems ya vienen por ticker
 	// del ORDER BY. En esta pantalla el ticker es el dato central visible.
 	const activosPorTipo = $derived.by(() => {
 		const grupos = new Map<string, any[]>();
-		for (const a of activos) {
+		for (const a of activosFiltrados) {
 			if (!grupos.has(a.tipo)) grupos.set(a.tipo, []);
 			grupos.get(a.tipo)!.push(a);
 		}
@@ -69,7 +82,7 @@
 	function resetForm() {
 		editId = null;
 		fTicker = ''; fNombre = ''; fTipo = 'Accion'; fRenta = 'Variable';
-		fMoneda = 'ARS'; fSimbolo = ''; fExposicion = 'Peso'; fExpoTocada = false;
+		fMoneda = 'ARS'; fExposicion = 'Peso'; fExpoTocada = false;
 	}
 
 	function editar(a: any) {
@@ -79,7 +92,6 @@
 		fTipo = a.tipo;
 		fRenta = a.renta;
 		fMoneda = a.moneda;
-		fSimbolo = a.simbolo_cotizacion ?? '';
 		fExposicion = a.exposicion;
 		fExpoTocada = true; // en edición respetamos lo guardado
 		formAbierto = true;
@@ -91,7 +103,10 @@
 		toast.limpiar();
 		const ticker = fTicker.trim().toUpperCase();
 		const nombre = fNombre.trim();
-		const simbolo = fSimbolo.trim().toUpperCase() || null;
+		// Símbolo autosync determinístico: los FCI no cotizan en data912 (símbolo
+		// vacío); el resto usa su propio ticker. Se recalcula en cada guardado, así
+		// que cambiar el tipo a/desde FCI actualiza el símbolo solo.
+		const simbolo = fTipo === 'FCI' ? null : ticker;
 		if (!ticker) return toast.error('Falta el ticker');
 		if (!nombre) return toast.error('Falta el nombre');
 		try {
@@ -174,9 +189,6 @@
 		<label>Exposición
 			<select bind:value={fExposicion} onchange={() => (fExpoTocada = true)}>{#each EXPOSICIONES as e}<option value={e}>{e}</option>{/each}</select>
 		</label>
-		<label>Símbolo data912 <span class="opt">(opcional)</span>
-			<input bind:value={fSimbolo} placeholder="—" class="up" />
-		</label>
 		<button class="btn btn-primary" onclick={guardar}>{editId ? 'Actualizar activo' : 'Guardar activo'}</button>
 		{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
 	</div>
@@ -199,6 +211,21 @@
 {:else if activos.length === 0}
 	<p class="vacio">No tenés activos cargados. Creá el primero con “➕ Nuevo activo”.</p>
 {:else}
+	<div class="filtros">
+		<label>Tipo
+			<select bind:value={filtroTipo}>
+				<option value="Todos">Todos</option>
+				{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}
+			</select>
+		</label>
+		<label>Buscar
+			<input type="search" bind:value={filtroTexto} placeholder="Ticker o nombre…" />
+		</label>
+		{#if filtroTipo !== 'Todos' || filtroTexto.trim()}<button class="btn btn-secondary" onclick={() => { filtroTipo = 'Todos'; filtroTexto = ''; }}>Limpiar</button>{/if}
+	</div>
+	{#if activosPorTipo.length === 0}
+		<p class="vacio">No hay activos para el filtro.</p>
+	{:else}
 	{#each activosPorTipo as g (g.tipo)}
 		<h2 class="grupo">{g.tipo}</h2>
 		<div class="fichas">
@@ -206,15 +233,14 @@
 				<div class="ficha" class:editrow={editId === a.id}>
 					<div class="ficha-top">
 						<span class="ficha-detalle"><strong class="tk">{a.ticker}</strong> · {a.nombre}</span>
-						<span class="ficha-monto">{money(a.precio_actual, a.moneda)}</span>
+						<span class="ficha-monto">
+							{#if preview && a.simbolo_cotizacion}
+								{#if precioFuente(a) != null}<span class="ok">{money(precioFuente(a), a.moneda)}</span>{:else}<span class="bad">sin match</span>{/if}
+							{:else}—{/if}
+						</span>
 					</div>
 					<div class="ficha-bot">
-						<span class="ficha-meta">
-							{a.renta} · {a.moneda} · exp. {a.exposicion} · {a.simbolo_cotizacion ? `data912: ${a.simbolo_cotizacion}` : 'sin símbolo'}
-							{#if preview && a.simbolo_cotizacion}
-								· fuente {#if precioFuente(a) != null}<span class="ok">{money(precioFuente(a), a.moneda)}</span>{:else}<span class="bad">sin match</span>{/if}
-							{/if}
-						</span>
+						<span class="ficha-meta">{a.moneda} · exp. {a.exposicion}</span>
 						<span class="ficha-acc">
 							<button aria-label="Editar" class="lapiz" onclick={() => editar(a)} title="Editar">✏</button>
 						</span>
@@ -223,6 +249,7 @@
 			{/each}
 		</div>
 	{/each}
+	{/if}
 	<p class="nota">El precio se guarda en la moneda que implica el símbolo. Si la fuente dice <span class="bad">sin match</span>, revisá el símbolo (mayúsculas, sufijo D/C). <strong>Cambiar la moneda reinterpreta los precios de ese activo en la nueva moneda.</strong></p>
 {/if}
 
@@ -231,7 +258,11 @@
 	label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 7px; font-size: 1rem; }
 	.up { text-transform: uppercase; }
-	.opt { color: var(--text-dim); font-weight: 400; }
+
+	/* Filtro de la lista (mismo patrón que Gastos) */
+	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0 12px; }
+	.filtros label { flex: 1 1 140px; min-width: 0; }
+	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin: 12px 0; line-height: 1.5; }
 	.nota strong { color: var(--text); }
 	.nota code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
