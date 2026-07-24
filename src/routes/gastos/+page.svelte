@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum, pesos as fmt } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import TabsCorrRec from '$lib/TabsCorrRec.svelte';
     import { Toast } from '$lib/toast.svelte';
@@ -231,7 +231,6 @@
         }
     }
 
-    const fmt = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Number(n).toLocaleString('es-AR');
 
     // Texto del rango activo para mostrar arriba de la lista
     const rangoTexto = $derived(
@@ -242,6 +241,14 @@
     );
 
     const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta || !!filtroTexto.trim());
+
+    // Total de lo listado, separado por moneda (sin convertir). Refleja el filtro
+    // activo: suma exactamente las fichas que se están mostrando.
+    const totales = $derived.by(() => {
+        const t: Record<string, number> = {};
+        for (const g of ultimos) t[g.moneda] = (t[g.moneda] ?? 0) + g.monto;
+        return Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
+    });
 </script>
 
 <div class="titulo-guia">
@@ -336,6 +343,13 @@
     {#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
+{#if totales.length}
+    <div class="totales">
+        {#each totales as [mon, tot] (mon)}
+            <div class="total">Total {mon}: <strong>{fmt(tot, mon)}</strong></div>
+        {/each}
+    </div>
+{/if}
 
 <div class="fichas">
     {#each ultimos as g (g.id)}
@@ -379,6 +393,10 @@
        mínimo propio y sin esto desbordan y se superponen en el celular. */
     .filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
     .rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
+    /* Total de lo listado, una línea por moneda (sin convertir) */
+    .totales { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 10px; }
+    .total { font-size: 0.9rem; color: var(--text-dim); font-weight: 600; }
+    .total strong { color: var(--text); }
 
     /* Fichas de últimos gastos */
     .fichas { display: flex; flex-direction: column; gap: 8px; }

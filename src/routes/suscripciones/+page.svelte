@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
+	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
 	import { periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
@@ -78,6 +78,15 @@
 			out.push({ s });
 		}
 		return out;
+	});
+
+	// Total de los recurrentes activos, separado por moneda (sin convertir). El
+	// "Recurrente del mes" de arriba es el total convertido a ARS; esto es el
+	// desglose por moneda tal cual, sin conversión.
+	const totales = $derived.by(() => {
+		const t: Record<string, number> = {};
+		for (const s of subs) if (s.activa) t[s.moneda] = (t[s.moneda] ?? 0) + s.monto;
+		return Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
 	});
 
 	// MEP de referencia del periodo: cotizacion del primer dia del mes corriente.
@@ -262,7 +271,6 @@
 		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
 	}
 
-	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
 </script>
 
 <div class="titulo-guia">
@@ -315,6 +323,14 @@
 		{#each subcategorias as s (s.id)}<option value={String(s.id)}>{s.nombre}</option>{/each}
 	</select>
 </label>
+
+{#if totales.length}
+	<div class="totales">
+		{#each totales as [mon, tot] (mon)}
+			<div class="total">Total {mon}: <strong>{peso(tot, mon)}</strong></div>
+		{/each}
+	</div>
+{/if}
 
 <div class="grupos">
 	{#each filas as f (f.sep ?? f.s.id)}
@@ -387,6 +403,10 @@
 	.vacio { color: var(--text-dim); font-style: italic; }
 	.msg { color: var(--text-dim); font-weight: 600; }
 
+	/* Total de recurrentes activos, una línea por moneda (sin convertir) */
+	.totales { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0; }
+	.total { font-size: 0.9rem; color: var(--text-dim); font-weight: 600; }
+	.total strong { color: var(--text); }
 	.grupos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 	/* Separadores tenues de la lista plana. Deliberadamente más discretos que los
 	   viejos headers de categoría: acá no agrupan, solo marcan un corte. */

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { query, queryBatch } from '$lib/db/client';
-	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, pesos as peso } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import { periodoRegla } from '$lib/periodo';
@@ -136,7 +136,6 @@
 		await cargar();
 	}
 
-	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
 	// Etiqueta visible del tipo (interno Sueldo/Aciclico → Regular/Extraordinario)
 	const tipoLabel = (t: string | null) => t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : '—';
 	// Etiqueta visible de la categoría para la ficha
@@ -153,6 +152,14 @@
 	);
 
 	const hayFiltro = $derived(!!filtroCategoria || !!filtroDesde || !!filtroHasta);
+
+	// Total de lo listado, separado por moneda (sin convertir). Refleja el filtro
+	// activo: suma exactamente las fichas mostradas.
+	const totales = $derived.by(() => {
+		const t: Record<string, number> = {};
+		for (const i of ingresos) t[i.moneda] = (t[i.moneda] ?? 0) + i.monto;
+		return Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
+	});
 </script>
 
 <div class="titulo-guia">
@@ -213,6 +220,13 @@
 	{#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}
 </div>
 <p class="rango">{rangoTexto}</p>
+{#if totales.length}
+	<div class="totales">
+		{#each totales as [mon, tot] (mon)}
+			<div class="total">Total {mon}: <strong>{peso(tot, mon)}</strong></div>
+		{/each}
+	</div>
+{/if}
 
 <div class="fichas">
 	{#each ingresos as i (i.id)}
@@ -255,6 +269,10 @@
 	   mínimo propio y sin esto desbordan y se superponen en el celular. */
 	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.rango { font-size: 0.8rem; color: var(--text-dim); margin: 0 0 8px; font-weight: 600; }
+	/* Total de lo listado, una línea por moneda (sin convertir) */
+	.totales { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 0 0 10px; }
+	.total { font-size: 0.9rem; color: var(--text-dim); font-weight: 600; }
+	.total strong { color: var(--text); }
 
 	/* Fichas de ingresos cargados */
 	.fichas { display: flex; flex-direction: column; gap: 8px; }

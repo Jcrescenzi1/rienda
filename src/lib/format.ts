@@ -27,6 +27,13 @@ export function formatNum(n: number | null | undefined, dec = 2): string {
 	return n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
+// Importe para MOSTRAR: formato AR redondeado sin decimales, con símbolo de
+// moneda ($ / U$D). La carga y el guardado mantienen los decimales; esto es solo
+// presentación. Único helper de moneda para las vistas de finanzas personales.
+export function pesos(n: number | null | undefined, mon = 'ARS'): string {
+	return (mon === 'USD' ? 'U$D ' : '$') + (Math.round(Number(n)) || 0).toLocaleString('es-AR');
+}
+
 // Action Svelte: filtra en vivo el input al teclear.
 //   <input type="text" inputmode="decimal" bind:value={x} use:soloNum />
 export function soloNum(node: HTMLInputElement) {

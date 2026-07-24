@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
-	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault } from '$lib/format';
+	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso } from '$lib/format';
 	import { periodoRegla, periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
@@ -203,7 +203,14 @@
 		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
 	}
 
-	const peso = (n: number, mon = 'ARS') => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n || 0).toLocaleString('es-AR');
+	// Total de los ingresos recurrentes activos, separado por moneda (sin
+	// convertir). El "Ingreso recurrente del mes" de arriba es el total convertido
+	// a ARS; esto es el desglose por moneda tal cual.
+	const totales = $derived.by(() => {
+		const t: Record<string, number> = {};
+		for (const s of fijos) if (s.activa) t[s.moneda] = (t[s.moneda] ?? 0) + s.monto;
+		return Object.entries(t).sort((a, b) => a[0].localeCompare(b[0]));
+	});
 </script>
 
 <div class="titulo-guia">
@@ -253,6 +260,14 @@
 	</div>
 </div>
 </details>
+
+{#if totales.length}
+	<div class="totales">
+		{#each totales as [mon, tot] (mon)}
+			<div class="total">Total {mon}: <strong>{peso(tot, mon)}</strong></div>
+		{/each}
+	</div>
+{/if}
 
 <div class="grupos">
 	{#each filas as f (f.sep ?? f.s.id)}
@@ -324,6 +339,10 @@
 	.vacio { color: var(--text-dim); font-style: italic; }
 	.msg { color: var(--text-dim); font-weight: 600; }
 
+	/* Total de recurrentes activos, una línea por moneda (sin convertir) */
+	.totales { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0; }
+	.total { font-size: 0.9rem; color: var(--text-dim); font-weight: 600; }
+	.total strong { color: var(--text); }
 	.grupos { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 	/* Separadores tenues de la lista plana: no agrupan, solo marcan un corte. */
 	.sep-lista { font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); font-weight: 600; margin-top: 14px; padding-bottom: 3px; border-bottom: 1px dashed var(--border); opacity: 0.75; }
