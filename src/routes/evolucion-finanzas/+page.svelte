@@ -16,6 +16,7 @@
 	import Gastos from '$lib/evol/Gastos.svelte';
 	import Ingresos from '$lib/evol/Ingresos.svelte';
 	import Poder from '$lib/evol/Poder.svelte';
+	import { progresoReplay } from '$lib/anim';
 
 	let ingresosRaw = $state<{ periodo: string; fecha: string; monto: number; moneda: string }[]>([]);
 	let gastosRaw = $state<{ fecha: string; monto: number; moneda: string }[]>([]);
@@ -124,11 +125,16 @@
 		return { tIng, tGas, balance: tIng - tGas };
 	});
 
-	// Etiquetas de eje Y compactas (12.345 -> "12k", 1.200.000 -> "1.2M").
+	// Barras: crecen desde la base al montar y en cada cambio de estado. La firma usa
+	// valores absolutos, así también anima al togglear moneda.
+	let sigIG = $derived(serieIG.map((s) => s.periodo + ':' + s.ingreso + ':' + s.gasto).join('|'));
+	const { p: pIG, replay: replayIG } = progresoReplay();
+	$effect(() => { sigIG; replayIG(); });
+
+	// Etiquetas de eje Y en miles con separador (8.725.000 -> "8.725m", 500.000 -> "500m").
 	function fmtNum(v: number): string {
 		const a = Math.abs(v);
-		if (a >= 1_000_000) return (v / 1_000_000).toFixed(1).replace('.0', '') + 'M';
-		if (a >= 1000) return Math.round(v / 1000) + 'k';
+		if (a >= 1000) return Math.round(v / 1000).toLocaleString('es-AR') + 'm';
 		return Math.round(v).toString();
 	}
 </script>
@@ -185,8 +191,8 @@
 			{/each}
 			{#each chartIG.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
 			{#each chartIG.barras as b}
-				<rect x={b.ing.x} y={b.ing.y} width={chartIG.barW} height={b.ing.h} class="bar-ing" />
-				<rect x={b.gas.x} y={b.gas.y} width={chartIG.barW} height={b.gas.h} class="bar-gas" />
+				<rect x={b.ing.x} y={b.ing.y + b.ing.h * (1 - $pIG)} width={chartIG.barW} height={b.ing.h * $pIG} class="bar-ing" />
+				<rect x={b.gas.x} y={b.gas.y + b.gas.h * (1 - $pIG)} width={chartIG.barW} height={b.gas.h * $pIG} class="bar-gas" />
 			{/each}
 		</svg>
 	{:else}

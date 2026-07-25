@@ -6,6 +6,7 @@
 	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
 	import { actualizarPrecios } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
+	import CountUp from '$lib/CountUp.svelte';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -316,7 +317,7 @@
 	{/if}
 
 	<div class="resumen">
-		<div class="card"><span>Cartera total (≈USD)</span><strong>{usd(totalUSD)}</strong></div>
+		<div class="card"><span>Cartera total (≈USD)</span><strong><CountUp value={totalUSD} format={(n) => usd(n)} /></strong></div>
 		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}>{usd(resultadoAbiertasTotal, 2)}</strong></div>
 		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}>{usd(realizadoAnioActual, 2)}</strong></div>
 	</div>

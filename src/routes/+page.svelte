@@ -6,6 +6,7 @@
     import { leerMeta, setMeta } from '$lib/db/meta';
     import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
+    import CountUp from '$lib/CountUp.svelte';
 
     let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
@@ -576,7 +577,7 @@
         <button class="disp-toggle" onclick={() => (detalleAbierto = !detalleAbierto)} aria-expanded={detalleAbierto} title="Ver/ocultar cómo se calcula">
             <span class="flecha">{detalleAbierto ? '▾' : '▸'}</span>
             <span class="disp-titulo">Ingreso disponible</span>
-            <span class="disp-valor">{peso(ingresoDisponible)}</span>
+            <span class="disp-valor"><CountUp value={ingresoDisponible} format={peso} /></span>
         </button>
         {#if detalleAbierto}
             <table class="disp-tabla disp-detalle">
@@ -593,12 +594,12 @@
             {#if totales.presup > 0}
                 <div class="disp-linea {semColor(totales.presup)}"
                     title="Verde: entra en tu ingreso disponible · Amarillo: entre el disponible y tu ingreso total · Rojo: supera tu ingreso total">
-                    <span>Presupuesto</span><strong>{peso(totales.presup)}</strong>
+                    <span>Presupuesto</span><strong><CountUp value={totales.presup} format={peso} /></strong>
                 </div>
             {/if}
             <button class="disp-linea disp-linea-btn {gastoColor()}" onclick={() => (gastoAbierto = !gastoAbierto)} aria-expanded={gastoAbierto}
                 title={totales.presup > 0 ? 'Gasto vs presupuesto (tocá para ver el desglose)' : 'Sin presupuesto: verde si entra en tu ingreso disponible · amarillo entre el disponible y el total · rojo si supera tu ingreso total (tocá para ver el desglose)'}>
-                <span><span class="flecha-mini">{gastoAbierto ? '▾' : '▸'}</span> Gasto total del mes</span><strong>{peso(totales.real)}</strong>
+                <span><span class="flecha-mini">{gastoAbierto ? '▾' : '▸'}</span> Gasto total del mes</span><strong><CountUp value={totales.real} format={peso} /></strong>
             </button>
             {#if gastoAbierto}
                 <table class="disp-tabla disp-detalle">
@@ -619,7 +620,7 @@
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
             <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
             <span class="disp-titulo">Crédito Neto del Mes Siguiente</span>
-            <span class="disp-valor" class:alta={deudaAlta}><span class="dv-ars">{peso(descubierto)}</span>{#if deudaSigUsd > 0}<span class="dv-usd">{usd(deudaSigUsd)}</span>{/if}</span>
+            <span class="disp-valor" class:alta={deudaAlta}><span class="dv-ars"><CountUp value={descubierto} format={peso} /></span>{#if deudaSigUsd > 0}<span class="dv-usd">{usd(deudaSigUsd)}</span>{/if}</span>
         </button>
         {#if deudaAbierto}
             <table class="disp-tabla disp-detalle">

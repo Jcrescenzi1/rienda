@@ -13,6 +13,8 @@
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
+	import CountUp from '$lib/CountUp.svelte';
+	import { progresoReplay } from '$lib/anim';
 	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
 
 	type Ingreso = {
@@ -41,7 +43,7 @@
 	const tipoLabel = (t: string | null) => (t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : 'Sin tipo');
 
 	// Ventana de tiempo
-	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
+	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
 	let anio = $state('');
 	// Filtros dimensionales. Categoría es multi-select efímero: arranca con todas
 	// (= "Todas"). catTodas = todo pasa (incluye ingresos con categoría fuera de la lista).
@@ -100,6 +102,8 @@
 
 	let totalRango = $derived(serie.reduce((s, x) => s + x.total, 0));
 	let promedio = $derived(serie.length ? totalRango / serie.length : 0);
+	// Período más reciente dentro de la ventana visible (serie va en orden ascendente).
+	let ultimo = $derived(serie.length ? serie[serie.length - 1] : null);
 
 	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 	const mesCorto = (p: string) => {
@@ -134,11 +138,10 @@
 		return { line, area, pts, yticks, xticks };
 	});
 
-	// Etiquetas de eje Y compactas (12.345 -> "12k", 1.200.000 -> "1.2M").
+	// Etiquetas de eje Y en miles con separador (8.725.000 -> "8.725m", 500.000 -> "500m").
 	function fmtNum(v: number): string {
 		const a = Math.abs(v);
-		if (a >= 1_000_000) return (v / 1_000_000).toFixed(1).replace('.0', '') + 'M';
-		if (a >= 1000) return Math.round(v / 1000) + 'k';
+		if (a >= 1000) return Math.round(v / 1000).toLocaleString('es-AR') + 'm';
 		return Math.round(v).toString();
 	}
 
@@ -188,8 +191,19 @@
 		return { arcos, total, cx, cy, anillo: null as null | { color: string; rMid: number; grosor: number } };
 	});
 
+	// Área: reveal de izquierda a derecha al montar y en cada cambio (incluye moneda).
+	let sigArea = $derived(serie.map((s) => s.periodo + ':' + s.total).join('|'));
+	const { p: pArea, replay: replayArea } = progresoReplay();
+	$effect(() => { sigArea; replayArea(); });
+
+	// Dona: crece/aparece sutil solo cuando cambia el reparto (por fracciones; no
+	// re-anima al togglear moneda, que no altera las proporciones).
+	let sigDona = $derived(dona ? dona.arcos.map((a) => a.cat + ':' + a.frac.toFixed(3)).join('|') : '');
+	const { p: pDona, replay: replayDona } = progresoReplay();
+	$effect(() => { sigDona; replayDona(); });
+
 	function limpiar() {
-		vista = 'historico';
+		vista = 'ult12';
 		selCat = new Set(CATEGORIAS);
 		filtroTipo = '';
 		filtroTexto = '';
@@ -275,9 +289,9 @@
 	<ToggleMoneda />
 
 	<div class="resumen">
-		<div class="card"><span>Total del rango</span><strong>{fmtMoneda(totalRango, moneda.modo)}</strong></div>
-		<div class="card"><span>Promedio por período</span><strong>{fmtMoneda(promedio, moneda.modo)}</strong></div>
-		<div class="card"><span>Períodos</span><strong>{serie.length}</strong></div>
+		<div class="card"><span>Último período{ultimo ? ` · ${mesCorto(ultimo.periodo)}` : ''}</span><strong><CountUp value={ultimo?.total ?? 0} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
+		<div class="card"><span>Promedio por período</span><strong><CountUp value={promedio} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
+		<div class="card"><span>Total del rango</span><strong><CountUp value={totalRango} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
 	</div>
 
 	<div class="leyenda">
@@ -294,15 +308,18 @@
 					<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
 					<stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02" />
 				</linearGradient>
+				<clipPath id="reveal-ingresos"><rect x="0" y="0" width={W * $pArea} height={H} /></clipPath>
 			</defs>
 			{#each chart.yticks as t}
 				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
 				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
 			{/each}
 			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
-			<path d={chart.area} fill="url(#areaGrad)" />
-			<path d={chart.line} class="line-area" />
-			{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
+			<g clip-path="url(#reveal-ingresos)">
+				<path d={chart.area} fill="url(#areaGrad)" />
+				<path d={chart.line} class="line-area" />
+				{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
+			</g>
 		</svg>
 	{:else}
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
@@ -312,11 +329,13 @@
 	{#if dona}
 		<div class="dona-wrap">
 			<svg viewBox="0 0 180 180" class="dona">
-				{#if dona.anillo}
-					<circle cx={dona.cx} cy={dona.cy} r={dona.anillo.rMid} fill="none" stroke={dona.anillo.color} stroke-width={dona.anillo.grosor} />
-				{:else}
-					{#each dona.arcos as a}<path d={a.d} fill={a.color} />{/each}
-				{/if}
+				<g opacity={$pDona} transform="translate(90 90) scale({0.96 + 0.04 * $pDona}) translate(-90 -90)">
+					{#if dona.anillo}
+						<circle cx={dona.cx} cy={dona.cy} r={dona.anillo.rMid} fill="none" stroke={dona.anillo.color} stroke-width={dona.anillo.grosor} />
+					{:else}
+						{#each dona.arcos as a}<path d={a.d} fill={a.color} />{/each}
+					{/if}
+				</g>
 			</svg>
 			<ul class="dona-leyenda">
 				{#each dona.arcos as a}
