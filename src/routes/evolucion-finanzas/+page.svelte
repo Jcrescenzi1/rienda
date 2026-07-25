@@ -139,9 +139,9 @@
 </div>
 
 <div class="tabs">
-	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
 	<button class:activo={tab === 'gastos'} onclick={() => (tab = 'gastos')}>Evolución de Gastos</button>
 	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
+	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
 	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
 </div>
 
@@ -149,6 +149,10 @@
 {#if cargando}
 	<p>Cargando…</p>
 {:else}
+	<div class="titulo-guia">
+		<h1>Ingresos vs Gastos</h1>
+		<Guia clave="resumen-evolucion" texto="Comparación período a período entre los ingresos y los gastos reportados. Verde: ingresos, roja: gastos, por cada período. El Balance es la diferencia entre ingresos y gastos de todo el rango visible. El selector de moneda (USD / pesos reales / nominales) solo cambia la unidad de lectura, no los datos." />
+	</div>
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
 		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
@@ -157,8 +161,6 @@
 			<select bind:value={anio}>{#each anios as y (y)}<option value={y}>{y}</option>{/each}</select>
 		{/if}
 	</div>
-
-	<h2>Ingresos vs Gastos</h2>
 	<ToggleMoneda />
 	<div class="resumen">
 		<div class="card"><span>Ingresos totales</span><strong>{fmtMoneda(resumenIG.tIng, moneda.modo)}</strong></div>
@@ -201,7 +203,6 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
 	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
@@ -219,7 +220,8 @@
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 14px; }
+	.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 16px; }
+	.tabs button { padding: 8px 12px; font-size: 0.9rem; line-height: 1.15; }
 	.sw-ing { background: var(--pos); }
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }

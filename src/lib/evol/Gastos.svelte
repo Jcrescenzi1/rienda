@@ -13,6 +13,7 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import MultiSelect from '$lib/MultiSelect.svelte';
 	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
 
 	type Gasto = {
@@ -43,9 +44,11 @@
 	// Ventana de tiempo
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
-	// Filtros dimensionales
-	let filtroCategoria = $state<number | null>(null);
-	let filtroSubcat = $state<number | null>(null);
+	// Filtros dimensionales (multi-select efímero). selCat arranca con todas las
+	// categorías (= "Todas"). Subcategoría: 'todas' = sin restricción; 'parcial' usa selSub.
+	let selCat = $state<Set<number>>(new Set());
+	let subModo = $state<'todas' | 'parcial'>('todas');
+	let selSub = $state<Set<number>>(new Set());
 	let filtroTexto = $state('');
 
 	onMount(async () => {
@@ -56,14 +59,46 @@
 			cargarDolarSerie(),
 			cargarIPC(),
 			query('SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'),
-			query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1 ORDER BY nombre'),
+			query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 ORDER BY nombre'),
 			query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre"),
 			cargarGastos()
 		]);
 		asignar = crearAsignador(modoPeriodo, cortes as any);
 		dolarSerie = ds; ipc = ic;
 		categorias = cat as any[]; subcategorias = sub as any[]; tarjetasCredito = tc as any[];
+		selCat = new Set(categorias.map((c) => c.id)); // arranca "Todas"
 		cargando = false;
+	});
+
+	// Nombre de subcat por id (para el multi-select y su cruce con categoría).
+	let subNombre = $derived(new Map(subcategorias.map((s) => [s.id, s.nombre])));
+	// Asociación categoría -> subcategorías DERIVADA de gastos reales (no hay FK).
+	let catSubMap = $derived.by(() => {
+		const m = new Map<number, Set<number>>();
+		for (const g of gastos) {
+			if (g.scid == null) continue;
+			if (!m.has(g.categoria_id)) m.set(g.categoria_id, new Set());
+			m.get(g.categoria_id)!.add(g.scid);
+		}
+		return m;
+	});
+	// Universo de subcat visible = unión de las subcats de las categorías seleccionadas.
+	let subUniverso = $derived.by(() => {
+		const ids = new Set<number>();
+		for (const cid of selCat) { const s = catSubMap.get(cid); if (s) for (const x of s) ids.add(x); }
+		return ids;
+	});
+	let catOptions = $derived(categorias.map((c) => ({ id: c.id, label: c.nombre })));
+	let subOptions = $derived(
+		[...subUniverso]
+			.map((id) => ({ id, label: subNombre.get(id) ?? ('#' + id) }))
+			.sort((a, b) => a.label.localeCompare(b.label))
+	);
+	// Auto-limpieza: si una subcat seleccionada sale del universo (se desmarcó su
+	// categoría), la selección de subcat vuelve a "Todas". Solo toca el estado del filtro.
+	$effect(() => {
+		if (subModo !== 'parcial') return;
+		for (const id of selSub) if (!subUniverso.has(id)) { subModo = 'todas'; selSub = new Set(); return; }
 	});
 
 	let tarjetasCredito = $state<any[]>([]);
@@ -84,8 +119,8 @@
 	let filtrados = $derived.by(() => {
 		const txt = filtroTexto.trim().toLowerCase();
 		return gastos.filter((g) => {
-			if (filtroCategoria != null && g.categoria_id !== filtroCategoria) return false;
-			if (filtroSubcat != null && g.scid !== filtroSubcat) return false;
+			if (!selCat.has(g.categoria_id)) return false;
+			if (subModo === 'parcial' && !(g.scid != null && selSub.has(g.scid))) return false;
 			if (txt && !(g.detalle ?? '').toLowerCase().includes(txt)) return false;
 			return true;
 		});
@@ -212,8 +247,9 @@
 
 	function limpiar() {
 		vista = 'historico';
-		filtroCategoria = null;
-		filtroSubcat = null;
+		selCat = new Set(categorias.map((c) => c.id));
+		subModo = 'todas';
+		selSub = new Set();
 		filtroTexto = '';
 	}
 
@@ -288,16 +324,18 @@
 	</div>
 	<div class="filtros">
 		<label>Categoría
-			<select bind:value={filtroCategoria}>
-				<option value={null}>Todas</option>
-				{#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
-			</select>
+			<MultiSelect options={catOptions} selected={selCat} onchange={(s) => (selCat = s)} label="Categoría" />
 		</label>
 		<label>Subcategoría
-			<select bind:value={filtroSubcat}>
-				<option value={null}>Todas</option>
-				{#each subcategorias as s (s.id)}<option value={s.id}>{s.nombre}</option>{/each}
-			</select>
+			<MultiSelect
+				options={subOptions}
+				selected={subModo === 'todas' ? new Set(subUniverso) : selSub}
+				onchange={(s) => {
+					if (s.size >= subUniverso.size) { subModo = 'todas'; selSub = new Set(); }
+					else { subModo = 'parcial'; selSub = s; }
+				}}
+				label="Subcategoría"
+			/>
 		</label>
 		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
 		<button class="btn btn-secondary" onclick={limpiar}>Limpiar</button>
@@ -415,7 +453,7 @@
 	.vistas select { padding: 5px 8px; }
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
-	.filtros input, .filtros select { padding: 6px 8px; font-size: 0.85rem; }
+	.filtros input { padding: 6px 8px; font-size: 0.85rem; }
 	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
 	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }

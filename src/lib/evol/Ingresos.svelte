@@ -12,6 +12,7 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import MultiSelect from '$lib/MultiSelect.svelte';
 	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
 
 	type Ingreso = {
@@ -42,8 +43,11 @@
 	// Ventana de tiempo
 	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
 	let anio = $state('');
-	// Filtros dimensionales
-	let filtroCategoria = $state('');
+	// Filtros dimensionales. Categoría es multi-select efímero: arranca con todas
+	// (= "Todas"). catTodas = todo pasa (incluye ingresos con categoría fuera de la lista).
+	let selCat = $state<Set<string>>(new Set(CATEGORIAS));
+	let catTodas = $derived(selCat.size >= CATEGORIAS.length);
+	let catOptions = CATEGORIAS.map((c) => ({ id: c, label: c }));
 	let filtroTipo = $state('');
 	let filtroTexto = $state('');
 
@@ -64,7 +68,7 @@
 	let filtrados = $derived.by(() => {
 		const txt = filtroTexto.trim().toLowerCase();
 		return ingresos.filter((i) => {
-			if (filtroCategoria && i.categoria !== filtroCategoria) return false;
+			if (!catTodas && !selCat.has(i.categoria)) return false;
 			if (filtroTipo && (i.tipo ?? '') !== filtroTipo) return false;
 			if (txt && !(i.detalle ?? '').toLowerCase().includes(txt)) return false;
 			return true;
@@ -186,7 +190,7 @@
 
 	function limpiar() {
 		vista = 'historico';
-		filtroCategoria = '';
+		selCat = new Set(CATEGORIAS);
 		filtroTipo = '';
 		filtroTexto = '';
 	}
@@ -256,10 +260,7 @@
 	</div>
 	<div class="filtros">
 		<label>Categoría
-			<select bind:value={filtroCategoria}>
-				<option value="">Todas</option>
-				{#each CATEGORIAS as c}<option value={c}>{c}</option>{/each}
-			</select>
+			<MultiSelect options={catOptions} selected={selCat} onchange={(s) => (selCat = s)} label="Categoría" />
 		</label>
 		<label>Tipo
 			<select bind:value={filtroTipo}>
