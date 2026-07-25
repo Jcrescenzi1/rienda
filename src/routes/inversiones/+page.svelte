@@ -7,6 +7,7 @@
 	import { actualizarPrecios } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
 	import CountUp from '$lib/CountUp.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
@@ -298,7 +299,22 @@
 </div>
 
 {#if cargando}
-	<p>Cargando…</p>
+	<div class="topbar">
+		<Skeleton w="120px" h="36px" radius="6px" />
+		<Skeleton w="150px" h="36px" radius="6px" />
+	</div>
+	<div class="resumen">
+		<div class="card sk-card"><Skeleton w="70%" h="0.62rem" /><Skeleton w="86%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="70%" h="0.62rem" /><Skeleton w="86%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="70%" h="0.62rem" /><Skeleton w="86%" h="1.05rem" /></div>
+	</div>
+	<div class="sk-tabla">
+		<Skeleton w="100%" h="1.4rem" />
+		<Skeleton w="100%" h="1.4rem" />
+		<Skeleton w="100%" h="1.4rem" />
+		<Skeleton w="100%" h="1.4rem" />
+		<Skeleton w="100%" h="1.4rem" />
+	</div>
 {:else}
 	<div class="topbar">
 		<a href="/carga-inversiones" class="btn btn-primary">Movimientos</a>
@@ -318,8 +334,8 @@
 
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong><CountUp value={totalUSD} format={(n) => usd(n)} /></strong></div>
-		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}>{usd(resultadoAbiertasTotal, 2)}</strong></div>
-		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}>{usd(realizadoAnioActual, 2)}</strong></div>
+		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertasTotal} format={(n) => usd(n, 2)} /></strong></div>
+		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}><CountUp value={realizadoAnioActual} format={(n) => usd(n, 2)} /></strong></div>
 	</div>
 
 	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
@@ -474,6 +490,8 @@
 	h2 { border-left: 3px solid var(--accent); padding-left: 12px; }
 	.graf h2 { border-left: none; padding-left: 0; }
 	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
+	.sk-card { gap: 6px; }
+	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
 	.preciostamp strong { color: var(--text); font-family: var(--font-num); font-weight: 400; }

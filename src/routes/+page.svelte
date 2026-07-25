@@ -7,6 +7,7 @@
     import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
     import CountUp from '$lib/CountUp.svelte';
+    import Skeleton from '$lib/Skeleton.svelte';
 
     let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
@@ -569,7 +570,16 @@
 </p>
 
 {#if cargando}
-    <p>Cargando…</p>
+    <div class="disponible sk-panel">
+        <div class="sk-row"><Skeleton w="150px" h="1rem" /><Skeleton w="130px" h="1.35rem" /></div>
+    </div>
+    <div class="deuda-panel sk-panel">
+        <div class="sk-row"><Skeleton w="210px" h="1rem" /><Skeleton w="120px" h="1.35rem" /></div>
+    </div>
+    <div class="sk-accesos">
+        <Skeleton w="50%" h="46px" radius="10px" />
+        <Skeleton w="50%" h="46px" radius="10px" />
+    </div>
 {:else}
 
     <!-- ===== Ingreso disponible (Ítem 1) ===== -->
@@ -735,6 +745,9 @@
 
     /* Tarjetas de resumen del período */
 
+    /* Skeletons de carga (Home) */
+    .sk-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .sk-accesos { display: flex; gap: 10px; margin-top: 8px; }
     /* Panel Ingreso disponible (borrador, pendiente de revisión) */
     .disponible {
         border: 1px solid transparent; border-left: 3px solid var(--accent);

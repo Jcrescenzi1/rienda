@@ -3,6 +3,8 @@
 	import { query } from '$lib/db/client';
 	import { dolarDeFecha } from '$lib/moneda';
 	import Guia from '$lib/Guia.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
+	import { progresoReplay } from '$lib/anim';
 
 	// Ingreso Primario regular (internamente tipo='Sueldo', categoría 'Ingreso Principal')
 	// analizado contra inflación y contra el dólar bolsa. Estos dos análisis tienen
@@ -149,6 +151,14 @@
 		};
 	});
 
+	// Reveal izquierda→derecha de los dos gráficos al montar y en cada cambio de ventana.
+	let sigPoder = $derived(chart ? chart.ptsS.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ') : '');
+	const { p: pA1, replay: replayA1 } = progresoReplay();
+	$effect(() => { sigPoder; replayA1(); });
+	let sigPoderUSD = $derived(chartUSD ? chartUSD.ptsS.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ') : '');
+	const { p: pA2, replay: replayA2 } = progresoReplay();
+	$effect(() => { sigPoderUSD; replayA2(); });
+
 	const pct = (n: number, dec = 1) => (n >= 0 ? '+' : '') + (n * 100).toFixed(dec) + '%';
 </script>
 
@@ -159,7 +169,17 @@
 
 
 {#if cargando}
-	<p>Cargando…</p>
+	<div class="sk-vistas">
+		<Skeleton w="92px" h="30px" radius="6px" />
+		<Skeleton w="122px" h="30px" radius="6px" />
+		<Skeleton w="112px" h="30px" radius="6px" />
+	</div>
+	<div class="resumen">
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+	</div>
+	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>
 {:else}
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
@@ -185,17 +205,20 @@
 	</div>
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart">
+			<defs><clipPath id="reveal-poder1"><rect x="0" y="0" width={W * $pA1} height={H} /></clipPath></defs>
 			{#each chart.yticks as t}
 				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
 				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
 			{/each}
 			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
-			<path d={chart.inflacion} class="line-inf" />
-			<path d={chart.ingreso} class="line-ing" />
-			{#each chart.ptsI as p}<circle cx={p.x} cy={p.y} r="2" class="dot-inf" />{/each}
-			{#each chart.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
-			<text x={chart.finS.x + 5} y={chart.finS.y + 3} class="endlbl ing">{serie[serie.length-1].ingreso.toFixed(0)}</text>
-			<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
+			<g clip-path="url(#reveal-poder1)">
+				<path d={chart.inflacion} class="line-inf" />
+				<path d={chart.ingreso} class="line-ing" />
+				{#each chart.ptsI as p}<circle cx={p.x} cy={p.y} r="2" class="dot-inf" />{/each}
+				{#each chart.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
+				<text x={chart.finS.x + 5} y={chart.finS.y + 3} class="endlbl ing">{serie[serie.length-1].ingreso.toFixed(0)}</text>
+				<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
+			</g>
 		</svg>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
@@ -209,6 +232,7 @@
 	</div>
 	{#if chartUSD}
 		<svg viewBox="0 0 {W} {H}" class="chart">
+			<defs><clipPath id="reveal-poder2"><rect x="0" y="0" width={W * $pA2} height={H} /></clipPath></defs>
 			{#each chartUSD.yticksL as t}
 				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
 				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
@@ -217,10 +241,12 @@
 				<text x={W - P.r + 6} y={t.y + 3} class="ylbl-r">{t.label}</text>
 			{/each}
 			{#each chartUSD.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
-			<path d={chartUSD.lineaDolar} class="line-dolar" />
-			<path d={chartUSD.lineaIngreso} class="line-ing" />
-			{#each chartUSD.ptsD as p}<circle cx={p.x} cy={p.y} r="2" class="dot-dolar" />{/each}
-			{#each chartUSD.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
+			<g clip-path="url(#reveal-poder2)">
+				<path d={chartUSD.lineaDolar} class="line-dolar" />
+				<path d={chartUSD.lineaIngreso} class="line-ing" />
+				{#each chartUSD.ptsD as p}<circle cx={p.x} cy={p.y} r="2" class="dot-dolar" />{/each}
+				{#each chartUSD.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
+			</g>
 		</svg>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
@@ -238,6 +264,9 @@
 	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
 	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+	.sk-card { gap: 6px; }
+	.sk-chart { margin-top: 12px; }
 	.vistas select { padding: 5px 8px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }

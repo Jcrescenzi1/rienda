@@ -16,6 +16,7 @@
 	import Gastos from '$lib/evol/Gastos.svelte';
 	import Ingresos from '$lib/evol/Ingresos.svelte';
 	import Poder from '$lib/evol/Poder.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 
 	let ingresosRaw = $state<{ periodo: string; fecha: string; monto: number; moneda: string }[]>([]);
@@ -153,7 +154,17 @@
 
 {#if tab === 'resumen'}
 {#if cargando}
-	<p>Cargando…</p>
+	<div class="sk-vistas">
+		<Skeleton w="92px" h="30px" radius="6px" />
+		<Skeleton w="122px" h="30px" radius="6px" />
+		<Skeleton w="112px" h="30px" radius="6px" />
+	</div>
+	<div class="resumen">
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+	</div>
+	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 320px)" /></div>
 {:else}
 	<div class="titulo-guia">
 		<h1>Ingresos vs Gastos</h1>
@@ -216,6 +227,9 @@
 	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
 	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+	.sk-card { gap: 6px; }
+	.sk-chart { margin-top: 12px; }
 	.vistas select { padding: 5px 8px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }

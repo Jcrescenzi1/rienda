@@ -15,6 +15,7 @@
 	import Guia from '$lib/Guia.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
 	import CountUp from '$lib/CountUp.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
 
@@ -326,7 +327,17 @@
 
 
 {#if cargando}
-	<p>Cargando…</p>
+	<div class="sk-vistas">
+		<Skeleton w="92px" h="30px" radius="6px" />
+		<Skeleton w="122px" h="30px" radius="6px" />
+		<Skeleton w="112px" h="30px" radius="6px" />
+	</div>
+	<div class="resumen">
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+		<div class="card sk-card"><Skeleton w="72%" h="0.62rem" /><Skeleton w="88%" h="1.05rem" /></div>
+	</div>
+	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>
 {:else}
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
@@ -469,6 +480,9 @@
 <style>
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
+	.sk-card { gap: 6px; }
+	.sk-chart { margin-top: 12px; }
 	.vistas select { padding: 5px 8px; }
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }

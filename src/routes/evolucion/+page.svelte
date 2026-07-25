@@ -4,6 +4,9 @@
 	import { fechaISO, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
 	import { calcularFIFO, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
+	import Skeleton from '$lib/Skeleton.svelte';
+	import CountUp from '$lib/CountUp.svelte';
+	import { progresoReplay } from '$lib/anim';
 
 	let cargando = $state(true);
 	let snaps = $state<any[]>([]);
@@ -113,6 +116,11 @@
 		const xticks = vsnaps.filter((_, i) => i % step === 0).map((s) => ({ x: px(new Date(s.fecha).getTime()), label: mesCorto(s.fecha) }));
 		return { line, area, pts, yticks, xticks };
 	});
+
+	// Área/línea: reveal de izquierda a derecha al montar y en cada cambio (modo/período).
+	let sigChart = $derived(chart ? chart.pts.map((p) => p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ') : '');
+	const { p: pArea, replay: replayArea } = progresoReplay();
+	$effect(() => { sigChart; replayArea(); });
 </script>
 
 <div class="titulo-guia">
@@ -135,14 +143,21 @@
 {/if}
 
 {#if cargando}
-	<p>Cargando…</p>
+	<div class="resumen">
+		<div class="card sk-card"><Skeleton w="68%" h="0.62rem" /><Skeleton w="80%" h="1.1rem" /></div>
+		<div class="card sk-card"><Skeleton w="68%" h="0.62rem" /><Skeleton w="80%" h="1.1rem" /></div>
+		<div class="card sk-card"><Skeleton w="68%" h="0.62rem" /><Skeleton w="80%" h="1.1rem" /></div>
+		<div class="card sk-card"><Skeleton w="68%" h="0.62rem" /><Skeleton w="80%" h="1.1rem" /></div>
+	</div>
+	<div class="sk-toggle"><Skeleton w="170px" h="34px" radius="6px" /><Skeleton w="130px" h="34px" radius="6px" /></div>
+	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>
 {:else if snaps.length < 2}
 	<p>Necesitás al menos 2 fotos para ver evolución.</p>
 {:else}
 	<div class="resumen">
-		<div class="card big"><span>TWR del período</span><strong class={twrVentana >= 0 ? 'pos' : 'neg'}>{pct(twrVentana)}</strong></div>
-		<div class="card"><span>Valor actual</span><strong>{usd(actual.valor_usd)}</strong></div>
-		<div class="card"><span>Aportes netos (período)</span><strong>{usd(flujoVentana)}</strong></div>
+		<div class="card big"><span>TWR del período</span><strong class={twrVentana >= 0 ? 'pos' : 'neg'}><CountUp value={twrVentana} format={pct} /></strong></div>
+		<div class="card"><span>Valor actual</span><strong><CountUp value={actual.valor_usd} format={usd} /></strong></div>
+		<div class="card"><span>Aportes netos (período)</span><strong><CountUp value={flujoVentana} format={usd} /></strong></div>
 		<div class="card"><span>Desde</span><strong>{baseSnap.fecha}</strong></div>
 	</div>
 
@@ -153,10 +168,13 @@
 
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart">
+			<defs><clipPath id="reveal-cartera"><rect x="0" y="0" width={W * $pArea} height={H} /></clipPath></defs>
 			{#each chart.yticks as t}<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" /><text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>{/each}
 			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
-			<path d={chart.area} class="area" /><path d={chart.line} class="line" />
-			{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot" />{/each}
+			<g clip-path="url(#reveal-cartera)">
+				<path d={chart.area} class="area" /><path d={chart.line} class="line" />
+				{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot" />{/each}
+			</g>
 		</svg>
 	{:else}
 		<p class="nota">No hay suficientes fotos en este período para graficar.</p>
@@ -205,6 +223,9 @@
 	.card span { font-size: 0.72rem; color: var(--text-dim); }
 	.card strong { font-size: 1.05rem; }
 	.toggle { display: flex; gap: 6px; margin: 8px 0; }
+	.sk-card { gap: 6px; }
+	.sk-toggle { display: flex; gap: 6px; margin: 8px 0; }
+	.sk-chart { margin-top: 12px; }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

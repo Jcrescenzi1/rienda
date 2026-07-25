@@ -340,9 +340,20 @@
 		padding: 8px 14px; font-size: 0.9rem;
 		border: 1px solid transparent; border-radius: 6px;
 		cursor: pointer; text-decoration: none; white-space: nowrap;
-		transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+		transition: background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease, transform 0.10s ease;
 	}
 	:global(.btn:disabled), :global(.btn.is-disabled) { opacity: 0.55; cursor: default; pointer-events: none; }
+
+	/* ===== Press-state (feedback tactil, sobre todo en mobile) =====
+	   Hundido sutil al presionar. Sin transform si el usuario pidio "reducir movimiento". */
+	@media (prefers-reduced-motion: no-preference) {
+		:global(button:active), :global(.btn:active), :global(a.btn:active) { transform: scale(0.97); }
+	}
+	:global(.btn:active) { filter: brightness(0.93); }
+	/* Filas de lista clickeables: leve realce al presionar */
+	:global(.reg:active), :global(.ficha:active), :global(.disp-linea-btn:active), :global(.disp-toggle:active) {
+		background: rgba(91, 157, 255, 0.06);
+	}
 	:global(.btn-primary) { background: var(--accent); color: #fff; }
 	:global(.btn-primary:hover) { background: var(--accent-hover); }
 	:global(.btn-secondary) { background: var(--surface-2); color: var(--text); border-color: var(--border); }

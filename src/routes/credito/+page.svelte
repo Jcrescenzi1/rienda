@@ -4,6 +4,7 @@
     import { parseNum, formatNum, soloNum, mesActual } from '$lib/format';
     import { periodoActivoCC } from '$lib/periodo';
     import Guia from '$lib/Guia.svelte';
+    import Skeleton from '$lib/Skeleton.svelte';
 
     type Celda = { ars: number; usd: number };
 
@@ -90,7 +91,14 @@
 <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 
 {#if cargando}
-    <p>Cargando…</p>
+    <div class="sk-tabla">
+        <Skeleton w="100%" h="1.7rem" />
+        <Skeleton w="100%" h="1.7rem" />
+        <Skeleton w="100%" h="1.7rem" />
+        <Skeleton w="100%" h="1.7rem" />
+        <Skeleton w="100%" h="1.7rem" />
+        <Skeleton w="100%" h="1.7rem" />
+    </div>
 {:else}
     <div class="tabla-scroll">
     <table>
@@ -146,6 +154,7 @@
 {/if}
 
 <style>
+    .sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
     table { border-collapse: collapse; width: 100%; }
     th, td { padding: 8px; text-align: left; }
     td.num { text-align: right; }
