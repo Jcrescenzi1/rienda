@@ -1,0 +1,105 @@
+// src/lib/notificaciones.ts
+// Reglas del Centro de notificaciones: cada regla se materializa SOLO si se rompe.
+// Sin new Date() para "hoy"/"hace N días": se usa hoyISO() y diasEntre() (parseo de
+// strings, regla UTC-3). Solo LEE fechas ya guardadas; no toca nada.
+
+import { query } from './db/client';
+import { leerMeta } from './db/meta';
+import { hoyISO, diasEntre } from './format';
+import { proximaOcurrencia, addDias, periodoActivoCC } from './periodo';
+
+export type LineaRegla = {
+	tipo: 'mep' | 'copia' | 'foto';
+	texto: string;
+	href?: string; // navegación (copia, foto)
+	accion?: 'cotiz'; // acción inline (MEP: actualizar tipo de cambio)
+};
+export type ItemRecurrente = { nombre: string; dias: number };
+export type Notificaciones = {
+	pagos: ItemRecurrente[]; // gastos fijos próximos
+	cobros: ItemRecurrente[]; // ingresos fijos próximos
+	reglas: LineaRegla[]; // MEP / copia / foto (vejez)
+	total: number; // reglas rotas visibles: pagos(1 si>0) + cobros(1 si>0) + reglas.length
+};
+
+// Texto "hoy" / "mañana" / "en N días".
+export function faltanTxt(dias: number): string {
+	return dias <= 0 ? 'hoy' : dias === 1 ? 'mañana' : `en ${dias} días`;
+}
+
+export async function cargarNotificaciones(): Promise<Notificaciones> {
+	const hoy = hoyISO();
+
+	// Guard de primera semana de uso: un perfil recién creado no se alarma.
+	const pr = (await query('SELECT creado_en FROM perfil WHERE id=1')) as any[];
+	const creado = pr[0]?.creado_en ? String(pr[0].creado_en).slice(0, 10) : hoy;
+	const enPrimeraSemana = diasEntre(creado, hoy) < 7;
+
+	const reglas: LineaRegla[] = [];
+
+	// Regla 1 — MEP: última cotización 'bolsa' con más de 7 días.
+	const cot = (await query(
+		"SELECT fecha FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1"
+	)) as any[];
+	const cotFecha = cot[0]?.fecha ?? null;
+	if (cotFecha) {
+		const d = diasEntre(cotFecha, hoy);
+		if (d > 7) reglas.push({ tipo: 'mep', texto: `El tipo de cambio no se actualiza hace ${d} días.`, accion: 'cotiz' });
+	} else if (!enPrimeraSemana) {
+		reglas.push({ tipo: 'mep', texto: 'El tipo de cambio nunca se actualizó.', accion: 'cotiz' });
+	}
+
+	// Regla 2 — Copia: más de 14 días desde la última exportación.
+	const m = await leerMeta();
+	const ultExp = m.ultima_exportacion;
+	if (ultExp) {
+		const d = diasEntre(ultExp, hoy);
+		if (d > 14) reglas.push({ tipo: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
+	} else if (!enPrimeraSemana) {
+		reglas.push({ tipo: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
+	}
+
+	// Regla 3 — Foto de cartera: solo si el usuario tiene historial de inversiones.
+	const tx = (await query('SELECT COUNT(*) AS n FROM transaccion WHERE perfil_id=1')) as any[];
+	if ((tx[0]?.n ?? 0) > 0) {
+		const snap = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
+		const snapFecha = snap[0]?.fecha ?? null;
+		if (snapFecha) {
+			const d = diasEntre(snapFecha, hoy);
+			if (d > 7) reglas.push({ tipo: 'foto', texto: `Hace ${d} días que no sacás una foto de tu cartera.`, href: '/evolucion' });
+		} else if (!enPrimeraSemana) {
+			reglas.push({ tipo: 'foto', texto: 'Todavía no sacaste ninguna foto de tu cartera.', href: '/evolucion' });
+		}
+	}
+
+	// Regla 4 — Recurrentes próximos [hoy, hoy+3] no registrados en el período activo.
+	// NOTA: usa dia_esperado crudo (comportamiento actual). Cuando exista el Brief 1
+	// (paga_con_sueldo), este dia_esperado se reemplaza por diaEfectivo().
+	const hasta = addDias(hoy, 3);
+	const per = periodoActivoCC(); // 'yyyy-mm' o null
+	const proximos = (rows: any[]): ItemRecurrente[] =>
+		rows
+			.map((r) => ({ nombre: r.nombre as string, fecha: proximaOcurrencia(r.dia_esperado, hoy) }))
+			.filter((x) => x.fecha >= hoy && x.fecha <= hasta)
+			.map((x) => ({ nombre: x.nombre, dias: diasEntre(hoy, x.fecha) }))
+			.sort((a, b) => a.dias - b.dias);
+
+	const gs = (await query(
+		`SELECT s.nombre, s.dia_esperado FROM suscripcion s
+		 WHERE s.perfil_id=1 AND s.activa=1 AND s.dia_esperado IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM suscripcion_registro r WHERE r.suscripcion_id=s.id AND r.periodo=?)`,
+		[per]
+	)) as any[];
+	const is = (await query(
+		`SELECT i.nombre, i.dia_esperado FROM ingreso_fijo i
+		 WHERE i.perfil_id=1 AND i.activa=1 AND i.dia_esperado IS NOT NULL
+		   AND NOT EXISTS (SELECT 1 FROM ingreso_fijo_registro r WHERE r.ingreso_fijo_id=i.id AND r.periodo=?)`,
+		[per]
+	)) as any[];
+
+	const pagos = proximos(gs);
+	const cobros = proximos(is);
+
+	const total = reglas.length + (pagos.length ? 1 : 0) + (cobros.length ? 1 : 0);
+	return { pagos, cobros, reglas, total };
+}

@@ -79,7 +79,19 @@
         reservaMap = { ...reservaMap, [mes]: monto };
     }
 
+    // Dos niveles de despliegue in-place: mes (nivel 1) y tarjeta dentro del mes
+    // (nivel 2, clave `mes|tarjeta`). Al cambiar de mes se colapsa la tarjeta abierta.
     let mesAbierto = $state<string | null>(null);
+    let tarjetaAbierta = $state<string | null>(null);
+    const keyT = (m: string, t: string) => `${m}|${t}`;
+    function toggleMes(m: string) {
+        mesAbierto = mesAbierto === m ? null : m;
+        tarjetaAbierta = null;
+    }
+    function toggleTarj(m: string, t: string) {
+        const k = keyT(m, t);
+        tarjetaAbierta = tarjetaAbierta === k ? null : k;
+    }
     const n0 = (n: number) => Math.round(n || 0).toLocaleString('es-AR');
     const vacia = (c: Celda | undefined) => !c || (!c.ars && !c.usd);
 </script>
@@ -103,20 +115,12 @@
     <div class="tabla-scroll">
     <table>
         <thead>
-            <tr><th>Mes</th>{#each tarjetas as t}<th>{t}</th>{/each}<th>Total</th><th>Reservado</th></tr>
+            <tr><th>Mes</th><th>Total</th><th>Reservado</th></tr>
         </thead>
         <tbody>
             {#each meses as m (m)}
-                <tr class="mes" onclick={() => (mesAbierto = mesAbierto === m ? null : m)}>
+                <tr class="mes" onclick={() => toggleMes(m)}>
                     <td>{mesAbierto === m ? '▾' : '▸'} {m}</td>
-                    {#each tarjetas as t}
-                        <td class="num">
-                            {#if vacia(matriz[m]?.[t])}—{:else}
-                                {#if matriz[m][t].ars}<div>${n0(matriz[m][t].ars)}</div>{/if}
-                                {#if matriz[m][t].usd}<div class="usd">U$D {n0(matriz[m][t].usd)}</div>{/if}
-                            {/if}
-                        </td>
-                    {/each}
                     <td class="num total">
                         {#if vacia(totalMes[m])}—{:else}
                             {#if totalMes[m].ars}<div>${n0(totalMes[m].ars)}</div>{/if}
@@ -131,18 +135,29 @@
                 </tr>
                 {#if mesAbierto === m}
                     <tr class="detalle">
-                        <td></td>
-                        {#each tarjetas as t}
-                            <td>
-                                {#each detallePorMes[m].filter(d => d.tarjeta === t) as d (`${d.gasto_id}-${d.nro}`)}
-                                    <div class="item">
-                                        <span>{d.detalle} ({d.nro}/{d.cuotas})</span>
-                                        <strong>{d.moneda === 'USD' ? 'U$D ' : '$'}{n0(d.cuota)}</strong>
-                                    </div>
-                                {/each}
-                            </td>
-                        {/each}
-                        <td></td>
+                        <td class="detalle-cell" colspan="2">
+                            {#each tarjetas as t}
+                                {#if !vacia(matriz[m]?.[t])}
+                                    <button class="tarj" onclick={() => toggleTarj(m, t)}>
+                                        <span class="tarj-nom">{tarjetaAbierta === keyT(m, t) ? '▾' : '▸'} {t}</span>
+                                        <span class="tarj-monto">
+                                            {#if matriz[m][t].ars}<span>${n0(matriz[m][t].ars)}</span>{/if}
+                                            {#if matriz[m][t].usd}<span class="usd">U$D {n0(matriz[m][t].usd)}</span>{/if}
+                                        </span>
+                                    </button>
+                                    {#if tarjetaAbierta === keyT(m, t)}
+                                        <div class="gastos">
+                                            {#each detallePorMes[m].filter((d) => d.tarjeta === t) as d (`${d.gasto_id}-${d.nro}`)}
+                                                <div class="item">
+                                                    <span>{d.detalle} ({d.nro}/{d.cuotas})</span>
+                                                    <strong>{d.moneda === 'USD' ? 'U$D ' : '$'}{n0(d.cuota)}</strong>
+                                                </div>
+                                            {/each}
+                                        </div>
+                                    {/if}
+                                {/if}
+                            {/each}
+                        </td>
                         <td></td>
                     </tr>
                 {/if}
@@ -167,6 +182,20 @@
     .resv { width: 110px; }
     input.reserva { width: 100%; max-width: 100px; text-align: right; padding: 3px 5px; box-sizing: border-box; }
 
+    /* Nivel 1: tarjetas del mes como filas clickeables. La celda ocupa solo Mes+Total
+       (colspan 2), así los montos quedan alineados con el Total del mes. */
+    .detalle-cell { padding: 4px 8px 10px; }
+    .tarj {
+        display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%;
+        background: none; border: none; border-bottom: 1px solid var(--border);
+        padding: 8px 0; font: inherit; color: inherit; cursor: pointer; text-align: left;
+    }
+    .tarj:last-child { border-bottom: none; }
+    .tarj-nom { font-weight: 600; }
+    .tarj-monto { text-align: right; white-space: nowrap; }
+    .tarj-monto .usd { margin-left: 6px; }
+    /* Nivel 2: gastos/cuotas de esa tarjeta en ese mes. */
+    .gastos { padding: 2px 0 6px 18px; }
     .item {
         display: flex;
         justify-content: space-between;

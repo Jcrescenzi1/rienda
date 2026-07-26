@@ -64,6 +64,17 @@ export function mesActual(): string {
 	return hoyISO().slice(0, 7);
 }
 
+// Días enteros entre dos fechas. Acepta 'yyyy-mm-dd' o datetime (usa la porción de
+// fecha). Parsea las partes y compara con Date.UTC: determinístico, NO usa "ahora"
+// ni corre el día por zona horaria. diasEntre(a, b) > 0 si b es posterior a a.
+export function diasEntre(isoA: string, isoB: string): number {
+	const utc = (s: string) => {
+		const [y, m, d] = s.slice(0, 10).split('-').map(Number);
+		return Date.UTC(y, m - 1, d);
+	};
+	return Math.round((utc(isoB) - utc(isoA)) / 86400000);
+}
+
 // Default de fecha de cobro para un disparo de fijo: el día de HOY montado sobre
 // el mes/año del selector, clampeado al último día de ese mes. Si el selector es
 // el mes actual, equivale a hoyISO(). Si no (ej. registro de agosto estando en

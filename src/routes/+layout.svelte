@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { page } from '$app/stores';
-	import { onNavigate, goto } from '$app/navigation';
+	import { onNavigate, afterNavigate, goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
+	import { cargarNotificaciones } from '$lib/notificaciones';
 	import { query } from '$lib/db/client';
 	import { fechaISO } from '$lib/format';
 	import type { ModoPeriodo } from '$lib/periodo';
@@ -103,6 +104,13 @@
 	// ===== Menú hamburguesa =====
 	let menuAbierto = $state(false);
 	let actualizandoCotiz = $state(false);
+	// Badge de la campana: cantidad de reglas rotas (0 = sin badge). Se recalcula en
+	// cada navegación (afterNavigate corre también en la carga inicial), así baja
+	// solo cuando el usuario resuelve algo y vuelve a moverse por la app.
+	let notiCount = $state(0);
+	afterNavigate(() => {
+		cargarNotificaciones().then((x) => (notiCount = x.total)).catch(() => {});
+	});
 
 	function irA(href: string) {
 		menuAbierto = false;
@@ -202,7 +210,16 @@
 	</div>
 {:else}
 	<!-- App normal -->
-	<button class="hamb" onclick={() => (menuAbierto = true)} aria-label="Abrir menú">☰</button>
+	<div class="topacc">
+		<button class="hamb" onclick={() => (menuAbierto = true)} aria-label="Abrir menú">☰</button>
+		<a class="campana" href="/notificaciones" aria-label="Notificaciones{notiCount > 0 ? ` (${notiCount})` : ''}">
+			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+				<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+				<path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+			</svg>
+			{#if notiCount > 0}<span class="badge">{notiCount > 9 ? '9+' : notiCount}</span>{/if}
+		</a>
+	</div>
 
 	{#if menuAbierto}
 		<!-- Fondo oscurecido -->
@@ -430,15 +447,30 @@
 
 	/* ===== Barra superior ===== */
 	.marca-menu { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; color: var(--text); padding: 0 8px 4px; border-left: 3px solid var(--accent); padding-left: 12px; }
+	/* Acciones fijas arriba a la derecha: menú + campana, apiladas y centradas entre sí. */
+	.topacc {
+		position: fixed; top: 35px; right: 16px; z-index: 10;
+		display: flex; flex-direction: column; align-items: center; gap: 8px;
+	}
 	.hamb {
-		position: fixed;
-		top: 35px;
-		right: 16px;
-		z-index: 10;
 		background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
 		border-radius: 6px; font-size: 1.1rem; padding: 4px 12px; cursor: pointer; line-height: 1;
 	}
 	.hamb:hover { border-color: var(--accent); }
+	/* Campana: debajo de la hamburguesa, más chica y liviana (menor peso visual). */
+	.campana {
+		position: relative;
+		display: inline-flex; align-items: center; justify-content: center;
+		width: 30px; height: 26px; border-radius: 6px;
+		background: transparent; color: var(--text-dim); border: 1px solid transparent;
+		cursor: pointer; text-decoration: none; line-height: 1;
+	}
+	.campana:hover { color: var(--text); border-color: var(--border); }
+	.campana .badge {
+		position: absolute; top: -5px; right: -5px; min-width: 15px; height: 15px; padding: 0 3px;
+		border-radius: 8px; background: var(--neg); color: #fff; font-size: 0.6rem; font-weight: 700;
+		display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+	}
 
 	.subir {
 		position: fixed;

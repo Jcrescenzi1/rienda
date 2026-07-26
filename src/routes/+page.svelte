@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { addMonths, cargarModo, cargarCortes, crearAsignador, addDias, proximaOcurrencia, type ModoPeriodo } from '$lib/periodo';
-    import { mesActual, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
-    import { leerMeta, setMeta } from '$lib/db/meta';
+    import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+    import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+    import { setMeta } from '$lib/db/meta';
     import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
     import CountUp from '$lib/CountUp.svelte';
@@ -31,10 +31,6 @@
     let gastoUsdMes = $state(0);   // gastos puntuales USD del período (informativo, sin convertir)
     let ingresoUsdMes = $state(0); // ingresos puntuales USD del período (informativo, sin convertir)
     let nombre = $state('');       // nombre del perfil, para el saludo del header
-    // Recurrentes cuya fecha estimada cae entre hoy y mañana (ver cargarProximos).
-    // 0 = la tarjeta de aviso no se renderiza.
-    let proxGastos = $state(0);
-    let proxIngresos = $state(0);
     // Ingresos TOTALES del período visible (primario + secundarios + otros),
     // en ARS (los USD se convierten al dólar del día de cobro).
     let ingresosMes = $state(0);
@@ -58,8 +54,6 @@
     $effect(() => { try { localStorage.setItem('disp_detalle', detalleAbierto ? '1' : '0'); } catch { /* ignore */ } });
     let deudaAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('deuda_detalle') === '1');
     $effect(() => { try { localStorage.setItem('deuda_detalle', deudaAbierto ? '1' : '0'); } catch { /* ignore */ } });
-    // Aviso de backup: null = no mostrar; -1 = nunca exportó; >0 = días sin exportar
-    let avisoBackup = $state<number | null>(null);
     // Checklist de primeros pasos (null = oculto o completo)
     let pasos = $state<{ ingreso: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean; fijos: boolean; ingresosFijos: boolean } | null>(null);
     let pasosAbierto = $state(false); // desplegable del checklist (colapsado por defecto)
@@ -322,39 +316,6 @@
         await cargar();
     }
 
-    // ===== Aviso de backup (>30 días sin exportar, con ediciones pendientes) =====
-    async function chequearBackup() {
-        const m = await leerMeta();
-        const ahora = new Date().toISOString();
-        if (m.backup_aviso_hasta && m.backup_aviso_hasta > ahora) return; // silenciado
-        const ultEdicion = [m.ultima_edicion_finanzas, m.ultima_edicion_inversiones]
-            .filter(Boolean).sort().pop() ?? null;
-        if (!ultEdicion) return; // sin datos cargados, nada que respaldar
-        if (!m.ultima_exportacion) {
-            // "Nunca exportaste" recién aparece tras la primera semana de uso:
-            // un perfil recién creado no necesita que lo apuren con backups.
-            const r = (await query('SELECT creado_en FROM perfil WHERE id=1')) as any[];
-            const creado = r[0]?.creado_en ? new Date(r[0].creado_en.replace(' ', 'T') + 'Z').getTime() : Date.now();
-            if (Date.now() - creado > 7 * 86400000) avisoBackup = -1;
-            return;
-        }
-        if (m.ultima_exportacion >= ultEdicion) return; // todo respaldado
-        const dias = Math.floor((Date.now() - new Date(m.ultima_exportacion).getTime()) / 86400000);
-        if (dias > 30) avisoBackup = dias;
-    }
-
-    async function exportarAhora() {
-        const { exportarDatos } = await import('$lib/db/backup');
-        await exportarDatos();
-        avisoBackup = null;
-    }
-
-    async function backupMasTarde() {
-        // Silencia el aviso por 7 días
-        await setMeta('backup_aviso_hasta', new Date(Date.now() + 7 * 86400000).toISOString());
-        avisoBackup = null;
-    }
-
     // ===== Checklist de primeros pasos =====
     async function cargarPasos() {
         const oculto = (await query("SELECT valor FROM meta WHERE clave='primeros_pasos_oculto'")) as any[];
@@ -383,37 +344,6 @@
     async function ocultarPasos() {
         await setMeta('primeros_pasos_oculto', '1');
         pasos = null;
-    }
-
-    // ===== Aviso de recurrentes próximos =====
-    // Cuenta los gastos/ingresos fijos ACTIVOS con día esperado cuya fecha estimada
-    // cae en la ventana [hoy, mañana] inclusive. Es un aviso, no un cálculo: no toca
-    // ningún total ni el disparo de registro.
-    //
-    // Fecha estimada = proximaOcurrencia(dia_esperado, hoy): la próxima vez que cae
-    // ese día del mes, igual o posterior a hoy. Como dia_esperado ahora es día
-    // CALENDARIO real (1-31), la fecha en que cae un recurrente es "el día N del mes
-    // que corresponda" y NO depende del modo ni del día de cobro (el cobro solo rota
-    // la LISTA, no construye fechas). Por eso el cálculo es el mismo en ambos modos.
-    // proximaOcurrencia salta al mes siguiente si el día ya pasó (un fijo de día 1 se
-    // avisa el 31 del mes anterior) y clampea a fin de mes; así no hay punto ciego de
-    // fin de mes ni regla de vencidos que aplicar (nunca devuelve una fecha < hoy).
-    async function cargarProximos() {
-        const hoy = hoyISO();
-        const manana = addDias(hoy, 1);
-        const [gs, is] = (await Promise.all([
-            query('SELECT dia_esperado FROM suscripcion WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL'),
-            query('SELECT dia_esperado FROM ingreso_fijo WHERE perfil_id=1 AND activa=1 AND dia_esperado IS NOT NULL')
-        ])) as any[][];
-
-        const contar = (rows: any[]) =>
-            rows.reduce((n: number, r: any) => {
-                const f = proximaOcurrencia(r.dia_esperado, hoy);
-                return f >= hoy && f <= manana ? n + 1 : n;
-            }, 0);
-
-        proxGastos = contar(gs);
-        proxIngresos = contar(is);
     }
 
     async function cargarNombre() {
@@ -489,9 +419,11 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    // cargarProximos va DESPUÉS de resolverPeriodoInicial: necesita `modo` resuelto.
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarProximos(); chequearBackup(); cargarPasos(); cargarNombre(); });
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarPasos(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
+    // Consolidado por categoría: montos en miles (÷1000, redondeado). Solo presentación
+    // de esa vista agregada; el dato guardado y las cuentas siguen en pesos enteros.
+    const pesoMil = (n: number) => '$' + Math.round((n || 0) / 1000).toLocaleString('es-AR');
     const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
     // disponible, amarillo entre disponible e ingreso total, rojo si supera el total.
@@ -531,16 +463,6 @@
         <a href="/suscripciones" class:hecho={pasos.fijos}>{pasos.fijos ? '✓' : '③'} Cargá tus gastos recurrentes</a>
         <a href="/ingresos-fijos" class:hecho={pasos.ingresosFijos}>{pasos.ingresosFijos ? '✓' : '④'} Cargá tus ingresos recurrentes</a>
         <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '⑤'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
-    </div>
-{/if}
-
-{#if avisoBackup !== null}
-    <div class="aviso-backup">
-        <span>{avisoBackup === -1 ? 'Nunca creaste una copia de seguridad de tus datos.' : `Hace ${avisoBackup} días que no creás una copia de seguridad.`} Tus datos viven solo en este dispositivo.</span>
-        <span class="aviso-acc">
-            <button class="btn btn-primary" onclick={exportarAhora}>Crear copia ahora</button>
-            <button class="btn btn-secondary" onclick={backupMasTarde}>Más tarde</button>
-        </span>
     </div>
 {/if}
 
@@ -644,21 +566,6 @@
         {/if}
     </div>
 
-    <!-- ===== Recurrentes próximos (aviso, sin listar nombres) =====
-         Dos tarjetas independientes y condicionales: cada una aparece solo si su
-         conteo es ≥ 1, así que puede verse una, las dos o ninguna. El link va
-         directo a la ruta del tab Recurrente (/suscripciones, /ingresos-fijos):
-         /gastos e /ingresos caerían en el tab Corriente. -->
-    {#if proxGastos > 0}
-        <a class="usd-card aviso-card" href="/suscripciones">
-            <span class="usd-item">Entre hoy y mañana tenés <strong>{proxGastos}</strong> {proxGastos === 1 ? 'gasto fijo' : 'gastos fijos'}</span>
-        </a>
-    {/if}
-    {#if proxIngresos > 0}
-        <a class="usd-card aviso-card" href="/ingresos-fijos">
-            <span class="usd-item">Entre hoy y mañana tenés <strong>{proxIngresos}</strong> {proxIngresos === 1 ? 'ingreso fijo' : 'ingresos fijos'}</span>
-        </a>
-    {/if}
 
     {#if ingresoUsdMes > 0 || gastoUsdMes > 0}
         <div class="usd-card">
@@ -667,7 +574,7 @@
         </div>
     {/if}
 
-    <h2>Consolidado por categoría</h2>
+    <h2>Consolidado por categoría <span class="en-miles">· en miles</span></h2>
     <div class="tabla-scroll">
     <table>
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
@@ -675,16 +582,16 @@
             {#each consolidado as c (c.cat)}
                 <tr>
                     <td><strong>{c.cat}</strong>{#if c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
-                    <td class="num">{peso(c.n2)}</td><td class="num">{peso(c.n1)}</td>
-                    <td class="num">{peso(c.presup)}</td>
-                    <td class="num real {claseEstado(c.estado)}" title={c.estado}>{peso(c.real)}</td>
+                    <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
+                    <td class="num">{pesoMil(c.presup)}</td>
+                    <td class="num real {claseEstado(c.estado)}" title={c.estado}>{pesoMil(c.real)}</td>
                 </tr>
             {/each}
         </tbody>
         <tfoot>
             <tr><td><strong>Total general</strong></td>
-                <td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
-                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
+                <td class="num">{pesoMil(totales.n2)}</td><td class="num">{pesoMil(totales.n1)}</td>
+                <td class="num">{pesoMil(totales.presup)}</td><td class="num">{pesoMil(totales.real)}</td></tr>
         </tfoot>
     </table>
     </div>
@@ -794,14 +701,8 @@
     .pasos .paso-btn:hover { text-decoration: underline; }
     .pasos .paso-done { color: var(--pos); text-decoration: line-through; opacity: 0.75; font-size: 0.88rem; }
 
-    /* Aviso de backup */
-    .aviso-backup {
-        display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-        font-size: 0.82rem; color: var(--warn); background: rgba(251, 191, 36, 0.08);
-        border: 1px dashed var(--warn); border-radius: 8px; padding: 8px 12px; margin: 0 0 12px;
-    }
-    .aviso-acc { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex-shrink: 0; }
     h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
+    .en-miles { font-size: 0.72rem; font-weight: 400; color: var(--text-dim); }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
@@ -854,8 +755,4 @@
     .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
     .usd-item { white-space: nowrap; }
     .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
-    /* Aviso de recurrentes próximos: mismo chasis chico que .usd-card, pero toda
-       la tarjeta es el link. */
-    .aviso-card { display: flex; text-decoration: none; color: var(--text-dim); }
-    .aviso-card:hover { border-color: var(--accent); }
 </style>
