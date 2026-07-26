@@ -14,6 +14,9 @@
     let totalMes = $state<Record<string, Celda>>({});
     let detallePorMes = $state<Record<string, any[]>>({});
     let reservaMap = $state<Record<string, number>>({});
+    // Conciliador: recurrentes con tarjeta por (período, tarjeta). NO entra al Ingreso
+    // disponible (query separada de la del vencimiento).
+    let recurrentes = $state<Record<string, Record<string, Celda>>>({});
     let cargando = $state(true);
 
     // Proyecta cada compra en crédito a sus meses de cuota. Lleva la moneda para
@@ -49,6 +52,26 @@
             else { cell.ars += f.cuota; tcell.ars += f.cuota; }
             (det[f.mes] ??= []).push(f);
         }
+        // Recurrentes con tarjeta por (período, tarjeta). El disparo de un fijo crea el
+        // gasto como medio='debito' SIN tarjeta_id, así que no está en la matriz (CTE de
+        // cuotas usa medio='credito'); el vínculo a la tarjeta va por la suscripción.
+        // Query SEPARADA: estos NUNCA alimentan el vencimiento del Ingreso disponible.
+        const recFilas = (await query(
+            `SELECT sr.periodo AS mes, t.nombre AS tarjeta, g.moneda, SUM(g.monto) AS monto
+             FROM suscripcion_registro sr
+             JOIN gasto g ON g.id = sr.gasto_id
+             JOIN suscripcion s ON s.id = sr.suscripcion_id
+             JOIN tarjeta t ON t.id = s.tarjeta_id
+             WHERE s.perfil_id=1 AND s.tarjeta_id IS NOT NULL AND t.tipo='credito'
+             GROUP BY sr.periodo, t.nombre, g.moneda`
+        )) as any[];
+        const rec: Record<string, Record<string, Celda>> = {};
+        for (const f of recFilas) {
+            mSet.add(f.mes); tSet.add(f.tarjeta);
+            const cell = ((rec[f.mes] ??= {})[f.tarjeta] ??= { ars: 0, usd: 0 });
+            if (f.moneda === 'USD') cell.usd += f.monto; else cell.ars += f.monto;
+        }
+
         // Ancla: mismo helper que /suscripciones e /ingresos-fijos, mismo fallback.
         // Se muestran solo el período activo en adelante (sin tope superior); los
         // pasados dejan de ser alcanzables desde esta pantalla.
@@ -58,6 +81,7 @@
         matriz = mat;
         totalMes = tot;
         detallePorMes = det;
+        recurrentes = rec;
 
         const res = (await query('SELECT periodo, monto FROM reserva_credito WHERE perfil_id=1')) as any[];
         const rm: Record<string, number> = {};
@@ -94,6 +118,11 @@
     }
     const n0 = (n: number) => Math.round(n || 0).toLocaleString('es-AR');
     const vacia = (c: Celda | undefined) => !c || (!c.ars && !c.usd);
+    // Conciliador por tarjeta = cuotas del período + recurrentes de esa tarjeta.
+    const conc = (m: string, t: string): Celda => ({
+        ars: (matriz[m]?.[t]?.ars || 0) + (recurrentes[m]?.[t]?.ars || 0),
+        usd: (matriz[m]?.[t]?.usd || 0) + (recurrentes[m]?.[t]?.usd || 0)
+    });
 </script>
 
 <div class="titulo-guia">
@@ -137,14 +166,24 @@
                     <tr class="detalle">
                         <td class="detalle-cell" colspan="2">
                             {#each tarjetas as t}
-                                {#if !vacia(matriz[m]?.[t])}
+                                {#if !vacia(matriz[m]?.[t]) || recurrentes[m]?.[t]}
                                     <button class="tarj" onclick={() => toggleTarj(m, t)}>
                                         <span class="tarj-nom">{tarjetaAbierta === keyT(m, t) ? '▾' : '▸'} {t}</span>
                                         <span class="tarj-monto">
-                                            {#if matriz[m][t].ars}<span>${n0(matriz[m][t].ars)}</span>{/if}
-                                            {#if matriz[m][t].usd}<span class="usd">U$D {n0(matriz[m][t].usd)}</span>{/if}
+                                            {#if matriz[m]?.[t]?.ars}<span>${n0(matriz[m][t].ars)}</span>{/if}
+                                            {#if matriz[m]?.[t]?.usd}<span class="usd">U$D {n0(matriz[m][t].usd)}</span>{/if}
+                                            {#if vacia(matriz[m]?.[t])}<span>—</span>{/if}
                                         </span>
                                     </button>
+                                    {#if recurrentes[m]?.[t]}
+                                        <div class="concil">
+                                            <span class="concil-lbl">Total con recurrentes — como tu resumen</span>
+                                            <span class="concil-monto">
+                                                {#if conc(m, t).ars}<span>${n0(conc(m, t).ars)}</span>{/if}
+                                                {#if conc(m, t).usd}<span class="usd">U$D {n0(conc(m, t).usd)}</span>{/if}
+                                            </span>
+                                        </div>
+                                    {/if}
                                     {#if tarjetaAbierta === keyT(m, t)}
                                         <div class="gastos">
                                             {#each detallePorMes[m].filter((d) => d.tarjeta === t) as d (`${d.gasto_id}-${d.nro}`)}
@@ -194,6 +233,10 @@
     .tarj-nom { font-weight: 600; }
     .tarj-monto { text-align: right; white-space: nowrap; }
     .tarj-monto .usd { margin-left: 6px; }
+    /* Línea conciliadora (solo lectura): cuotas + recurrentes de la tarjeta. */
+    .concil { display: flex; justify-content: space-between; gap: 12px; font-size: 0.74rem; color: var(--text-dim); padding: 0 0 8px 18px; }
+    .concil-monto { white-space: nowrap; }
+    .concil-monto .usd { margin-left: 6px; }
     /* Nivel 2: gastos/cuotas de esa tarjeta en ese mes. */
     .gastos { padding: 2px 0 6px 18px; }
     .item {

@@ -48,6 +48,110 @@ export function soloNum(node: HTMLInputElement) {
 	return { destroy() { node.removeEventListener('input', handler); } };
 }
 
+// Evalúa una expresión aritmética simple (+ − * / y paréntesis) con números en formato
+// es-AR (coma decimal, punto miles). Mini-parser propio (shunting-yard), NUNCA eval().
+// Devuelve el número resultante o null si la expresión es inválida (carácter no
+// permitido, paréntesis desbalanceado, división por cero, etc.).
+export function evalMonto(texto: string): number | null {
+	const s = (texto ?? '').trim();
+	if (!s) return null;
+	const tokens: (number | string)[] = [];
+	let i = 0;
+	while (i < s.length) {
+		const c = s[i];
+		if (c === ' ') { i++; continue; }
+		if ('+-*/()'.includes(c)) { tokens.push(c); i++; continue; }
+		if (/[0-9.,]/.test(c)) {
+			let j = i;
+			while (j < s.length && /[0-9.,]/.test(s[j])) j++;
+			const num = parseNum(s.slice(i, j));
+			if (!Number.isFinite(num)) return null;
+			tokens.push(num);
+			i = j;
+			continue;
+		}
+		return null; // carácter inválido
+	}
+	if (!tokens.length) return null;
+	const prec: Record<string, number> = { '+': 1, '-': 1, '*': 2, '/': 2 };
+	const out: (number | string)[] = [];
+	const ops: string[] = [];
+	let prev: number | string | null = null;
+	for (const tk of tokens) {
+		if (typeof tk === 'number') {
+			out.push(tk);
+		} else if (tk === '(') {
+			ops.push(tk);
+		} else if (tk === ')') {
+			while (ops.length && ops[ops.length - 1] !== '(') out.push(ops.pop() as string);
+			if (!ops.length) return null;
+			ops.pop();
+		} else {
+			// Unario: + o − al inicio o tras operador/'(' → 0 <op> num.
+			if ((tk === '-' || tk === '+') && (prev === null || prev === '(' || (typeof prev === 'string' && '+-*/'.includes(prev)))) {
+				out.push(0);
+			}
+			while (ops.length && ops[ops.length - 1] !== '(' && prec[ops[ops.length - 1]] >= prec[tk]) out.push(ops.pop() as string);
+			ops.push(tk);
+		}
+		prev = tk;
+	}
+	while (ops.length) {
+		const op = ops.pop() as string;
+		if (op === '(') return null;
+		out.push(op);
+	}
+	const st: number[] = [];
+	for (const tk of out) {
+		if (typeof tk === 'number') { st.push(tk); continue; }
+		const b = st.pop();
+		const a = st.pop();
+		if (a === undefined || b === undefined) return null;
+		let r: number;
+		if (tk === '+') r = a + b;
+		else if (tk === '-') r = a - b;
+		else if (tk === '*') r = a * b;
+		else if (tk === '/') { if (b === 0) return null; r = a / b; }
+		else return null;
+		st.push(r);
+	}
+	if (st.length !== 1 || !Number.isFinite(st[0])) return null;
+	return Math.round(st[0] * 1e6) / 1e6; // mata ruido de coma flotante
+}
+
+// Action para inputs de monto: permite tipear una expresión aritmética y la evalúa al
+// salir del campo (blur). Filtra en vivo a dígitos/separadores/operadores. Si no hay
+// operador, es un número plano y no se toca. Si la expresión es inválida, se deja el
+// texto como está (editable), no rompe ni guarda basura. inputmode lo define el markup.
+export function calc(node: HTMLInputElement) {
+	const filtro = () => {
+		const limpio = node.value.replace(/[^0-9.,+\-*/() ]/g, '');
+		if (node.value !== limpio) {
+			node.value = limpio;
+			node.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+	};
+	const evaluar = () => {
+		// ¿Tiene operador? (ignora un signo inicial). Si no, número plano: no tocar.
+		if (!/[+\-*/()]/.test(node.value.slice(1))) return;
+		const r = evalMonto(node.value);
+		if (r == null) return; // inválido: dejar editable
+		const txt = String(r).replace('.', ',');
+		if (node.value !== txt) {
+			node.value = txt;
+			node.dispatchEvent(new Event('input', { bubbles: true }));
+		}
+	};
+	node.addEventListener('input', filtro);
+	node.addEventListener('blur', evaluar);
+	return {
+		destroy() {
+			node.removeEventListener('input', filtro);
+			node.removeEventListener('blur', evaluar);
+		}
+	};
+}
+
 // Date -> 'yyyy-mm-dd' en hora LOCAL. Evita toISOString(), que usa UTC y
 // después de las 21:00 (AR es UTC-3) devuelve el día siguiente.
 export function fechaISO(d: Date): string {

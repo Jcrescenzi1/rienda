@@ -68,6 +68,47 @@ export function ordenDia(dia: number | null, cobro: number | null): number {
 	return ((dia - cobro) % 31 + 31) % 31;
 }
 
+// Secuencia COMPLETA de períodos de la ventana elegida, para el eje del gráfico de
+// evolución (los períodos sin dato se dibujan en cero; el dato se hace left-join).
+// Respeta el modo, usando el mismo enumerador que la navegación de la Home:
+//   sueldo     → la secuencia real de cortes (su label ES el período).
+//   calendario → meses consecutivos yyyy-mm (addMonths).
+// `actual` = período actual (usar mesActual(), no new Date()). `primerDato` = primer
+// período con dato en el filtro actual (para acotar "histórico" por abajo).
+export function secuenciaPeriodos(
+	vista: 'historico' | 'ult12' | 'anio',
+	opts: { modo: ModoPeriodo; cortePeriodos: string[]; primerDato: string | null; actual: string; anio: string }
+): string[] {
+	const { modo, cortePeriodos, primerDato, actual } = opts;
+	const anio = /^\d{4}$/.test(opts.anio) ? opts.anio : actual.slice(0, 4); // fallback si viene vacío
+	if (modo === 'sueldo' && cortePeriodos.length) {
+		const arr = cortePeriodos.filter((p) => p <= actual); // ascendente
+		if (vista === 'ult12') return arr.slice(-12);
+		if (vista === 'anio') return arr.filter((p) => p.startsWith(anio));
+		const desde = primerDato ?? arr[0] ?? actual;
+		return arr.filter((p) => p >= desde);
+	}
+	// calendario (o sueldo sin cortes): meses consecutivos.
+	if (vista === 'ult12') {
+		const out: string[] = [];
+		for (let i = 11; i >= 0; i--) out.push(addMonths(actual, -i));
+		return out;
+	}
+	if (vista === 'anio') {
+		const fin = anio === actual.slice(0, 4) ? actual : `${anio}-12`;
+		const out: string[] = [];
+		let p = `${anio}-01`;
+		while (p <= fin) { out.push(p); p = addMonths(p, 1); }
+		return out;
+	}
+	// histórico: desde el primer dato (o el actual) hasta el actual, sin huecos.
+	const out: string[] = [];
+	let p = primerDato ?? actual;
+	if (p > actual) return [actual];
+	while (p <= actual) { out.push(p); p = addMonths(p, 1); }
+	return out;
+}
+
 // Suma/resta meses a un 'yyyy-mm'. addMonths('2025-03', -2) -> '2025-01'.
 export function addMonths(ym: string, delta: number): string {
 	const [y, m] = ym.split('-').map(Number);

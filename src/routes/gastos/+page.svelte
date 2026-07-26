@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, soloNum, pesos as fmt } from '$lib/format';
+    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, calc, pesos as fmt } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import TabsCorrRec from '$lib/TabsCorrRec.svelte';
     import { Toast } from '$lib/toast.svelte';
@@ -265,7 +265,7 @@
 <div class="form">
     {#if editandoId}<p class="editando">✏ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
-    <label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
+    <label>Monto<input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /></label>
     <label>Moneda
         <select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
     </label>

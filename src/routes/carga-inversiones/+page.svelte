@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, calc } from '$lib/format';
 	import { dolarActual } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
 	import { Toast } from '$lib/toast.svelte';
@@ -257,7 +257,7 @@
 		<a class="link-crear" href="/config-tickers">¿No está? Crealo en Tickers →</a>
 		<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
 		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} en<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
-		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:calc bind:value={fMonto} placeholder="0,00" /></label>
 		{#if fPago !== monedaActivo || monedaActivo === 'ARS'}
 			<label>Valor dólar del día<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
 		{/if}
@@ -267,10 +267,10 @@
 		{/if}
 	{:else if fAccion === 'Ingreso' || fAccion === 'Retiro'}
 		<label>Moneda<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-		<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+		<label>Monto<input type="text" inputmode="decimal" use:calc bind:value={fMonto} placeholder="0,00" /></label>
 	{:else if fAccion === 'Convertir'}
 		<label>Convierto desde<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-		<label>Monto en {fMoneda}<input type="text" inputmode="decimal" use:soloNum bind:value={fMonto} placeholder="0,00" /></label>
+		<label>Monto en {fMoneda}<input type="text" inputmode="decimal" use:calc bind:value={fMonto} placeholder="0,00" /></label>
 		<label>Valor dólar<input type="text" inputmode="decimal" use:soloNum bind:value={fValorDolar} /></label>
 		{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 	{:else if fAccion === 'Renta'}
@@ -279,8 +279,8 @@
 				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
 			</select></label>
 		<label>Moneda (renta y amortización)<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
-		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:soloNum bind:value={fRenta} placeholder="0,00" /></label>
-		<label>Monto amortización<input type="text" inputmode="decimal" use:soloNum bind:value={fAmort} placeholder="0,00" /></label>
+		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:calc bind:value={fRenta} placeholder="0,00" /></label>
+		<label>Monto amortización<input type="text" inputmode="decimal" use:calc bind:value={fAmort} placeholder="0,00" /></label>
 		{#if !(fMoneda === 'USD' && monedaActivo === 'USD')}
 			<label>Tipo de cambio<input type="text" inputmode="decimal" use:soloNum bind:value={fTcRenta} placeholder="auto: MEP de la fecha" /></label>
 		{/if}

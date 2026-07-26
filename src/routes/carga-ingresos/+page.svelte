@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { query, queryBatch } from '$lib/db/client';
-	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, pesos as peso } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, calc, pesos as peso } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import { periodoRegla } from '$lib/periodo';
@@ -176,7 +176,7 @@
 <div class="form">
 	{#if editandoId}<p class="editando">✏ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} onchange={() => (periodoTocado = true)} /></label>
-	<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={monto} placeholder="0,00" /></label>
+	<label>Monto<input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /></label>
 	<label>Moneda<select bind:value={moneda}><option>ARS</option><option>USD</option></select></label>
 
 	<label>Categoría

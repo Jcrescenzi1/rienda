@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+	import { cargarModo, cargarCortes, crearAsignador, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
+	import { mesActual } from '$lib/format';
 	import {
 		cargarDolarSerie,
 		cargarIPC,
@@ -25,6 +26,7 @@
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
 	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder'>('resumen');
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
@@ -36,6 +38,7 @@
 		modoPeriodo = await cargarModo();
 		const cortes = modoPeriodo === 'sueldo' ? await cargarCortes() : [];
 		asignar = crearAsignador(modoPeriodo, cortes);
+		cortePeriodos = cortes.map((c) => c.periodo);
 		dolarSerie = await cargarDolarSerie();
 		ipc = await cargarIPC();
 		ingresosRaw = (await query(
@@ -76,11 +79,17 @@
 		if (!anio && anios.length) anio = anios[anios.length - 1];
 	});
 
-	let periodosIG = $derived.by(() => {
-		if (vista === 'historico') return periodosTodos;
-		if (vista === 'anio') return periodosTodos.filter((p) => p.startsWith(anio));
-		return periodosTodos.slice(-12);
-	});
+	// El eje sale de la VENTANA temporal (no de los períodos con dato): los períodos
+	// sin movimiento se dibujan en cero (serieIG hace el left-join con ?? 0).
+	let periodosIG = $derived.by(() =>
+		secuenciaPeriodos(vista, {
+			modo: modoPeriodo,
+			cortePeriodos,
+			primerDato: periodosTodos[0] ?? null,
+			actual: mesActual(),
+			anio
+		})
+	);
 
 	let serieIG = $derived.by(() =>
 		periodosIG.map((p) => ({

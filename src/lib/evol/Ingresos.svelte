@@ -16,7 +16,8 @@
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
-	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
+	import { cargarModo, cargarCortes, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
+	import { parseNum, formatNum, soloNum, fmtFecha, mesActual } from '$lib/format';
 
 	type Ingreso = {
 		fecha: string;
@@ -33,6 +34,8 @@
 	let ingresos = $state<Ingreso[]>([]);
 	let dolarSerie = $state<DolarSerie>([]);
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
+	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
 
 	const CATEGORIAS = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
 	// Valor interno (DB) -> etiqueta visible. La lógica de períodos depende del valor
@@ -55,8 +58,15 @@
 	let filtroTexto = $state('');
 
 	onMount(async () => {
-		const [, ds, ic] = await Promise.all([moneda.cargar(), cargarDolarSerie(), cargarIPC(), cargarIngresos()]);
+		const [, ds, ic, cortes] = await Promise.all([
+			moneda.cargar(),
+			cargarDolarSerie(),
+			cargarIPC(),
+			(async () => { modoPeriodo = await cargarModo(); return modoPeriodo === 'sueldo' ? await cargarCortes() : []; })(),
+			cargarIngresos()
+		]);
 		dolarSerie = ds; ipc = ic;
+		cortePeriodos = (cortes as any[]).map((c) => c.periodo);
 		cargando = false;
 	});
 
@@ -82,11 +92,17 @@
 	let periodosTodos = $derived([...new Set(filtrados.map((i) => i.periodo))].sort());
 	let anios = $derived([...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort());
 	$effect(() => { if (!anio && anios.length) anio = anios[anios.length - 1]; });
-	let periodosVista = $derived.by(() => {
-		if (vista === 'historico') return periodosTodos;
-		if (vista === 'anio') return periodosTodos.filter((p) => p.startsWith(anio));
-		return periodosTodos.slice(-12);
-	});
+	// El eje sale de la VENTANA temporal (no de los períodos con dato): los períodos
+	// sin ingreso se dibujan en cero. El dato se hace left-join en `serie`.
+	let periodosVista = $derived.by(() =>
+		secuenciaPeriodos(vista, {
+			modo: modoPeriodo,
+			cortePeriodos,
+			primerDato: periodosTodos[0] ?? null,
+			actual: mesActual(),
+			anio
+		})
+	);
 	let ventana = $derived(new Set(periodosVista));
 
 	// Total por período (en el modo de moneda elegido), dentro de la ventana.

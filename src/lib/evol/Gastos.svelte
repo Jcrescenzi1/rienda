@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
+	import { cargarModo, cargarCortes, crearAsignador, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
 	import {
 		cargarDolarSerie,
 		cargarIPC,
@@ -17,7 +17,7 @@
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
-	import { parseNum, formatNum, soloNum, fmtFecha } from '$lib/format';
+	import { parseNum, formatNum, soloNum, fmtFecha, mesActual } from '$lib/format';
 
 	type Gasto = {
 		fecha: string;
@@ -43,6 +43,7 @@
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
+	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
 
 	// Ventana de tiempo
 	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
@@ -67,6 +68,7 @@
 			cargarGastos()
 		]);
 		asignar = crearAsignador(modoPeriodo, cortes as any);
+		cortePeriodos = (cortes as any[]).map((c) => c.periodo);
 		dolarSerie = ds; ipc = ic;
 		categorias = cat as any[]; subcategorias = sub as any[]; tarjetasCredito = tc as any[];
 		selCat = new Set(categorias.map((c) => c.id)); // arranca "Todas"
@@ -137,11 +139,17 @@
 	});
 	let anios = $derived([...new Set(periodosTodos.map((p) => p.slice(0, 4)))].sort());
 	$effect(() => { if (!anio && anios.length) anio = anios[anios.length - 1]; });
-	let periodosVista = $derived.by(() => {
-		if (vista === 'historico') return periodosTodos;
-		if (vista === 'anio') return periodosTodos.filter((p) => p.startsWith(anio));
-		return periodosTodos.slice(-12);
-	});
+	// El eje sale de la VENTANA temporal (no de los períodos con dato): los períodos
+	// sin gasto se dibujan en cero. El dato se hace left-join en `serie`.
+	let periodosVista = $derived.by(() =>
+		secuenciaPeriodos(vista, {
+			modo: modoPeriodo,
+			cortePeriodos,
+			primerDato: periodosTodos[0] ?? null,
+			actual: mesActual(),
+			anio
+		})
+	);
 	let ventana = $derived(new Set(periodosVista));
 
 	// Total por período (en el modo de moneda elegido), dentro de la ventana.
