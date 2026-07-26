@@ -16,7 +16,7 @@
 	let dolarSerie = $state<{ fecha: string; valor: number }[]>([]);
 	let periodosTodos = $state<string[]>([]);
 
-	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
+	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
 	let anio = $state('');
 	let anios = $state<string[]>([]);
 	let cargando = $state(true);

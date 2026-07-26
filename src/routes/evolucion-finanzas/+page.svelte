@@ -27,7 +27,7 @@
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
 	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder'>('resumen');
 
-	let vista = $state<'historico' | 'ult12' | 'anio'>('historico');
+	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
 	let anio = $state('');
 	let cargando = $state(true);
 
