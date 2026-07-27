@@ -20,7 +20,7 @@
 	let fecha = $state(hoyISO());
 	let monto = $state('');
 	let moneda = $state('ARS');
-	let categoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros'>('Ingreso Principal');
+	let categoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros' | 'Desahorro'>('Ingreso Principal');
 	let tipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
 	let detalle = $state('');
 	let periodoIngreso = $state('');
@@ -139,7 +139,7 @@
 	// Etiqueta visible del tipo (interno Sueldo/Aciclico → Regular/Extraordinario)
 	const tipoLabel = (t: string | null) => t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : '—';
 	// Etiqueta visible de la categoría para la ficha
-	const catLabel = (c: string) => c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundario' : 'Otros';
+	const catLabel = (c: string) => c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundario' : c === 'Desahorro' ? 'Desahorro' : 'Otros';
 	// El período difiere del mes de la fecha de cobro (caso informativo)
 	const periodoDifiere = (i: any) => i.periodo && i.periodo !== i.fecha?.slice(0, 7);
 
@@ -184,9 +184,10 @@
 			<option value="Ingreso Principal">Ingreso Principal</option>
 			<option value="Ingresos Secundarios">Ingresos Secundarios</option>
 			<option value="Otros">Otros</option>
+			<option value="Desahorro">Desahorro (uso de ahorro)</option>
 		</select>
 	</label>
-	<p class="hint">El Ingreso Principal marca el ritmo de tus períodos. Secundarios y Otros se ajustan a ese mes.</p>
+	<p class="hint">El Ingreso Principal marca el ritmo de tus períodos. Secundarios y Otros se ajustan a ese mes. <strong>Desahorro</strong>: plata que sacás de tu ahorro para gastar este mes; suma a lo disponible pero no cuenta como ingreso en Evolución ni en tus ingresos regulares.</p>
 
 	<label>Tipo de ingreso
 		<select bind:value={tipo}>
@@ -215,6 +216,7 @@
 			<option value="Ingreso Principal">Principal</option>
 			<option value="Ingresos Secundarios">Secundarios</option>
 			<option value="Otros">Otros</option>
+			<option value="Desahorro">Desahorro</option>
 		</select>
 	</label>
 	{#if hayFiltro}<button class="btn btn-secondary" onclick={limpiarFiltros}>Limpiar</button>{/if}

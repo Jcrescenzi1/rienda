@@ -17,6 +17,7 @@
 	import Gastos from '$lib/evol/Gastos.svelte';
 	import Ingresos from '$lib/evol/Ingresos.svelte';
 	import Poder from '$lib/evol/Poder.svelte';
+	import Categorias from '$lib/evol/Categorias.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 
@@ -27,7 +28,14 @@
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
 	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
-	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder'>('resumen');
+	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder' | 'categorias'>('resumen');
+
+	// Handshake con Evolución de Gastos: guardo la subcategoría a pre-filtrar y salto
+	// a esa pestaña; Gastos.svelte la lee en onMount (sessionStorage) y la aplica.
+	function verSubcatEnGastos(scid: number) {
+		try { sessionStorage.setItem('gastos_prefiltro_subcat', String(scid)); } catch { /* ignore */ }
+		tab = 'gastos';
+	}
 
 	let vista = $state<'historico' | 'ult12' | 'anio'>('ult12');
 	let anio = $state('');
@@ -41,8 +49,10 @@
 		cortePeriodos = cortes.map((c) => c.periodo);
 		dolarSerie = await cargarDolarSerie();
 		ipc = await cargarIPC();
+		// Excluye 'Desahorro' (Brief 6): uso de ahorro, no ingreso real; no debe inflar
+		// el lado ingresos de Ingresos vs Gastos.
 		ingresosRaw = (await query(
-			"SELECT periodo, fecha, monto, moneda FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL"
+			"SELECT periodo, fecha, monto, moneda FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL AND categoria != 'Desahorro'"
 		)) as any[];
 		gastosRaw = (await query('SELECT fecha, monto, moneda FROM gasto WHERE perfil_id=1')) as any[];
 		cargando = false;
@@ -159,6 +169,7 @@
 	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
 	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
 	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
+	<button class:activo={tab === 'categorias'} onclick={() => (tab = 'categorias')}>Análisis por categoría</button>
 </div>
 
 {#if tab === 'resumen'}
@@ -225,6 +236,8 @@
 	<Ingresos />
 {:else if tab === 'poder'}
 	<Poder />
+{:else if tab === 'categorias'}
+	<Categorias irAGastos={verSubcatEnGastos} />
 {/if}
 
 <style>

@@ -72,6 +72,16 @@
 		dolarSerie = ds; ipc = ic;
 		categorias = cat as any[]; subcategorias = sub as any[]; tarjetasCredito = tc as any[];
 		selCat = new Set(categorias.map((c) => c.id)); // arranca "Todas"
+		// Pre-filtro por subcategoría desde "Análisis por categoría" (handshake por
+		// sessionStorage: el mover clickeado deja acá la subcat y salta a esta pestaña).
+		try {
+			const pf = sessionStorage.getItem('gastos_prefiltro_subcat');
+			if (pf != null) {
+				sessionStorage.removeItem('gastos_prefiltro_subcat');
+				const scid = Number(pf);
+				if (Number.isFinite(scid)) { subModo = 'parcial'; selSub = new Set([scid]); }
+			}
+		} catch { /* ignore */ }
 		cargando = false;
 	});
 

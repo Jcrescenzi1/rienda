@@ -34,6 +34,14 @@
     // Ingresos TOTALES del período visible (primario + secundarios + otros),
     // en ARS (los USD se convierten al dólar del día de cobro).
     let ingresosMes = $state(0);
+    // Ingresos REGULARES del período (Brief 1): solo tipo='Sueldo' en
+    // 'Ingreso Principal'/'Ingresos Secundarios', en ARS (USD recurrente al dólar
+    // del día). Base del semáforo de la categoría de ahorro. NO incluye 'Otros',
+    // Extraordinarios ni 'Desahorro'.
+    let ingresosRegularesMes = $state(0);
+    // Umbral de tasa de ahorro (A/R): sticky en tabla meta (clave 'umbral_ahorro'),
+    // default 0.10 (10%). Fuente ÚNICA compartida con Capacidad de ahorro (Brief 2).
+    let umbralAhorro = $state(0.10);
     // Reserva de crédito apartada para el mes visible (plata separada para pagar
     // tarjetas). Netea el "Ingreso disponible para gasto" del Ítem 1.
     let reservaMes = $state(0);
@@ -155,7 +163,7 @@
 
         // Todas las lecturas independientes en paralelo: una sola tanda al worker
         // en vez de encadenarlas (más rápido, sobre todo en mobile).
-        const [gastos, hab, subs, cats, presup, cred, ing, dolarBase, resv, deudaR, reservaR] = (await Promise.all([
+        const [gastos, hab, subs, cats, presup, cred, ing, dolarBase, resv, deudaR, reservaR, umbralRow] = (await Promise.all([
             query(
                 `SELECT g.fecha, g.monto, g.moneda,
                         g.categoria_id,
@@ -183,7 +191,7 @@
             query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
             query(CUOTAS_MES, [n]),
             query(
-                `SELECT i.monto, i.moneda,
+                `SELECT i.monto, i.moneda, i.categoria, i.tipo,
                         (SELECT c.valor FROM cotizacion_dolar c
                          WHERE c.perfil_id=1 AND c.casa='bolsa' AND c.fecha <= i.fecha
                          ORDER BY c.fecha DESC LIMIT 1) AS dolar_dia,
@@ -195,7 +203,8 @@
             query("SELECT valor FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha ASC LIMIT 1"),
             query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [n]),
             query(CUOTAS_MES, [mesSig]),
-            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [mesSig])
+            query('SELECT COALESCE(SUM(monto),0) AS t FROM reserva_credito WHERE perfil_id=1 AND periodo=?', [mesSig]),
+            query("SELECT valor FROM meta WHERE clave='umbral_ahorro'")
         ])) as any[];
         // MEP base determinístico para ingresos USD sin cotización previa
         // (la más antigua conocida; no cambia con el auto-refresh).
@@ -281,14 +290,14 @@
         const gr = Object.keys(map).sort((a, b) => a.localeCompare(b, 'es')).map((cat) => {
             const rows = map[cat].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
             const sub = rows.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
-            return { cat, rows, sub };
+            return { cat, rows, sub, esAhorro: rows.some((r: any) => r.esAhorro) };
         });
 
         creditoMes = cred[0]?.ars ?? 0;
         creditoMesUsd = cred[0]?.usd ?? 0;
 
         grupos = gr;
-        consolidado = gr.map((g: any) => ({ cat: g.cat, ...g.sub, estado: desvio(g.sub.real, g.sub.presup) }));
+        consolidado = gr.map((g: any) => ({ cat: g.cat, ...g.sub, esAhorro: g.esAhorro, estado: desvio(g.sub.real, g.sub.presup) }));
         totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
 
         // Ingresos del período en ARS (USD recurrente al MEP del día de cobro,
@@ -298,6 +307,19 @@
             0
         );
         ingresoUsdMes = ing.reduce((s: number, r: any) => (r.moneda === 'USD' && !r.es_fijo) ? s + r.monto : s, 0);
+
+        // R = ingresos regulares (Brief 1): tipo 'Sueldo' en Principal/Secundarios,
+        // en ARS (USD recurrente al MEP del día; USD puntual excluido, igual que
+        // ingresosMes). Excluye 'Otros', Extraordinarios ('Aciclico') y 'Desahorro'.
+        ingresosRegularesMes = ing.reduce((s: number, r: any) => {
+            if (r.tipo !== 'Sueldo') return s;
+            if (r.categoria !== 'Ingreso Principal' && r.categoria !== 'Ingresos Secundarios') return s;
+            if (r.moneda === 'USD' && !r.es_fijo) return s; // USD puntual: fuera del flujo ARS
+            return s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto);
+        }, 0);
+
+        // Umbral de ahorro sticky (meta). Sin valor guardado → default 0.10.
+        umbralAhorro = umbralRow?.[0]?.valor != null ? (parseFloat(umbralRow[0].valor) || 0.10) : 0.10;
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
         reservaMes = resv[0]?.t ?? 0;
@@ -440,6 +462,29 @@
         return semColor(totales.real);
     }
     const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
+
+    // Semáforo de la categoría de ahorro (Brief 1): polaridad propia, NO contra
+    // presupuesto. A = ahorro del período (todas las categorías es_ahorro sumadas =
+    // ahorroMes), R = ingresos regulares (ingresosRegularesMes). Verde si A/R ≥
+    // umbral, rojo si <, NEUTRO si R=0 (no dividir por cero, no pintar rojo).
+    function claseAhorro(): string {
+        if (ingresosRegularesMes <= 0) return 'none';
+        return ahorroMes / ingresosRegularesMes >= umbralAhorro ? 'ok' : 'bad';
+    }
+    function tituloAhorro(): string {
+        if (ingresosRegularesMes <= 0) return 'Sin ingreso regular cargado en el período';
+        const tasa = ahorroMes / ingresosRegularesMes;
+        return `Tasa de ahorro ${(tasa * 100).toFixed(1)}% · objetivo ${(umbralAhorro * 100).toFixed(0)}%`;
+    }
+    // Persiste el umbral (fuente única, tabla meta). El semáforo del consolidado se
+    // repinta solo al cambiar `umbralAhorro` (reactivo); no hace falta recargar todo.
+    async function guardarUmbral(v: string) {
+        let pct = parseFloat(v);
+        if (!Number.isFinite(pct)) return;
+        pct = Math.max(0, Math.min(100, pct));
+        umbralAhorro = pct / 100;
+        await setMeta('umbral_ahorro', String(umbralAhorro));
+    }
 </script>
 
 <div class="titulo-guia">
@@ -574,17 +619,29 @@
         </div>
     {/if}
 
-    <h2>Consolidado por categoría <span class="en-miles">· en miles</span></h2>
+    <div class="consol-head">
+        <h2>Consolidado por categoría · en miles</h2>
+        <label class="umbral" title="Meta de tasa de ahorro (ahorro ÷ ingreso regular). Define el semáforo de la categoría de ahorro.">
+            Meta ahorro
+            <input type="number" min="0" max="100" step="1" value={Math.round(umbralAhorro * 100)}
+                   onchange={(e) => guardarUmbral(e.currentTarget.value)} />
+            <span class="umbral-pct">%</span>
+        </label>
+    </div>
     <div class="tabla-scroll">
-    <table>
+    <table class="consol">
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each consolidado as c (c.cat)}
                 <tr>
-                    <td><strong>{c.cat}</strong>{#if c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
+                    <td><strong>{c.cat}</strong>{#if !c.esAhorro && c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
                     <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
                     <td class="num">{pesoMil(c.presup)}</td>
-                    <td class="num real {claseEstado(c.estado)}" title={c.estado}>{pesoMil(c.real)}</td>
+                    {#if c.esAhorro}
+                        <td class="num real {claseAhorro()}" title={tituloAhorro()}>{pesoMil(c.real)}</td>
+                    {:else}
+                        <td class="num real {claseEstado(c.estado)}" title={c.estado}>{pesoMil(c.real)}</td>
+                    {/if}
                 </tr>
             {/each}
         </tbody>
@@ -702,8 +759,18 @@
     .pasos .paso-done { color: var(--pos); text-decoration: line-through; opacity: 0.75; font-size: 0.88rem; }
 
     h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
-    .en-miles { font-size: 0.72rem; font-weight: 400; color: var(--text-dim); }
+    /* Título del consolidado + input de meta de ahorro en una sola fila. El
+       "· en miles" ahora va dentro del h2 (mismo tamaño), no como label chico. */
+    .consol-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .consol-head h2 { margin-top: 26px; }
+    .umbral { display: inline-flex; align-items: baseline; gap: 5px; font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
+    .umbral input { width: 52px; text-align: right; padding: 3px 5px; font-size: 0.85rem; }
+    .umbral-pct { color: var(--text-dim); }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
+    /* Brief 1: consolidado con tipografía más grande que el resto de las tablas,
+       para legibilidad general de todas sus filas (no solo la de ahorro). */
+    table.consol { font-size: 0.98rem; }
+    table.consol th, table.consol td { padding: 7px 6px; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
     table th:first-child, table td:first-child {

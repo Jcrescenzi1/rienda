@@ -163,7 +163,10 @@ async function init() {
 	const ingDef: string = isql[0]?.sql ?? '';
 	const faltaRenombrar = ingDef && !ingDef.includes('Ingreso Principal');
 	const tieneCheckViejo = ingDef.includes('AND tipo IS NOT NULL');
-	if (faltaRenombrar || tieneCheckViejo) {
+	// Brief 6: cuarto valor 'Desahorro' en el enum de categoria. El CHECK está cocido
+	// en el CREATE, así que si la tabla existente no lo menciona hay que recrearla.
+	const faltaDesahorro = ingDef && !ingDef.includes('Desahorro');
+	if (faltaRenombrar || tieneCheckViejo || faltaDesahorro) {
 		db.exec(`
 			BEGIN;
 			ALTER TABLE ingreso RENAME TO ingreso_old;
@@ -173,7 +176,7 @@ async function init() {
 				fecha       TEXT NOT NULL,
 				monto       REAL NOT NULL CHECK (monto > 0),
 				moneda      TEXT NOT NULL CHECK (moneda IN ('ARS','USD')),
-				categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros')),
+				categoria   TEXT NOT NULL CHECK (categoria IN ('Ingreso Principal','Ingresos Secundarios','Otros','Desahorro')),
 				tipo        TEXT CHECK (tipo IN ('Sueldo','Aciclico')),
 				detalle     TEXT,
 				periodo     TEXT
@@ -184,6 +187,7 @@ async function init() {
 					tipo, detalle, periodo
 				FROM ingreso_old;
 			DROP TABLE ingreso_old;
+			CREATE INDEX IF NOT EXISTS idx_ingreso_periodo ON ingreso(perfil_id, periodo);
 			COMMIT;
 		`);
 	}

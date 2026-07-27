@@ -71,9 +71,11 @@
 	});
 
 	async function cargarIngresos() {
+		// Excluye 'Desahorro' (Brief 6): es uso de ahorro, no ingreso real; incluirlo
+		// infla artificialmente el lado ingresos de esta vista (gráfico, dona, totales).
 		ingresos = (await query(
 			`SELECT id, fecha, monto, moneda, categoria, tipo, detalle, periodo
-			 FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL ORDER BY fecha`
+			 FROM ingreso WHERE perfil_id=1 AND periodo IS NOT NULL AND categoria != 'Desahorro' ORDER BY fecha`
 		)) as any[];
 	}
 

@@ -170,7 +170,7 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 
 // ---------- Importar INGRESOS ----------
 
-const CATS_INGRESO = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros'];
+const CATS_INGRESO = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros', 'Desahorro'];
 
 export async function importarIngresosFilas(filas: Fila[]): Promise<ResultadoImport> {
 	const errores: string[] = [];
