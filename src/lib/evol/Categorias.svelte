@@ -94,6 +94,9 @@
 	let agg = $derived.by(() => {
 		const catByPeriod = new Map<string, Map<number, number>>();
 		const subByPeriod = new Map<string, Map<string, number>>();
+		// Desglose por categoría → subcategoría efectiva dentro de cada período (para
+		// el despliegue in-place de la Visual 1).
+		const catSubByPeriod = new Map<string, Map<number, Map<string, number>>>();
 		const totalByPeriod = new Map<string, number>();
 		for (const g of gastos) {
 			const per = asignar(g.fecha);
@@ -105,9 +108,12 @@
 			const sk = g.scid == null ? 'null' : String(g.scid);
 			let sm = subByPeriod.get(per); if (!sm) { sm = new Map(); subByPeriod.set(per, sm); }
 			sm.set(sk, (sm.get(sk) ?? 0) + v);
+			let csm = catSubByPeriod.get(per); if (!csm) { csm = new Map(); catSubByPeriod.set(per, csm); }
+			let sub2 = csm.get(g.categoria_id); if (!sub2) { sub2 = new Map(); csm.set(g.categoria_id, sub2); }
+			sub2.set(sk, (sub2.get(sk) ?? 0) + v);
 			totalByPeriod.set(per, (totalByPeriod.get(per) ?? 0) + v);
 		}
-		return { catByPeriod, subByPeriod, totalByPeriod };
+		return { catByPeriod, subByPeriod, catSubByPeriod, totalByPeriod };
 	});
 
 	// Ingreso regular por período (en el modo elegido) para el corte a "Otros".
@@ -149,22 +155,32 @@
 		return { periodos: ps, rows, otros: otros.some((x) => x > 0.05) ? otros : null };
 	});
 
-	// ===== Visual 2: matriz de composición (categorías × últimos 5, 100% por columna) =====
-	let v2 = $derived.by(() => {
-		const ps = periodosBase.slice(-5);
-		if (!ps.length) return null;
-		const { catByPeriod, totalByPeriod } = agg;
-		const allCats = new Set<number>();
-		const catTotal = new Map<number, number>();
-		for (const p of ps) { const m = catByPeriod.get(p); if (m) for (const [k, v] of m) { allCats.add(k); catTotal.set(k, (catTotal.get(k) ?? 0) + v); } }
-		const rows = [...allCats].sort((a, b) => (catTotal.get(b) ?? 0) - (catTotal.get(a) ?? 0)).map((id) => ({
-			nombre: catName.get(id) ?? '?',
-			celdas: ps.map((p) => { const t = totalByPeriod.get(p) ?? 0; const v = catByPeriod.get(p)?.get(id) ?? 0; return t > 0 ? (v / t) * 100 : null; })
+	// Despliegue in-place de la Visual 1: categoría expandida (una a la vez, patrón
+	// tap-despliega/tap-colapsa como la matriz de Crédito). null = ninguna.
+	let expandido = $state<number | null>(null);
+	// Subcategorías de la categoría expandida, con su % DENTRO de la categoría en cada
+	// uno de los 3 períodos de la Visual 1 (suman ~100% por período).
+	let desglose = $derived.by(() => {
+		if (expandido == null || !v1) return null;
+		const ps = v1.periodos;
+		const { catSubByPeriod, catByPeriod } = agg;
+		const subs = new Set<string>();
+		const subTotal = new Map<string, number>();
+		for (const p of ps) {
+			const m = catSubByPeriod.get(p)?.get(expandido);
+			if (m) for (const [k, v] of m) { subs.add(k); subTotal.set(k, (subTotal.get(k) ?? 0) + v); }
+		}
+		return [...subs].sort((a, b) => (subTotal.get(b) ?? 0) - (subTotal.get(a) ?? 0)).map((k) => ({
+			nombre: k === 'null' ? '(sin subcategoría)' : (subName.get(Number(k)) ?? ('#' + k)),
+			barras: ps.map((p) => {
+				const catTot = catByPeriod.get(p)?.get(expandido as number) ?? 0;
+				const v = catSubByPeriod.get(p)?.get(expandido as number)?.get(k) ?? 0;
+				return catTot > 0 ? (v / catTot) * 100 : 0;
+			})
 		}));
-		return { periodos: ps, rows };
 	});
 
-	// ===== Visual 3: movers de subcategoría (últimos 3 vs 3 previos) =====
+	// ===== Visual 2 (ex-3): movers de subcategoría (últimos 3 vs 3 previos) =====
 	let v3 = $derived.by(() => {
 		const ps = periodosBase.slice(-6);
 		if (ps.length < 6) return { insuficiente: true as const };
@@ -206,7 +222,7 @@
 
 <div class="titulo-guia">
 	<h1>Análisis por categoría</h1>
-	<Guia clave="analisis-categoria" texto="Compará tus categorías de gasto entre sí y en el tiempo: qué pesa más este mes, cómo se movió la composición en los últimos meses, y qué subcategorías crecieron o cayeron. En pesos reales (ajustados por inflación) o nominales." />
+	<Guia clave="analisis-categoria" texto="Compará tus categorías de gasto: qué pesa más en cada período y cómo se reparte por subcategoría (tocá una categoría para desplegarla), y qué subcategorías crecieron o cayeron. En pesos reales (ajustados por inflación) o nominales." />
 </div>
 
 {#if cargando}
@@ -217,23 +233,44 @@
 		<button class:activo={modoLocal === 'nominal'} onclick={() => (modoLocal = 'nominal')}>Pesos nominales</button>
 	</div>
 
-	<!-- Visual 1 -->
+	<!-- Visual 1: barras por categoría con desglose de subcategorías in-place -->
 	<h2>Peso de cada categoría</h2>
-	<p class="aclara">Cada barra es el % que la categoría representó del gasto total de ese período. Ordenadas por peso del mes actual.</p>
+	<p class="aclara">Cada barra es el % que la categoría representó del gasto total de ese período. Ordenadas por peso del mes actual. Tocá una categoría para ver sus subcategorías.</p>
 	{#if v1 && v1.rows.length}
 		<div class="leyenda-periodos">
 			{#each v1.periodos as p, i (p)}<span class="leg"><span class="sw" style="background:{BAR[i]}"></span>{mesCorto(p)}</span>{/each}
 		</div>
 		<div class="v1">
 			{#each v1.rows as r (r.catId)}
-				<div class="v1-row">
-					<span class="v1-cat">{r.nombre}</span>
+				<button type="button" class="v1-row v1-click" class:abierto={expandido === r.catId}
+						aria-expanded={expandido === r.catId}
+						onclick={() => (expandido = expandido === r.catId ? null : r.catId)}>
+					<span class="v1-cat"><span class="v1-caret">{expandido === r.catId ? '▾' : '▸'}</span>{r.nombre}</span>
 					<div class="v1-bars">
 						{#each r.barras as b, i}
 							<div class="v1-bar-wrap"><div class="v1-bar" style="width:{Math.max(b, 0)}%; background:{BAR[i]}"></div><span class="v1-pct">{pct(b)}</span></div>
 						{/each}
 					</div>
-				</div>
+				</button>
+				{#if expandido === r.catId && desglose}
+					<div class="v1-desglose">
+						<p class="desg-hint">% dentro de {r.nombre} por período</p>
+						{#if desglose.length}
+							{#each desglose as s (s.nombre)}
+								<div class="v1-row sub">
+									<span class="v1-cat">{s.nombre}</span>
+									<div class="v1-bars">
+										{#each s.barras as b, i}
+											<div class="v1-bar-wrap"><div class="v1-bar" style="width:{Math.max(b, 0)}%; background:{BAR[i]}; opacity:0.8"></div><span class="v1-pct">{pct(b)}</span></div>
+										{/each}
+									</div>
+								</div>
+							{/each}
+						{:else}
+							<p class="nota">Sin subcategorías cargadas en esta categoría.</p>
+						{/if}
+					</div>
+				{/if}
 			{/each}
 			{#if v1.otros}
 				<div class="v1-row otros">
@@ -250,25 +287,7 @@
 		<p class="nota">No hay gastos en los últimos períodos.</p>
 	{/if}
 
-	<!-- Visual 2 -->
-	<h2>Composición en el tiempo</h2>
-	<p class="aclara">% de cada categoría sobre el gasto total del período. Cada columna suma 100%.</p>
-	{#if v2 && v2.rows.length}
-		<div class="tabla-scroll">
-			<table>
-				<thead><tr><th>Categoría</th>{#each v2.periodos as p (p)}<th>{mesCorto(p)}</th>{/each}</tr></thead>
-				<tbody>
-					{#each v2.rows as r (r.nombre)}
-						<tr><td><strong>{r.nombre}</strong></td>{#each r.celdas as c}<td class="num">{c == null ? '—' : pct(c)}</td>{/each}</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{:else}
-		<p class="nota">No hay gastos en los últimos períodos.</p>
-	{/if}
-
-	<!-- Visual 3 -->
+	<!-- Visual 2 (ex-3): movers de subcategoría -->
 	<h2>Subcategorías que más se movieron</h2>
 	<p class="aclara">Últimos 3 períodos vs. los 3 previos, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Tocá una para verla en Evolución de Gastos.</p>
 	{#if v3.insuficiente}
@@ -323,20 +342,21 @@
 	.leyenda-periodos .leg { display: inline-flex; align-items: center; gap: 5px; }
 	.leyenda-periodos .sw { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
 
-	.v1 { display: flex; flex-direction: column; gap: 12px; }
+	.v1 { display: flex; flex-direction: column; gap: 10px; }
 	.v1-row { display: grid; grid-template-columns: 34% 1fr; gap: 8px; align-items: center; }
+	.v1-click { background: none; border: none; padding: 4px 0; font: inherit; color: inherit; text-align: left; cursor: pointer; width: 100%; border-radius: 6px; }
+	.v1-click:hover .v1-cat { color: var(--accent); }
+	.v1-caret { color: var(--text-dim); font-size: 0.7rem; margin-right: 5px; display: inline-block; width: 10px; }
 	.v1-cat { font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.v1-row.otros .v1-cat { color: var(--text-dim); font-weight: 400; }
 	.v1-bars { display: flex; flex-direction: column; gap: 3px; }
 	.v1-bar-wrap { display: flex; align-items: center; gap: 6px; }
 	.v1-bar { height: 10px; border-radius: 3px; min-width: 1px; transition: width 0.4s ease; }
 	.v1-pct { font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
-
-	.tabla-scroll { overflow-x: auto; }
-	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; }
-	th, td { padding: 6px; text-align: left; }
-	th:not(:first-child), td:not(:first-child) { text-align: right; white-space: nowrap; }
-	tbody tr:nth-child(odd) td { background: var(--surface); }
+	.v1-desglose { margin: -2px 0 2px; padding: 6px 0 8px 16px; border-left: 2px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+	.desg-hint { font-size: 0.72rem; color: var(--text-dim); margin: 0 0 2px; }
+	.v1-row.sub .v1-cat { font-weight: 400; font-size: 0.8rem; color: var(--text-dim); }
+	.v1-row.sub .v1-bar { height: 8px; }
 
 	.movers { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
 	.mov-col { display: flex; flex-direction: column; gap: 5px; min-width: 0; }

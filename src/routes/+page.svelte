@@ -463,27 +463,22 @@
     }
     const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
 
-    // Semáforo de la categoría de ahorro (Brief 1): polaridad propia, NO contra
-    // presupuesto. A = ahorro del período (todas las categorías es_ahorro sumadas =
-    // ahorroMes), R = ingresos regulares (ingresosRegularesMes). Verde si A/R ≥
-    // umbral, rojo si <, NEUTRO si R=0 (no dividir por cero, no pintar rojo).
-    function claseAhorro(): string {
+    // Presupuesto de ahorro DERIVADO de la meta (fuente única = objetivo % editable en
+    // Capacidad de ahorro, tabla meta `umbral_ahorro`): monto = umbral% × ingreso
+    // regular del período. Es el "target" de la categoría de ahorro; se muestra como
+    // Presup. en su fila y el semáforo compara contra él. R=0 → sin target (neutro).
+    let metaAhorroMonto = $derived(ingresosRegularesMes > 0 ? umbralAhorro * ingresosRegularesMes : 0);
+    // Semáforo de la categoría de ahorro: polaridad INVERTIDA vs una categoría de
+    // gasto — verde si el ahorro real ALCANZA el target derivado, rojo si no llega,
+    // neutro si no hay ingreso regular (no hay target y no se pinta rojo).
+    function claseAhorro(real: number): string {
         if (ingresosRegularesMes <= 0) return 'none';
-        return ahorroMes / ingresosRegularesMes >= umbralAhorro ? 'ok' : 'bad';
+        return real >= metaAhorroMonto ? 'ok' : 'bad';
     }
-    function tituloAhorro(): string {
-        if (ingresosRegularesMes <= 0) return 'Sin ingreso regular cargado en el período';
-        const tasa = ahorroMes / ingresosRegularesMes;
-        return `Tasa de ahorro ${(tasa * 100).toFixed(1)}% · objetivo ${(umbralAhorro * 100).toFixed(0)}%`;
-    }
-    // Persiste el umbral (fuente única, tabla meta). El semáforo del consolidado se
-    // repinta solo al cambiar `umbralAhorro` (reactivo); no hace falta recargar todo.
-    async function guardarUmbral(v: string) {
-        let pct = parseFloat(v);
-        if (!Number.isFinite(pct)) return;
-        pct = Math.max(0, Math.min(100, pct));
-        umbralAhorro = pct / 100;
-        await setMeta('umbral_ahorro', String(umbralAhorro));
+    function tituloAhorro(real: number): string {
+        if (ingresosRegularesMes <= 0) return 'Sin ingreso regular cargado — objetivo se edita en Capacidad de ahorro';
+        const tasa = real / ingresosRegularesMes;
+        return `Ahorrás ${(tasa * 100).toFixed(1)}% del ingreso regular · objetivo ${(umbralAhorro * 100).toFixed(0)}%`;
     }
 </script>
 
@@ -621,12 +616,6 @@
 
     <div class="consol-head">
         <h2>Consolidado por categoría · en miles</h2>
-        <label class="umbral" title="Meta de tasa de ahorro (ahorro ÷ ingreso regular). Define el semáforo de la categoría de ahorro.">
-            Meta ahorro
-            <input type="number" min="0" max="100" step="1" value={Math.round(umbralAhorro * 100)}
-                   onchange={(e) => guardarUmbral(e.currentTarget.value)} />
-            <span class="umbral-pct">%</span>
-        </label>
     </div>
     <div class="tabla-scroll">
     <table class="consol">
@@ -634,12 +623,15 @@
         <tbody>
             {#each consolidado as c (c.cat)}
                 <tr>
-                    <td><strong>{c.cat}</strong>{#if !c.esAhorro && c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
-                    <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
-                    <td class="num">{pesoMil(c.presup)}</td>
                     {#if c.esAhorro}
-                        <td class="num real {claseAhorro()}" title={tituloAhorro()}>{pesoMil(c.real)}</td>
+                        <td><strong>{c.cat}</strong>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(c.real)}" aria-hidden="true"><i style="width:{Math.min(c.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}</td>
+                        <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
+                        <td class="num">{metaAhorroMonto > 0 ? pesoMil(metaAhorroMonto) : '—'}</td>
+                        <td class="num real {claseAhorro(c.real)}" title={tituloAhorro(c.real)}>{pesoMil(c.real)}</td>
                     {:else}
+                        <td><strong>{c.cat}</strong>{#if c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
+                        <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
+                        <td class="num">{pesoMil(c.presup)}</td>
                         <td class="num real {claseEstado(c.estado)}" title={c.estado}>{pesoMil(c.real)}</td>
                     {/if}
                 </tr>
@@ -763,9 +755,6 @@
        "· en miles" ahora va dentro del h2 (mismo tamaño), no como label chico. */
     .consol-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
     .consol-head h2 { margin-top: 26px; }
-    .umbral { display: inline-flex; align-items: baseline; gap: 5px; font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
-    .umbral input { width: 52px; text-align: right; padding: 3px 5px; font-size: 0.85rem; }
-    .umbral-pct { color: var(--text-dim); }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-bottom: 8px; table-layout: fixed; }
     /* Brief 1: consolidado con tipografía más grande que el resto de las tablas,
        para legibilidad general de todas sus filas (no solo la de ahorro). */

@@ -166,12 +166,12 @@
 </div>
 
 <div class="tabs">
-	<button class:activo={tab === 'gastos'} onclick={() => (tab = 'gastos')}>Evolución de Gastos</button>
-	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
 	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
-	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
-	<button class:activo={tab === 'capacidad'} onclick={() => (tab = 'capacidad')}>Capacidad de ahorro</button>
+	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
+	<button class:activo={tab === 'gastos'} onclick={() => (tab = 'gastos')}>Evolución de Gastos</button>
 	<button class:activo={tab === 'categorias'} onclick={() => (tab = 'categorias')}>Análisis por categoría</button>
+	<button class:activo={tab === 'capacidad'} onclick={() => (tab = 'capacidad')}>Capacidad de ahorro</button>
+	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
 </div>
 
 {#if tab === 'resumen'}
