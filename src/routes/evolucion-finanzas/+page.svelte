@@ -18,6 +18,7 @@
 	import Ingresos from '$lib/evol/Ingresos.svelte';
 	import Poder from '$lib/evol/Poder.svelte';
 	import Categorias from '$lib/evol/Categorias.svelte';
+	import CapacidadAhorro from '$lib/evol/CapacidadAhorro.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 
@@ -28,7 +29,7 @@
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
 	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
-	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder' | 'categorias'>('resumen');
+	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder' | 'categorias' | 'capacidad'>('resumen');
 
 	// Handshake con Evolución de Gastos: guardo la subcategoría a pre-filtrar y salto
 	// a esa pestaña; Gastos.svelte la lee en onMount (sessionStorage) y la aplica.
@@ -169,6 +170,7 @@
 	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
 	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
 	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
+	<button class:activo={tab === 'capacidad'} onclick={() => (tab = 'capacidad')}>Capacidad de ahorro</button>
 	<button class:activo={tab === 'categorias'} onclick={() => (tab = 'categorias')}>Análisis por categoría</button>
 </div>
 
@@ -238,6 +240,8 @@
 	<Poder />
 {:else if tab === 'categorias'}
 	<Categorias irAGastos={verSubcatEnGastos} />
+{:else if tab === 'capacidad'}
+	<CapacidadAhorro />
 {/if}
 
 <style>
