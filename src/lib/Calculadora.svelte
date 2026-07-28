@@ -45,8 +45,8 @@
 </script>
 
 {#if abierto}
-	<div class="cal-backdrop" onclick={onCerrar} role="presentation">
-		<div class="cal-sheet" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Calculadora">
+	<div class="cal-backdrop" onclick={(e) => { if (e.target === e.currentTarget) onCerrar(); }} role="presentation">
+		<div class="cal-sheet" role="dialog" aria-modal="true" aria-label="Calculadora" tabindex="-1">
 			<div class="cal-head">
 				<button type="button" class="cal-atras" onclick={onCerrar} aria-label="Cerrar sin cargar">←</button>
 				<span class="cal-tit">Calculadora</span>
