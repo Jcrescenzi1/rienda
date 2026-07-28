@@ -5,7 +5,7 @@
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
-	import { cargarNotificaciones } from '$lib/notificaciones';
+	import { notif } from '$lib/notif.svelte';
 	import { query } from '$lib/db/client';
 	import { fechaISO } from '$lib/format';
 	import type { ModoPeriodo } from '$lib/periodo';
@@ -104,13 +104,10 @@
 	// ===== Menú hamburguesa =====
 	let menuAbierto = $state(false);
 	let actualizandoCotiz = $state(false);
-	// Badge de la campana: cantidad de reglas rotas (0 = sin badge). Se recalcula en
-	// cada navegación (afterNavigate corre también en la carga inicial), así baja
-	// solo cuando el usuario resuelve algo y vuelve a moverse por la app.
-	let notiCount = $state(0);
-	afterNavigate(() => {
-		cargarNotificaciones().then((x) => (notiCount = x.total)).catch(() => {});
-	});
+	// Badge de la campana (store reactivo app-wide). Reglas rotas persistentes +
+	// recurrentes en ventana aún no vistos. Se recalcula en cada navegación
+	// (afterNavigate corre también en la carga inicial) y cuando el centro marca vistos.
+	afterNavigate(() => { notif.refrescar(); });
 
 	function irA(href: string) {
 		menuAbierto = false;
@@ -212,12 +209,12 @@
 	<!-- App normal -->
 	<div class="topacc">
 		<button class="hamb" onclick={() => (menuAbierto = true)} aria-label="Abrir menú">☰</button>
-		<a class="campana" href="/notificaciones" aria-label="Notificaciones{notiCount > 0 ? ` (${notiCount})` : ''}">
+		<a class="campana" href="/notificaciones" aria-label="Notificaciones{notif.count > 0 ? ` (${notif.count})` : ''}">
 			<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
 				<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
 				<path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
 			</svg>
-			{#if notiCount > 0}<span class="badge">{notiCount > 9 ? '9+' : notiCount}</span>{/if}
+			{#if notif.count > 0}<span class="badge">{notif.count > 9 ? '9+' : notif.count}</span>{/if}
 		</a>
 	</div>
 

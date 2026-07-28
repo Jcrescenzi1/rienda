@@ -6,7 +6,6 @@
 		cargarDolarSerie,
 		cargarIPC,
 		convertir,
-		fmtMoneda,
 		type DolarSerie,
 		type IPC,
 		type ModoMoneda
@@ -87,8 +86,10 @@
 			anio: mesActualCalc.slice(0, 4)
 		});
 	});
-	let ventana6 = $derived(periodosBase.slice(-6));
-	let setVentana = $derived(new Set(ventana6));
+	// Ventana de agregación: últimos 11 períodos. Visual 1 usa sus últimos 3; los
+	// movers (Visual 2) necesitan 2 recientes + 9 de baseline = 11.
+	let ventanaAgg = $derived(periodosBase.slice(-11));
+	let setVentana = $derived(new Set(ventanaAgg));
 
 	// Agregados por período (categoría / subcategoría / total), en el modo elegido.
 	let agg = $derived.by(() => {
@@ -158,12 +159,13 @@
 	// Despliegue in-place de la Visual 1: categoría expandida (una a la vez, patrón
 	// tap-despliega/tap-colapsa como la matriz de Crédito). null = ninguna.
 	let expandido = $state<number | null>(null);
-	// Subcategorías de la categoría expandida, con su % DENTRO de la categoría en cada
-	// uno de los 3 períodos de la Visual 1 (suman ~100% por período).
+	// Subcategorías de la categoría expandida, con su % del GASTO TOTAL del período
+	// (mismo denominador que la barra madre → las subcats suman exacto al % de la
+	// categoría). Orden por peso.
 	let desglose = $derived.by(() => {
 		if (expandido == null || !v1) return null;
 		const ps = v1.periodos;
-		const { catSubByPeriod, catByPeriod } = agg;
+		const { catSubByPeriod, totalByPeriod } = agg;
 		const subs = new Set<string>();
 		const subTotal = new Map<string, number>();
 		for (const p of ps) {
@@ -173,49 +175,55 @@
 		return [...subs].sort((a, b) => (subTotal.get(b) ?? 0) - (subTotal.get(a) ?? 0)).map((k) => ({
 			nombre: k === 'null' ? '(sin subcategoría)' : (subName.get(Number(k)) ?? ('#' + k)),
 			barras: ps.map((p) => {
-				const catTot = catByPeriod.get(p)?.get(expandido as number) ?? 0;
+				const tot = totalByPeriod.get(p) ?? 0;
 				const v = catSubByPeriod.get(p)?.get(expandido as number)?.get(k) ?? 0;
-				return catTot > 0 ? (v / catTot) * 100 : 0;
+				return tot > 0 ? (v / tot) * 100 : 0;
 			})
 		}));
 	});
 
-	// ===== Visual 2 (ex-3): movers de subcategoría (últimos 3 vs 3 previos) =====
+	// ===== Visual 2 — Movers: detector de anomalía (reciente vs mediana móvil) =====
+	// Reciente = promedio de los 2 últimos períodos. Baseline = mediana de los 9
+	// inmediatamente anteriores (excluye los 2 recientes para que el pico no se
+	// autocancele). Ratio = reciente/baseline; rankea por ratio. Piso de ruido 3% del
+	// gasto total del período reciente sobre max(reciente,baseline). Guard: ≥11 períodos.
 	let v3 = $derived.by(() => {
-		const ps = periodosBase.slice(-6);
-		if (ps.length < 6) return { insuficiente: true as const };
-		const prev3 = ps.slice(0, 3), last3 = ps.slice(3);
-		const lastSet = new Set(last3);
-		const { subByPeriod } = agg;
-		const sumLast = new Map<string, number>(), sumPrev = new Map<string, number>(), sum6 = new Map<string, number>();
-		let total6 = 0;
-		for (const p of ps) {
-			const m = subByPeriod.get(p); if (!m) continue;
-			const inLast = lastSet.has(p);
-			for (const [k, v] of m) {
-				sum6.set(k, (sum6.get(k) ?? 0) + v); total6 += v;
-				if (inLast) sumLast.set(k, (sumLast.get(k) ?? 0) + v);
-				else sumPrev.set(k, (sumPrev.get(k) ?? 0) + v);
-			}
-		}
-		const piso = 0.05 * total6; // relativo: subcat ≥5% del gasto de la ventana
-		const movers = [...sum6.keys()].filter((k) => (sum6.get(k) ?? 0) >= piso).map((k) => {
-			const l = sumLast.get(k) ?? 0, pv = sumPrev.get(k) ?? 0;
-			return {
+		const ps = periodosBase;
+		if (ps.length < 11) return { insuficiente: true as const };
+		const newestFirst = [...ps.slice(-11)].reverse(); // P0 (más nuevo) .. P10
+		const P0 = newestFirst[0];
+		const { subByPeriod, totalByPeriod } = agg;
+		const piso = 0.03 * (totalByPeriod.get(P0) ?? 0);
+		const keys = new Set<string>();
+		for (const p of newestFirst) { const m = subByPeriod.get(p); if (m) for (const k of m.keys()) keys.add(k); }
+		const val = (p: string, k: string) => subByPeriod.get(p)?.get(k) ?? 0;
+		type Mover = { scid: number | null; nombre: string; ratio: number; pct: number | null; nuevo: boolean };
+		const movers: Mover[] = [];
+		for (const k of keys) {
+			const reciente = (val(newestFirst[0], k) + val(newestFirst[1], k)) / 2;
+			const base = newestFirst.slice(2, 11).map((p) => val(p, k)).sort((a, b) => a - b);
+			const baseline = base[4]; // mediana de 9
+			if (Math.max(reciente, baseline) < piso) continue;
+			let ratio: number, pct: number | null, nuevo = false;
+			if (baseline > 0) { ratio = reciente / baseline; pct = (ratio - 1) * 100; }
+			else if (reciente > 0) { ratio = Infinity; pct = null; nuevo = true; }
+			else continue;
+			movers.push({
 				scid: k === 'null' ? null : Number(k),
 				nombre: k === 'null' ? '(sin subcategoría)' : (subName.get(Number(k)) ?? ('#' + k)),
-				delta: l - pv, prev: pv, acc: pv > 0 ? (l - pv) / pv : null
-			};
-		});
-		const crec = movers.filter((m) => m.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, 8);
-		const caida = movers.filter((m) => m.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, 8);
-		const acel = movers.filter((m) => m.acc != null).sort((a, b) => (b.acc as number) - (a.acc as number)).slice(0, 8);
-		return { insuficiente: false as const, crec, caida, acel, prev3, last3 };
+				ratio, pct, nuevo
+			});
+		}
+		const subas = movers.filter((m) => m.ratio > 1).sort((a, b) => b.ratio - a.ratio).slice(0, 10);
+		const bajas = movers.filter((m) => m.ratio < 1).sort((a, b) => a.ratio - b.ratio).slice(0, 10);
+		return { insuficiente: false as const, subas, bajas };
 	});
 
-	let acelAbierto = $state(false);
 	const pct = (n: number) => n.toFixed(1) + '%';
-	const signo = (n: number) => (n >= 0 ? '+' : '−') + fmtMoneda(Math.abs(n), modoLocal);
+	// Etiqueta del mover: variación relativa reciente vs baseline, o "nuevo" si el
+	// baseline era cero (apareció desde base nula).
+	const fmtRatio = (m: { pct: number | null; nuevo: boolean }) =>
+		m.nuevo ? 'nuevo' : (m.pct! >= 0 ? '+' : '') + m.pct!.toFixed(0) + '%';
 	// Paleta por barra de período (n-2, n-1, n): de tenue a acento.
 	const BAR = ['#94a0b8', '#5b9dff', '#e8975b'];
 </script>
@@ -254,7 +262,7 @@
 				</button>
 				{#if expandido === r.catId && desglose}
 					<div class="v1-desglose">
-						<p class="desg-hint">% dentro de {r.nombre} por período</p>
+						<p class="desg-hint">Subcategorías de {r.nombre} — % del gasto total del período</p>
 						{#if desglose.length}
 							{#each desglose as s (s.nombre)}
 								<div class="v1-row sub">
@@ -287,45 +295,34 @@
 		<p class="nota">No hay gastos en los últimos períodos.</p>
 	{/if}
 
-	<!-- Visual 2 (ex-3): movers de subcategoría -->
+	<!-- Visual 2 — Movers: anomalía reciente vs mediana móvil -->
 	<h2>Subcategorías que más se movieron</h2>
-	<p class="aclara">Últimos 3 períodos vs. los 3 previos, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Tocá una para verla en Evolución de Gastos.</p>
+	<p class="aclara">Últimos 2 períodos contra la mediana de los 9 anteriores, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Detecta lo que se salió de lo habitual, sin sesgo por tamaño. Tocá una para verla en Evolución de Gastos.</p>
 	{#if v3.insuficiente}
-		<p class="nota">Hacen falta al menos 6 períodos con gasto para comparar 3 contra 3.</p>
+		<p class="nota">Hacen falta al menos 11 períodos con historial para detectar anomalías.</p>
 	{:else}
 		<div class="movers">
 			<div class="mov-col">
-				<h3 class="mov-tit up">▲ Mayor crecimiento</h3>
-				{#if v3.crec.length}
-					{#each v3.crec as m (m.nombre)}
+				<h3 class="mov-tit up">▲ Subas</h3>
+				{#if v3.subas.length}
+					{#each v3.subas as m (m.nombre)}
 						<button class="mov" class:click={m.scid != null} onclick={() => m.scid != null && irAGastos(m.scid)}>
-							<span class="mov-nom">{m.nombre}</span><span class="mov-delta up">{signo(m.delta)}</span>
+							<span class="mov-nom">{m.nombre}</span><span class="mov-delta up">{fmtRatio(m)}</span>
 						</button>
 					{/each}
-				{:else}<p class="nota">Sin subcategorías relevantes al alza.</p>{/if}
+				{:else}<p class="nota">Sin subas relevantes.</p>{/if}
 			</div>
 			<div class="mov-col">
-				<h3 class="mov-tit down">▼ Mayor caída</h3>
-				{#if v3.caida.length}
-					{#each v3.caida as m (m.nombre)}
+				<h3 class="mov-tit down">▼ Bajas</h3>
+				{#if v3.bajas.length}
+					{#each v3.bajas as m (m.nombre)}
 						<button class="mov" class:click={m.scid != null} onclick={() => m.scid != null && irAGastos(m.scid)}>
-							<span class="mov-nom">{m.nombre}</span><span class="mov-delta down">{signo(m.delta)}</span>
+							<span class="mov-nom">{m.nombre}</span><span class="mov-delta down">{fmtRatio(m)}</span>
 						</button>
 					{/each}
-				{:else}<p class="nota">Sin subcategorías relevantes a la baja.</p>{/if}
+				{:else}<p class="nota">Sin bajas relevantes.</p>{/if}
 			</div>
 		</div>
-		<button class="acel-toggle" onclick={() => (acelAbierto = !acelAbierto)}>{acelAbierto ? '▾' : '▸'} Mayor aceleración %</button>
-		{#if acelAbierto}
-			<div class="acel">
-				{#each v3.acel as m (m.nombre)}
-					<button class="mov" class:click={m.scid != null} onclick={() => m.scid != null && irAGastos(m.scid)}>
-						<span class="mov-nom">{m.nombre}</span><span class="mov-delta {m.acc! >= 0 ? 'up' : 'down'}">{m.acc! >= 0 ? '+' : ''}{(m.acc! * 100).toFixed(0)}%</span>
-					</button>
-				{/each}
-				{#if !v3.acel.length}<p class="nota">Sin datos de aceleración (falta gasto previo).</p>{/if}
-			</div>
-		{/if}
 	{/if}
 {/if}
 
@@ -369,7 +366,5 @@
 	.mov-delta { font-size: 0.82rem; font-weight: 600; white-space: nowrap; }
 	.mov-delta.up { color: var(--pos); }
 	.mov-delta.down { color: var(--neg); }
-	.acel-toggle { margin-top: 12px; background: none; border: none; color: var(--accent); font-size: 0.84rem; cursor: pointer; padding: 0; }
-	.acel { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
 	@media (max-width: 520px) { .movers { grid-template-columns: 1fr; } .v1-row { grid-template-columns: 40% 1fr; } }
 </style>

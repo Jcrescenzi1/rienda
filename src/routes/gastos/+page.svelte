@@ -4,7 +4,10 @@
     import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, calc, pesos as fmt } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import TabsCorrRec from '$lib/TabsCorrRec.svelte';
+    import Calculadora from '$lib/Calculadora.svelte';
     import { Toast } from '$lib/toast.svelte';
+
+    let calcAbierto = $state(false);
 
     let categorias = $state<any[]>([]);
     let subcategorias = $state<any[]>([]);
@@ -265,7 +268,7 @@
 <div class="form">
     {#if editandoId}<p class="editando">✏ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
-    <label>Monto<input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /></label>
+    <label>Monto<span class="monto-row"><input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /><button type="button" class="calc-btn" onclick={() => (calcAbierto = true)} aria-label="Abrir calculadora" title="Calculadora"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/></svg></button></span></label>
     <label>Moneda
         <select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
     </label>
@@ -370,9 +373,15 @@
     {#if ultimos.length === 0}<p class="vacio">No hay gastos para los filtros seleccionados.</p>{/if}
 </div>
 
+<Calculadora abierto={calcAbierto} onConfirm={(v) => { monto = v; calcAbierto = false; }} onCerrar={() => (calcAbierto = false)} />
+
 <style>
     :global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
     label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
+    .monto-row { display: flex; gap: 6px; align-items: stretch; }
+    .monto-row input { flex: 1; min-width: 0; }
+    .calc-btn { flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; padding: 0 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); border-radius: 6px; cursor: pointer; }
+    .calc-btn:hover { color: var(--accent); border-color: var(--accent); }
     input, select { padding: 7px; font-size: 1rem; }
     .medio { display: flex; gap: 8px; }
     .nuevo { border: 1px dashed var(--warn); background: rgba(251, 191, 36, 0.08); padding: 10px; border-radius: 6px; display: flex; flex-direction: column; gap: 8px; }

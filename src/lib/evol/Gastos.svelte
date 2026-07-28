@@ -220,63 +220,10 @@
 		return Math.round(v).toString();
 	}
 
-	// ===== Dona por categoría =====
-	const PALETA = ['#5b9dff', '#e8975b', '#4ade80', '#f87171', '#c084fc', '#fbbf24', '#38bdf8', '#fb7185', '#a3e635', '#94a0b8'];
-	let dona = $derived.by(() => {
-		const acc: Record<string, number> = {};
-		for (const g of filtrados) {
-			const per = asignar(g.fecha);
-			if (!per || !ventana.has(per)) continue;
-			const v = convertir(g.monto, g.moneda, g.fecha, moneda.modo, dolarSerie, ipc);
-			if (v == null || v <= 0) continue;
-			acc[g.categoria] = (acc[g.categoria] ?? 0) + v;
-		}
-		const items = Object.entries(acc)
-			.map(([cat, val]) => ({ cat, val }))
-			.sort((a, b) => b.val - a.val);
-		const total = items.reduce((s, x) => s + x.val, 0);
-		if (total <= 0) return null;
-
-		const cx = 90, cy = 90, r = 78, rIn = 46;
-
-		// Una sola categoría (o una que es ~100%): el arco degenera en un punto y no
-		// dibuja. Lo renderizamos como anillo completo (un <circle> con borde grueso).
-		if (items.length === 1 || items[0].val / total >= 0.9999) {
-			const it = items[0];
-			return {
-				cx, cy, total,
-				anillo: { color: PALETA[0], rMid: (r + rIn) / 2, grosor: r - rIn },
-				arcos: [{ d: '', color: PALETA[0], cat: it.cat, val: it.val, frac: 1 }]
-			};
-		}
-
-		let ang = -Math.PI / 2; // arrancar arriba
-		const arcos = items.map((it, i) => {
-			const frac = it.val / total;
-			const a0 = ang;
-			const a1 = ang + frac * Math.PI * 2;
-			ang = a1;
-			const large = a1 - a0 > Math.PI ? 1 : 0;
-			const x0 = cx + r * Math.cos(a0), y0 = cy + r * Math.sin(a0);
-			const x1 = cx + r * Math.cos(a1), y1 = cy + r * Math.sin(a1);
-			const xi0 = cx + rIn * Math.cos(a1), yi0 = cy + rIn * Math.sin(a1);
-			const xi1 = cx + rIn * Math.cos(a0), yi1 = cy + rIn * Math.sin(a0);
-			const d = `M${x0.toFixed(1)},${y0.toFixed(1)} A${r},${r} 0 ${large} 1 ${x1.toFixed(1)},${y1.toFixed(1)} L${xi0.toFixed(1)},${yi0.toFixed(1)} A${rIn},${rIn} 0 ${large} 0 ${xi1.toFixed(1)},${yi1.toFixed(1)} Z`;
-			return { d, color: PALETA[i % PALETA.length], cat: it.cat, val: it.val, frac };
-		});
-		return { arcos, total, cx, cy, anillo: null as null | { color: string; rMid: number; grosor: number } };
-	});
-
 	// Área: reveal de izquierda a derecha al montar y en cada cambio (incluye moneda).
 	let sigArea = $derived(serie.map((s) => s.periodo + ':' + s.total).join('|'));
 	const { p: pArea, replay: replayArea } = progresoReplay();
 	$effect(() => { sigArea; replayArea(); });
-
-	// Dona: crece/aparece sutil solo cuando cambia el reparto (por fracciones; no
-	// re-anima al togglear moneda, que no altera las proporciones).
-	let sigDona = $derived(dona ? dona.arcos.map((a) => a.cat + ':' + a.frac.toFixed(3)).join('|') : '');
-	const { p: pDona, replay: replayDona } = progresoReplay();
-	$effect(() => { sigDona; replayDona(); });
 
 	function limpiar() {
 		vista = 'ult12';
@@ -423,35 +370,8 @@
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
 
-	<h2>Composición por categoría</h2>
-	{#if dona}
-		<div class="dona-wrap">
-			<svg viewBox="0 0 180 180" class="dona">
-				<g opacity={$pDona} transform="translate(90 90) scale({0.96 + 0.04 * $pDona}) translate(-90 -90)">
-					{#if dona.anillo}
-						<circle cx={dona.cx} cy={dona.cy} r={dona.anillo.rMid} fill="none" stroke={dona.anillo.color} stroke-width={dona.anillo.grosor} />
-					{:else}
-						{#each dona.arcos as a}<path d={a.d} fill={a.color} />{/each}
-					{/if}
-				</g>
-			</svg>
-			<ul class="dona-leyenda">
-				{#each dona.arcos as a}
-					<li>
-						<span class="sw" style="background:{a.color}"></span>
-						<span class="cat">{a.cat}</span>
-						<span class="val">{fmtMoneda(a.val, moneda.modo)}</span>
-						<span class="pct">{(a.frac * 100).toFixed(1)}%</span>
-					</li>
-				{/each}
-			</ul>
-		</div>
-	{:else}
-		<p class="nota">No hay gastos en el rango filtrado.</p>
-	{/if}
-
 	<h2>Registros</h2>
-	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico y la dona. Cambiar el detalle reclasifica vía diccionario.</p>
+	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico. Cambiar el detalle reclasifica vía diccionario. La composición por categoría se ve en Análisis por categoría.</p>
 	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
 	<div class="regs">
 		{#each registros as g (g.id)}
@@ -518,14 +438,6 @@
 	.line-area { fill: none; stroke: var(--accent); stroke-width: 2.5; }
 	.dot-area { fill: var(--accent); }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	.dona-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
-	.dona { width: 180px; height: 180px; flex-shrink: 0; }
-	.dona-leyenda { list-style: none; padding: 0; margin: 0; flex: 1; min-width: 220px; font-size: 0.85rem; }
-	.dona-leyenda li { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
-	.dona-leyenda .sw { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
-	.dona-leyenda .cat { flex: 1; }
-	.dona-leyenda .val { color: var(--text-dim); }
-	.dona-leyenda .pct { width: 52px; text-align: right; font-weight: 600; }
 
 	.regs { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 	.reg { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }

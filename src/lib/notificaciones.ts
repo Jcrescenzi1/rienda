@@ -3,9 +3,9 @@
 // Sin new Date() para "hoy"/"hace N días": se usa hoyISO() y diasEntre() (parseo de
 // strings, regla UTC-3). Solo LEE fechas ya guardadas; no toca nada.
 
-import { query } from './db/client';
+import { query, queryBatch } from './db/client';
 import { leerMeta } from './db/meta';
-import { hoyISO, diasEntre } from './format';
+import { hoyISO, diasEntre, mesActual } from './format';
 import { proximaOcurrencia, addDias, periodoActivoCC } from './periodo';
 
 export type LineaRegla = {
@@ -14,13 +14,21 @@ export type LineaRegla = {
 	href?: string; // navegación (copia, foto)
 	accion?: 'cotiz'; // acción inline (MEP: actualizar tipo de cambio)
 };
-export type ItemRecurrente = { nombre: string; dias: number };
+export type ItemRecurrente = { id: number; nombre: string; dias: number };
 export type Notificaciones = {
-	pagos: ItemRecurrente[]; // gastos fijos próximos
+	pagos: ItemRecurrente[]; // gastos fijos próximos (ventana [hoy, hoy+3], no registrados)
 	cobros: ItemRecurrente[]; // ingresos fijos próximos
-	reglas: LineaRegla[]; // MEP / copia / foto (vejez)
-	total: number; // reglas rotas visibles: pagos(1 si>0) + cobros(1 si>0) + reglas.length
+	reglas: LineaRegla[]; // MEP / copia / foto (vejez) — persistentes hasta resolverse
+	// Conteo del badge de la campana: reglas rotas (persistentes) + recurrentes en
+	// ventana AÚN NO vistos (por evento). Al entrar al centro se marcan vistos y bajan.
+	badge: number;
 };
+
+// Clave de período para el estado "visto" de los recurrentes (el período activo de
+// Cuenta Corriente; fallback al mes actual si no hay ninguno guardado).
+function periodoVisto(): string {
+	return periodoActivoCC() ?? mesActual();
+}
 
 // Texto "hoy" / "mañana" / "en N días".
 export function faltanTxt(dias: number): string {
@@ -79,19 +87,19 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 	const per = periodoActivoCC(); // 'yyyy-mm' o null
 	const proximos = (rows: any[]): ItemRecurrente[] =>
 		rows
-			.map((r) => ({ nombre: r.nombre as string, fecha: proximaOcurrencia(r.dia_esperado, hoy) }))
+			.map((r) => ({ id: r.id as number, nombre: r.nombre as string, fecha: proximaOcurrencia(r.dia_esperado, hoy) }))
 			.filter((x) => x.fecha >= hoy && x.fecha <= hasta)
-			.map((x) => ({ nombre: x.nombre, dias: diasEntre(hoy, x.fecha) }))
+			.map((x) => ({ id: x.id, nombre: x.nombre, dias: diasEntre(hoy, x.fecha) }))
 			.sort((a, b) => a.dias - b.dias);
 
 	const gs = (await query(
-		`SELECT s.nombre, s.dia_esperado FROM suscripcion s
+		`SELECT s.id, s.nombre, s.dia_esperado FROM suscripcion s
 		 WHERE s.perfil_id=1 AND s.activa=1 AND s.dia_esperado IS NOT NULL
 		   AND NOT EXISTS (SELECT 1 FROM suscripcion_registro r WHERE r.suscripcion_id=s.id AND r.periodo=?)`,
 		[per]
 	)) as any[];
 	const is = (await query(
-		`SELECT i.nombre, i.dia_esperado FROM ingreso_fijo i
+		`SELECT i.id, i.nombre, i.dia_esperado FROM ingreso_fijo i
 		 WHERE i.perfil_id=1 AND i.activa=1 AND i.dia_esperado IS NOT NULL
 		   AND NOT EXISTS (SELECT 1 FROM ingreso_fijo_registro r WHERE r.ingreso_fijo_id=i.id AND r.periodo=?)`,
 		[per]
@@ -100,6 +108,36 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 	const pagos = proximos(gs);
 	const cobros = proximos(is);
 
-	const total = reglas.length + (pagos.length ? 1 : 0) + (cobros.length ? 1 : 0);
-	return { pagos, cobros, reglas, total };
+	// Recurrentes ya vistos en el período activo (no cuentan al badge; siguen en lista).
+	const perKey = periodoVisto();
+	const vistos = (await query(
+		'SELECT tipo, ref_id FROM notif_visto WHERE perfil_id=1 AND periodo=?',
+		[perKey]
+	)) as any[];
+	const vistoSet = new Set(vistos.map((v) => v.tipo + ':' + v.ref_id));
+	const noVistos = (arr: ItemRecurrente[], tipo: string) =>
+		arr.reduce((n, x) => n + (vistoSet.has(tipo + ':' + x.id) ? 0 : 1), 0);
+
+	// Badge: reglas rotas (persistentes) + recurrentes en ventana aún no vistos (por evento).
+	const badge = reglas.length + noVistos(pagos, 'pago') + noVistos(cobros, 'cobro');
+	return { pagos, cobros, reglas, badge };
+}
+
+// Marca como vistos (para el período activo) todos los recurrentes actualmente en la
+// ventana [hoy, hoy+3]. Lo llama el centro de notificaciones al abrirse: apaga esos
+// eventos del badge sin sacarlos de la lista. Idempotente (INSERT OR IGNORE por UNIQUE).
+export async function marcarRecurrentesVistos(): Promise<void> {
+	const n = await cargarNotificaciones();
+	const perKey = periodoVisto();
+	const stmts = [
+		...n.pagos.map((p) => ({
+			sql: "INSERT OR IGNORE INTO notif_visto (perfil_id, tipo, ref_id, periodo) VALUES (1, 'pago', ?, ?)",
+			bind: [p.id, perKey] as any[]
+		})),
+		...n.cobros.map((c) => ({
+			sql: "INSERT OR IGNORE INTO notif_visto (perfil_id, tipo, ref_id, periodo) VALUES (1, 'cobro', ?, ?)",
+			bind: [c.id, perKey] as any[]
+		}))
+	];
+	if (stmts.length) await queryBatch(stmts);
 }

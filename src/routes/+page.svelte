@@ -555,6 +555,7 @@
             <table class="disp-tabla disp-detalle">
                 <tbody>
                     <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
+                    {#if ingresoUsdMes > 0}<tr class="disp-usd"><td>Ingreso en USD no recurrente (aparte)</td><td class="num">{usd(ingresoUsdMes)}</td></tr>{/if}
                     <tr><td>− Pago de Tarjetas del Mes Corriente</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
                     <tr><td>+ Reservado para el Mes Corriente</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
                     {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
@@ -581,6 +582,9 @@
                     </tbody>
                 </table>
             {/if}
+            {#if gastoUsdMes > 0}
+                <div class="disp-linea disp-usdrow"><span>Gasto en USD no recurrente (aparte)</span><strong>{usd(gastoUsdMes)}</strong></div>
+            {/if}
             {#if creditoMesUsd > 0}
                 <div class="disp-linea disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
             {/if}
@@ -606,13 +610,6 @@
         {/if}
     </div>
 
-
-    {#if ingresoUsdMes > 0 || gastoUsdMes > 0}
-        <div class="usd-card">
-            {#if ingresoUsdMes > 0}<span class="usd-item">Ingresos en USD no recurrentes <strong>+ {usd(ingresoUsdMes)}</strong></span>{/if}
-            {#if gastoUsdMes > 0}<span class="usd-item">Gastos en USD no recurrentes <strong>{usd(gastoUsdMes)}</strong></span>{/if}
-        </div>
-    {/if}
 
     <div class="consol-head">
         <h2>Consolidado por categoría · en miles</h2>
@@ -808,7 +805,4 @@
     .disp-linea-btn { width: 100%; background: none; border: none; padding: 7px 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
     .disp-linea.disp-linea-btn { padding-left: 0; }
     .flecha-mini { color: var(--text-dim); font-size: 0.75rem; width: 12px; display: inline-block; margin-right: 8px; letter-spacing: 0; }
-    .usd-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 14px; margin: 0 0 16px; font-size: 0.82rem; color: var(--text-dim); }
-    .usd-item { white-space: nowrap; }
-    .usd-item strong { color: var(--text); font-weight: 600; margin-left: 3px; }
 </style>

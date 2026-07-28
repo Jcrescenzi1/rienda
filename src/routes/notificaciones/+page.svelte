@@ -1,15 +1,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { cargarNotificaciones, faltanTxt, type Notificaciones } from '$lib/notificaciones';
+	import { cargarNotificaciones, marcarRecurrentesVistos, faltanTxt, type Notificaciones } from '$lib/notificaciones';
+	import { notif } from '$lib/notif.svelte';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
 
 	let cargando = $state(true);
-	let n = $state<Notificaciones>({ pagos: [], cobros: [], reglas: [], total: 0 });
+	let n = $state<Notificaciones>({ pagos: [], cobros: [], reglas: [], badge: 0 });
 	let actualizando = $state(false);
+
+	// Hay algo para mostrar si hay reglas rotas o recurrentes en ventana (vistos o no).
+	let vacio = $derived(n.reglas.length === 0 && n.pagos.length === 0 && n.cobros.length === 0);
 
 	onMount(async () => {
 		n = await cargarNotificaciones();
 		cargando = false;
+		// Entrar al centro marca vistos los recurrentes en ventana (se apagan del badge,
+		// siguen en la lista) y refresca el badge de la campana en el acto.
+		await marcarRecurrentesVistos();
+		await notif.refrescar();
 	});
 
 	async function actualizarCotiz() {
@@ -30,7 +38,7 @@
 
 {#if cargando}
 	<p class="nota">Cargando…</p>
-{:else if n.total === 0}
+{:else if vacio}
 	<div class="limpio">
 		<span class="tilde">✓</span>
 		<p>Está todo al día. No hay nada pendiente por ahora.</p>

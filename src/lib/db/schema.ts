@@ -256,6 +256,19 @@ CREATE TABLE IF NOT EXISTS meta (
   valor TEXT
 );
 
+-- Recurrentes por vencer que el usuario YA vio en el centro de notificaciones, por
+-- (recurrente, período). Marca "avisá una vez": prenden el badge hasta que se entra
+-- al centro; ahí se marcan vistos y se apagan del badge (siguen en la lista). tipo:
+-- 'pago' = suscripcion, 'cobro' = ingreso_fijo; ref_id = id de ese recurrente.
+CREATE TABLE IF NOT EXISTS notif_visto (
+  id          INTEGER PRIMARY KEY,
+  perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
+  tipo        TEXT NOT NULL CHECK (tipo IN ('pago','cobro')),
+  ref_id      INTEGER NOT NULL,
+  periodo     TEXT NOT NULL,
+  UNIQUE (perfil_id, tipo, ref_id, periodo)
+);
+
 -- Índices para que las consultas frecuentes no recorran tablas enteras
 -- cuando haya años de datos. IF NOT EXISTS: seguro para bases existentes.
 CREATE INDEX IF NOT EXISTS idx_gasto_fecha       ON gasto(perfil_id, fecha);
