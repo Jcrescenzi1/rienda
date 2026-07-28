@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query, queryBatch } from '$lib/db/client';
-	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso } from '$lib/format';
+	import { mesActual, hoyISO, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso } from '$lib/format';
 	import { periodoRegla, periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
@@ -99,6 +99,24 @@
 		const reg = (await query('SELECT ingreso_fijo_id FROM ingreso_fijo_registro WHERE periodo=?', [periodo])) as any[];
 		const r: Record<number, boolean> = {};
 		for (const x of reg) r[x.ingreso_fijo_id] = true;
+		// El SUELDO (Ingreso Principal Regular) en modo sueldo evalúa su "Registrado"
+		// contra periodoRegla(hoy) — la regla del 20 — no contra el mes seleccionado:
+		// rompe el deadlock (registrado el sueldo del período, el período no avanza hasta
+		// disparar el siguiente sueldo). Del 5 al 19 mapea al mes actual (registrado); a
+		// partir del 20 mapea al mes siguiente (no registrado → disparable).
+		if (modo === 'sueldo') {
+			const perSueldo = periodoRegla(hoyISO(), 'Ingreso Principal');
+			const sueldos = fijos.filter((s: any) => s.categoria === 'Ingreso Principal' && s.tipo === 'Sueldo');
+			if (sueldos.length) {
+				const ids = sueldos.map((s: any) => s.id);
+				const rs = (await query(
+					`SELECT ingreso_fijo_id FROM ingreso_fijo_registro WHERE periodo=? AND ingreso_fijo_id IN (${ids.map(() => '?').join(',')})`,
+					[perSueldo, ...ids]
+				)) as any[];
+				const regS = new Set(rs.map((x: any) => x.ingreso_fijo_id));
+				for (const s of sueldos) r[s.id] = regS.has(s.id);
+			}
+		}
 		registradas = r;
 
 		dolar = await mepDelPeriodo();
@@ -170,7 +188,11 @@
 	function iniciarRegistro(s: any) {
 		registrando = s.id;
 		dMonto = formatNum(s.monto);
-		dFecha = fechaCobroDefault(periodo);
+		// El sueldo (Ingreso Principal Regular) en modo sueldo arranca con fecha HOY, así
+		// la regla del 20 recomienda el período correcto (el que abre el corte nuevo). El
+		// resto arranca con la fecha de cobro por defecto del mes seleccionado.
+		const esSueldo = modo === 'sueldo' && s.categoria === 'Ingreso Principal' && s.tipo === 'Sueldo';
+		dFecha = esSueldo ? hoyISO() : fechaCobroDefault(periodo);
 		dPeriodoTocado = false;
 		dPeriodo = periodoRegla(dFecha, s.categoria);
 		toast.limpiar();
