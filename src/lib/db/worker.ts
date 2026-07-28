@@ -168,6 +168,7 @@ async function init() {
 	const faltaDesahorro = ingDef && !ingDef.includes('Desahorro');
 	if (faltaRenombrar || tieneCheckViejo || faltaDesahorro) {
 		db.exec(`
+			PRAGMA legacy_alter_table=ON;
 			BEGIN;
 			ALTER TABLE ingreso RENAME TO ingreso_old;
 			CREATE TABLE ingreso (
@@ -189,6 +190,42 @@ async function init() {
 			DROP TABLE ingreso_old;
 			CREATE INDEX IF NOT EXISTS idx_ingreso_periodo ON ingreso(perfil_id, periodo);
 			COMMIT;
+			PRAGMA legacy_alter_table=OFF;
+		`);
+	}
+
+	// Reparación (Brief D): en bases donde la recreación de `ingreso` ya corrió con el
+	// default moderno (legacy_alter_table OFF), el RENAME reescribió la FK de la tabla
+	// hija ingreso_fijo_registro (ingreso_id -> ingreso(id)) para apuntar a `ingreso_old`;
+	// al dropear ingreso_old la FK quedó colgada y registrar un recurrente tiraba
+	// "no such table: main.ingreso_old". Corregir el helper no repara las bases ya rotas,
+	// así que se reconstruye la tabla hija con la FK correcta. Guard idempotente sobre
+	// sqlite_master: solo corre si queda alguna tabla con referencia colgada a un `*_old`.
+	// El ÚNICO objeto que puede quedar colgado es ingreso_fijo_registro (única hija de las
+	// tablas recreadas por RENAME; cotizacion_dolar no tiene hijas). Corre con foreign_keys
+	// OFF (estado durante las migraciones, antes del PRAGMA foreign_keys=ON final).
+	const colgados = db.exec({
+		sql: "SELECT name FROM sqlite_master WHERE type='table' AND sql LIKE '%ingreso_old%'",
+		rowMode: 'object', returnValue: 'resultRows'
+	});
+	if (colgados.some((r: any) => r.name === 'ingreso_fijo_registro')) {
+		db.exec(`
+			PRAGMA legacy_alter_table=ON;
+			BEGIN;
+			ALTER TABLE ingreso_fijo_registro RENAME TO ingreso_fijo_registro_roto;
+			CREATE TABLE ingreso_fijo_registro (
+				id               INTEGER PRIMARY KEY,
+				ingreso_fijo_id  INTEGER NOT NULL REFERENCES ingreso_fijo(id),
+				ingreso_id       INTEGER NOT NULL REFERENCES ingreso(id),
+				periodo          TEXT NOT NULL,
+				UNIQUE (ingreso_fijo_id, periodo)
+			);
+			INSERT INTO ingreso_fijo_registro (id, ingreso_fijo_id, ingreso_id, periodo)
+				SELECT id, ingreso_fijo_id, ingreso_id, periodo FROM ingreso_fijo_registro_roto;
+			DROP TABLE ingreso_fijo_registro_roto;
+			CREATE INDEX IF NOT EXISTS idx_ifreg_ingreso ON ingreso_fijo_registro(ingreso_id);
+			COMMIT;
+			PRAGMA legacy_alter_table=OFF;
 		`);
 	}
 
@@ -196,6 +233,7 @@ async function init() {
 	const cdcols = db.exec({ sql: 'PRAGMA table_info(cotizacion_dolar)', rowMode: 'object', returnValue: 'resultRows' });
 	if (!cdcols.some((c: any) => c.name === 'casa')) {
 		db.exec(`
+			PRAGMA legacy_alter_table=ON;
 			BEGIN;
 			ALTER TABLE cotizacion_dolar RENAME TO cotizacion_dolar_old;
 			CREATE TABLE cotizacion_dolar (
@@ -210,6 +248,7 @@ async function init() {
 				SELECT perfil_id, 'bolsa', fecha, valor FROM cotizacion_dolar_old;
 			DROP TABLE cotizacion_dolar_old;
 			COMMIT;
+			PRAGMA legacy_alter_table=OFF;
 		`);
 	}
 
