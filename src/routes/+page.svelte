@@ -555,7 +555,7 @@
             <table class="disp-tabla disp-detalle">
                 <tbody>
                     <tr><td>Ingresos totales del mes</td><td class="num">{peso(ingresosMes)}</td></tr>
-                    {#if ingresoUsdMes > 0}<tr class="disp-usd"><td>Ingreso en USD no recurrente (aparte)</td><td class="num">{usd(ingresoUsdMes)}</td></tr>{/if}
+                    {#if ingresoUsdMes > 0}<tr class="disp-usd"><td>Ingreso del mes (USD)</td><td class="num">{usd(ingresoUsdMes)}</td></tr>{/if}
                     <tr><td>− Pago de Tarjetas del Mes Corriente</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
                     <tr><td>+ Reservado para el Mes Corriente</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
                     {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
@@ -572,7 +572,7 @@
             {/if}
             <button class="disp-linea disp-linea-btn {gastoColor()}" onclick={() => (gastoAbierto = !gastoAbierto)} aria-expanded={gastoAbierto}
                 title={totales.presup > 0 ? 'Gasto vs presupuesto (tocá para ver el desglose)' : 'Sin presupuesto: verde si entra en tu ingreso disponible · amarillo entre el disponible y el total · rojo si supera tu ingreso total (tocá para ver el desglose)'}>
-                <span><span class="flecha-mini">{gastoAbierto ? '▾' : '▸'}</span> Gasto total del mes</span><strong><CountUp value={totales.real} format={peso} /></strong>
+                <span><span class="flecha-mini">{gastoAbierto ? '▾' : '▸'}</span> Gasto del mes (ARS)</span><strong><CountUp value={totales.real} format={peso} /></strong>
             </button>
             {#if gastoAbierto}
                 <table class="disp-tabla disp-detalle">
@@ -583,7 +583,7 @@
                 </table>
             {/if}
             {#if gastoUsdMes > 0}
-                <div class="disp-linea disp-usdrow"><span>Gasto en USD no recurrente (aparte)</span><strong>{usd(gastoUsdMes)}</strong></div>
+                <div class="disp-linea disp-usdrow"><span>Gasto del mes (USD)</span><strong>{usd(gastoUsdMes)}</strong></div>
             {/if}
             {#if creditoMesUsd > 0}
                 <div class="disp-linea disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
