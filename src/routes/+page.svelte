@@ -3,8 +3,6 @@
     import { query } from '$lib/db/client';
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
     import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
-    import { setMeta } from '$lib/db/meta';
-    import { pwa, instalarApp } from '$lib/pwa.svelte';
     import Guia from '$lib/Guia.svelte';
     import CountUp from '$lib/CountUp.svelte';
     import Skeleton from '$lib/Skeleton.svelte';
@@ -62,9 +60,9 @@
     $effect(() => { try { localStorage.setItem('disp_detalle', detalleAbierto ? '1' : '0'); } catch { /* ignore */ } });
     let deudaAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('deuda_detalle') === '1');
     $effect(() => { try { localStorage.setItem('deuda_detalle', deudaAbierto ? '1' : '0'); } catch { /* ignore */ } });
-    // Checklist de primeros pasos (null = oculto o completo)
-    let pasos = $state<{ ingreso: boolean; categorias: boolean; tarjeta: boolean; instalar: boolean; fijos: boolean; ingresosFijos: boolean } | null>(null);
-    let pasosAbierto = $state(false); // desplegable del checklist (colapsado por defecto)
+    // Halo que respira sobre "Cargar ingreso" hasta el primer ingreso cargado. El
+    // checklist de primeros pasos se movió al centro de notificaciones.
+    let sinIngresos = $state(false);
     let rango = $state('');
     let modo = $state<ModoPeriodo>('sueldo');
     let cargando = $state(true);
@@ -338,34 +336,10 @@
         await cargar();
     }
 
-    // ===== Checklist de primeros pasos =====
-    async function cargarPasos() {
-        const oculto = (await query("SELECT valor FROM meta WHERE clave='primeros_pasos_oculto'")) as any[];
-        if (oculto.length) return;
-        // Categorías y tarjeta son recomendaciones de "revisar/editar": se marcan
-        // al tocarlas (flag en meta), no por presencia de datos. La tarjeta ya viene
-        // sembrada (Genérica), así que contar tarjetas siempre daría "hecho".
-        const catVisto = (await query("SELECT valor FROM meta WHERE clave='paso_categorias'")) as any[];
-        const tarjVisto = (await query("SELECT valor FROM meta WHERE clave='paso_tarjeta'")) as any[];
+    // Halo de "Cargar ingreso": se apaga en cuanto hay al menos un ingreso cargado.
+    async function cargarHaloIngreso() {
         const ni = (await query('SELECT COUNT(*) AS n FROM ingreso WHERE perfil_id=1')) as any[];
-        const nf = (await query('SELECT COUNT(*) AS n FROM suscripcion WHERE perfil_id=1')) as any[];
-        const nif = (await query('SELECT COUNT(*) AS n FROM ingreso_fijo WHERE perfil_id=1')) as any[];
-        // 'instalar' se autocompleta si la app ya corre instalada (standalone).
-        // 'ingreso' ya no se muestra como paso: solo alimenta el halo de "Cargar ingreso".
-        const p = { ingreso: ni[0].n > 0, categorias: catVisto.length > 0, tarjeta: tarjVisto.length > 0, instalar: pwa.standalone, fijos: nf[0].n > 0, ingresosFijos: nif[0].n > 0 };
-        if (p.categorias && p.instalar && p.fijos && p.ingresosFijos && p.tarjeta) return; // setup completo: no molestar
-        pasos = p;
-    }
-
-    // Disparador del paso "instalá" del checklist (Android prompt). En iOS/sin
-    // evento, el lugar para instalar es la slide del onboarding o /datos.
-    async function instalarDesdeChecklist() {
-        await instalarApp();
-    }
-
-    async function ocultarPasos() {
-        await setMeta('primeros_pasos_oculto', '1');
-        pasos = null;
+        sinIngresos = (ni[0]?.n ?? 0) === 0;
     }
 
     async function cargarNombre() {
@@ -441,7 +415,7 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarPasos(); cargarNombre(); });
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarHaloIngreso(); cargarNombre(); });
     const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
     // Consolidado por categoría: montos en miles (÷1000, redondeado). Solo presentación
     // de esa vista agregada; el dato guardado y las cuentas siguen en pesos enteros.
@@ -486,30 +460,13 @@
     <h1>Cuenta Corriente</h1>
     <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares de tus gastos/ingresos recurrentes y de cuotas entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
 </div>
-{#if nombre}<p class="saludo">Hola, {nombre}!{#if pasos}<button class="saludo-link" onclick={() => (pasosAbierto = !pasosAbierto)} aria-expanded={pasosAbierto}>{pasosAbierto ? '▾' : '▸'} Aprendé a aprovechar la app al máximo</button>{/if}</p>{/if}
-
-{#if pasos && pasosAbierto}
-    <div class="pasos">
-        <div class="pasos-top">
-            <strong>Checklist de configuración</strong>
-            <button class="pasos-cerrar" onclick={ocultarPasos} title="No mostrar más" aria-label="No mostrar más">✕</button>
-        </div>
-        <a href="/configuracion" class:hecho={pasos.categorias} onclick={() => setMeta('paso_categorias', '1')}>{pasos.categorias ? '✓' : '①'} Revisá y ajustá tus categorías</a>
-        {#if pasos.instalar}
-            <span class="paso-done">✓ Instalá la app</span>
-        {:else}
-            <button class="paso-btn" onclick={instalarDesdeChecklist}>② Instalá la app en tu teléfono</button>
-        {/if}
-        <a href="/suscripciones" class:hecho={pasos.fijos}>{pasos.fijos ? '✓' : '③'} Cargá tus gastos recurrentes</a>
-        <a href="/ingresos-fijos" class:hecho={pasos.ingresosFijos}>{pasos.ingresosFijos ? '✓' : '④'} Cargá tus ingresos recurrentes</a>
-        <a href="/configuracion" class:hecho={pasos.tarjeta} onclick={() => setMeta('paso_tarjeta', '1')}>{pasos.tarjeta ? '✓' : '⑤'} Renombrá o elegí tu tarjeta (o agregá las tuyas)</a>
-    </div>
-{/if}
+{#if nombre}<p class="saludo">Hola, {nombre}!</p>{/if}
 
 <div class="accesos">
     <a href="/gastos" class="btn btn-primary">Gastos</a>
-    <a href="/carga-ingresos" class="btn btn-primary" class:pulsa={pasos !== null && !pasos.ingreso}>Ingresos</a>
+    <a href="/carga-ingresos" class="btn btn-primary" class:pulsa={sinIngresos}>Ingresos</a>
     <a href="/credito" class="btn btn-secondary">Crédito</a>
+    <a href="/evolucion-finanzas?tab=resumen" class="btn btn-secondary">Balance</a>
 </div>
 
 <div class="sel">
@@ -692,8 +649,6 @@
     .periodo-overlay { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0; }
     .rango { font-size: 0.82rem; color: var(--text-dim); margin: 0 0 12px; }
     .saludo { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; font-family: var(--font-display); font-size: 1.15rem; color: var(--text); font-weight: 600; margin: 2px 0 14px; }
-    .saludo-link { background: none; border: none; padding: 0; color: var(--accent); font-size: 0.84rem; font-weight: 600; cursor: pointer; font-family: system-ui, sans-serif; }
-    .saludo-link:hover { text-decoration: underline; }
     .auto { font-size: 0.75rem; font-weight: 400; color: var(--text-dim); white-space: nowrap; }
 
     /* Tarjetas de resumen del período */
@@ -730,22 +685,6 @@
     .deuda-panel .disp-valor.alta { color: var(--warn); }
     /* Credito neto: ARS y USD en lineas separadas, alineadas a la derecha */
     .deuda-panel .disp-valor { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
-
-    /* Checklist de primeros pasos */
-    .pasos {
-        border: 1px solid var(--border); background: var(--surface); border-radius: 8px;
-        padding: 12px 14px; margin: 0 0 12px; display: flex; flex-direction: column; gap: 7px;
-    }
-    .pasos-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .pasos-top strong { font-size: 0.92rem; }
-    .pasos-cerrar { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 0.95rem; padding: 0 4px; }
-    .pasos-cerrar:hover { color: var(--text); }
-    .pasos a { color: var(--accent); text-decoration: none; font-size: 0.88rem; }
-    .pasos a:hover { text-decoration: underline; }
-    .pasos a.hecho { color: var(--pos); text-decoration: line-through; opacity: 0.75; pointer-events: none; }
-    .pasos .paso-btn { background: none; border: none; color: var(--accent); text-align: left; font-size: 0.88rem; padding: 0; cursor: pointer; font-family: inherit; }
-    .pasos .paso-btn:hover { text-decoration: underline; }
-    .pasos .paso-done { color: var(--pos); text-decoration: line-through; opacity: 0.75; font-size: 0.88rem; }
 
     h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
     /* Título del consolidado + input de meta de ahorro en una sola fila. El

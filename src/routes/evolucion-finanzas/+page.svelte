@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
 	import { query } from '$lib/db/client';
 	import { cargarModo, cargarCortes, crearAsignador, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
 	import { mesActual } from '$lib/format';
@@ -29,10 +31,20 @@
 	let asignar = $state<(fecha: string) => string | null>(() => null);
 	let modoPeriodo = $state<ModoPeriodo>('sueldo');
 	let cortePeriodos = $state<string[]>([]); // labels de cortes (eje en modo sueldo)
-	let tab = $state<'resumen' | 'gastos' | 'ingresos' | 'poder' | 'categorias' | 'capacidad'>('resumen');
+	// Madre por defecto = Evolución de Gastos. La vista se maneja con `tab`: madres
+	// (gastos/ingresos), hijos (categorias/capacidad bajo Gastos; poder bajo Ingresos)
+	// y `resumen` (Ingresos vs Gastos) accesible SOLO desde el botón "Balance" de la Home.
+	type Tab = 'resumen' | 'gastos' | 'ingresos' | 'poder' | 'categorias' | 'capacidad';
+	let tab = $state<Tab>('gastos');
+	// El query param ?tab abre la vista pedida (Home Balance → ?tab=resumen; hamburguesa
+	// Evolución de Ingresos → ?tab=ingresos). Reactivo: cambia al navegar a la misma ruta.
+	$effect(() => {
+		const t = $page.url.searchParams.get('tab') as Tab | null;
+		if (t && ['resumen', 'gastos', 'ingresos', 'poder', 'categorias', 'capacidad'].includes(t)) tab = t;
+	});
 
 	// Handshake con Evolución de Gastos: guardo la subcategoría a pre-filtrar y salto
-	// a esa pestaña; Gastos.svelte la lee en onMount (sessionStorage) y la aplica.
+	// a esa vista; Gastos.svelte la lee en onMount (sessionStorage) y la aplica.
 	function verSubcatEnGastos(scid: number) {
 		try { sessionStorage.setItem('gastos_prefiltro_subcat', String(scid)); } catch { /* ignore */ }
 		tab = 'gastos';
@@ -160,21 +172,28 @@
 	}
 </script>
 
-<div class="titulo-guia">
-	<h1>Evolución</h1>
-	<Guia clave="evolucion-finanzas" texto="Tu evolución financiera: ingresos vs gastos por período, y adentro la evolución de gastos, de ingresos y tu poder adquisitivo. Las cargas de registros se hacen desde Cuenta Corriente." />
-</div>
-
-<div class="tabs">
-	<button class:activo={tab === 'resumen'} onclick={() => (tab = 'resumen')}>Ingresos vs Gastos</button>
-	<button class:activo={tab === 'ingresos'} onclick={() => (tab = 'ingresos')}>Evolución de Ingresos</button>
-	<button class:activo={tab === 'gastos'} onclick={() => (tab = 'gastos')}>Evolución de Gastos</button>
-	<button class:activo={tab === 'categorias'} onclick={() => (tab = 'categorias')}>Análisis por categoría</button>
-	<button class:activo={tab === 'capacidad'} onclick={() => (tab = 'capacidad')}>Capacidad de ahorro</button>
-	<button class:activo={tab === 'poder'} onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
-</div>
-
-{#if tab === 'resumen'}
+{#if tab === 'gastos'}
+	<nav class="subnav">
+		<button onclick={() => (tab = 'categorias')}>Análisis por categoría →</button>
+		<button onclick={() => (tab = 'capacidad')}>Capacidad de ahorro →</button>
+	</nav>
+	<Gastos />
+{:else if tab === 'ingresos'}
+	<nav class="subnav">
+		<button onclick={() => (tab = 'poder')}>Poder adquisitivo →</button>
+	</nav>
+	<Ingresos />
+{:else if tab === 'categorias'}
+	<button class="volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
+	<Categorias irAGastos={verSubcatEnGastos} />
+{:else if tab === 'capacidad'}
+	<button class="volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
+	<CapacidadAhorro />
+{:else if tab === 'poder'}
+	<button class="volver" onclick={() => (tab = 'ingresos')}>← Volver a Evolución de Ingresos</button>
+	<Poder />
+{:else if tab === 'resumen'}
+	<button class="volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
 {#if cargando}
 	<div class="sk-vistas">
 		<Skeleton w="92px" h="30px" radius="6px" />
@@ -232,16 +251,6 @@
 		<p class="nota">No hay datos para esta ventana.</p>
 	{/if}
 {/if}
-{:else if tab === 'gastos'}
-	<Gastos />
-{:else if tab === 'ingresos'}
-	<Ingresos />
-{:else if tab === 'poder'}
-	<Poder />
-{:else if tab === 'categorias'}
-	<Categorias irAGastos={verSubcatEnGastos} />
-{:else if tab === 'capacidad'}
-	<CapacidadAhorro />
 {/if}
 
 <style>
@@ -266,8 +275,13 @@
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 4px 0 16px; }
-	.tabs button { padding: 8px 12px; font-size: 0.9rem; line-height: 1.15; }
+	/* Sub-navegación a las vistas hijas (bajo la madre). Botones planos secundarios. */
+	.subnav { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
+	.subnav button { padding: 8px 12px; font-size: 0.88rem; line-height: 1.15; border: 1px solid var(--border); background: var(--surface); color: var(--accent); border-radius: 8px; cursor: pointer; }
+	.subnav button:hover { border-color: var(--accent); }
+	/* Volver a la madre desde un hijo (mismo patrón que el resto de la app). */
+	.volver { display: inline-block; margin: 2px 0 12px; background: none; border: none; padding: 0; color: var(--accent); font-size: 0.85rem; cursor: pointer; }
+	.volver:hover { text-decoration: underline; }
 	.sw-ing { background: var(--pos); }
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }

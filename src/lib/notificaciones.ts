@@ -6,7 +6,7 @@
 import { query, queryBatch } from './db/client';
 import { leerMeta } from './db/meta';
 import { hoyISO, diasEntre, mesActual } from './format';
-import { proximaOcurrencia, addDias, periodoActivoCC } from './periodo';
+import { proximaOcurrencia, addDias, periodoActivoCC, periodoRegla, cargarModo } from './periodo';
 
 export type LineaRegla = {
 	tipo: 'mep' | 'copia' | 'foto';
@@ -92,18 +92,38 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 			.map((x) => ({ id: x.id, nombre: x.nombre, dias: diasEntre(hoy, x.fecha) }))
 			.sort((a, b) => a.dias - b.dias);
 
+	// Gastos fijos: disparabilidad contra el período activo (sin cambios).
 	const gs = (await query(
 		`SELECT s.id, s.nombre, s.dia_esperado FROM suscripcion s
 		 WHERE s.perfil_id=1 AND s.activa=1 AND s.dia_esperado IS NOT NULL
 		   AND NOT EXISTS (SELECT 1 FROM suscripcion_registro r WHERE r.suscripcion_id=s.id AND r.periodo=?)`,
 		[per]
 	)) as any[];
-	const is = (await query(
-		`SELECT i.id, i.nombre, i.dia_esperado FROM ingreso_fijo i
-		 WHERE i.perfil_id=1 AND i.activa=1 AND i.dia_esperado IS NOT NULL
-		   AND NOT EXISTS (SELECT 1 FROM ingreso_fijo_registro r WHERE r.ingreso_fijo_id=i.id AND r.periodo=?)`,
-		[per]
+
+	// Ingresos fijos: el SUELDO (Ingreso Principal Regular) en modo sueldo evalúa su
+	// disparabilidad contra periodoRegla(hoy) — la regla del 20 — para romper el
+	// deadlock (registrado el sueldo del período, no reaparece porque el período no
+	// avanza hasta disparar el sueldo). Del 5 al 19 mapea al mes actual (registrado →
+	// no disparable); a partir del 20 mapea al mes siguiente (no registrado → disparable,
+	// abre el período nuevo). El resto de los recurrentes: contra el período activo.
+	const modo = await cargarModo();
+	const isCand = (await query(
+		`SELECT i.id, i.nombre, i.dia_esperado, i.categoria, i.tipo FROM ingreso_fijo i
+		 WHERE i.perfil_id=1 AND i.activa=1 AND i.dia_esperado IS NOT NULL`
 	)) as any[];
+	const perObjetivo = (r: any): string | null =>
+		modo === 'sueldo' && r.categoria === 'Ingreso Principal' && r.tipo === 'Sueldo'
+			? periodoRegla(hoy, 'Ingreso Principal')
+			: per;
+	const ids = isCand.map((r) => r.id);
+	const regsIF = ids.length
+		? ((await query(
+				`SELECT ingreso_fijo_id, periodo FROM ingreso_fijo_registro WHERE ingreso_fijo_id IN (${ids.map(() => '?').join(',')})`,
+				ids
+			)) as any[])
+		: [];
+	const regIFSet = new Set(regsIF.map((x) => x.ingreso_fijo_id + ':' + x.periodo));
+	const is = isCand.filter((r) => !regIFSet.has(r.id + ':' + perObjetivo(r)));
 
 	const pagos = proximos(gs);
 	const cobros = proximos(is);
