@@ -2,7 +2,7 @@
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
-    import { mesActual, parseNum, formatNum, soloNum } from '$lib/format';
+    import { mesActual, parseNum, formatNum, soloNum, pesos, mesCorto } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import CountUp from '$lib/CountUp.svelte';
     import Skeleton from '$lib/Skeleton.svelte';
@@ -81,18 +81,10 @@
     // Etiquetas de mes para los encabezados (derivadas del período visible)
     let labN = $state(''); let labN1 = $state(''); let labN2 = $state('');
 
-    const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-    // '2026-06' -> "jun '26". Parsea el string directo (sin new Date(), evita corrimiento UTC-3).
-    function labelMes(periodo: string): string {
-        const [y, m] = periodo.split('-').map(Number);
-        return `${MESES[m - 1]} '${String(y).slice(2)}`;
-    }
-    const MESES_LARGO = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-    // '2026-06' -> "Junio 2026" para el texto central del selector.
-    function labelPeriodo(periodo: string): string {
-        const [y, m] = periodo.split('-').map(Number);
-        return `${MESES_LARGO[m - 1]} ${y}`;
-    }
+    // labelMes/labelPeriodo -> mesCorto de $lib/format (helper único, Brief H / A2+B2:
+    // "jun '26" en todos lados, nunca mes completo — antes acá se mostraba "Junio 2026").
+    const labelMes = mesCorto;
+    const labelPeriodo = mesCorto;
 
     function desvio(real: number, presup: number): string {
         if (!presup) return '—';
@@ -416,11 +408,13 @@
     }
 
     onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarHaloIngreso(); cargarNombre(); });
-    const peso = (n: number) => '$' + Math.round(n || 0).toLocaleString('es-AR');
+    // Alias locales al helper único de format.ts (mismo comportamiento de antes,
+    // ya no reimplementado acá — ver Brief H / A1).
+    const peso = pesos;
     // Consolidado por categoría: montos en miles (÷1000, redondeado). Solo presentación
     // de esa vista agregada; el dato guardado y las cuentas siguen en pesos enteros.
-    const pesoMil = (n: number) => '$' + Math.round((n || 0) / 1000).toLocaleString('es-AR');
-    const usd = (n: number) => 'U$D ' + Math.round(n || 0).toLocaleString('es-AR');
+    const pesoMil = (n: number) => pesos((n || 0) / 1000);
+    const usd = (n: number) => pesos(n, 'USD');
     // Semáforo completo de Presupuesto/Gasto: verde si entra en el ingreso
     // disponible, amarillo entre disponible e ingreso total, rojo si supera el total.
     function semColor(v: number): string {

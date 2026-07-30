@@ -7,7 +7,7 @@
 		descargarArchivo, descargarBlob, importarExcel,
 		exportarGastosCSV, exportarIngresosCSV, exportarInversionesXLSX
 	} from '$lib/db/precarga';
-	import { hoyISO } from '$lib/format';
+	import { hoyISO, fechaHoraCorta } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import InstalarApp from '$lib/InstalarApp.svelte';
 
@@ -34,10 +34,11 @@
 	}
 	onMount(cargar);
 
+	// Timestamp de sistema: delega en el helper único de format.ts (Brief H / A2+B2).
+	// OJO: cambio visible sancionado — antes mostraba el año ("28/07/2026 14:30"),
+	// ahora sin año ("28/07 14:30"), igual que el mismo timestamp en Inversiones.
 	function fmt(iso: string | null): string {
-		if (!iso) return 'Nunca';
-		const d = new Date(iso);
-		return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+		return fechaHoraCorta(iso, 'Nunca');
 	}
 
 	// Días desde una fecha ISO guardada, sin new Date() (Date.parse sobre el ISO
@@ -65,7 +66,7 @@
 
 	async function onExportar() {
 		try { await exportarDatos(); }
-		catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
+		catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
 	// Paso 1: elegir archivo -> leer fechas y mostrar comparación
@@ -79,7 +80,7 @@
 			backupPendiente = backup;
 			comparando = true;
 		} catch (err: any) {
-			alert(err?.message ?? String(err));
+			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
 			input.value = '';
 		}
@@ -94,7 +95,7 @@
 			alert('Importación completa. La página se va a recargar.');
 			location.reload();
 		} catch (err: any) {
-			alert(err?.message ?? String(err));
+			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 			cancelarImport();
 		}
 	}
@@ -112,7 +113,7 @@
 			const { backup, fechas } = await leerFechasBackup(texto);
 			fechasBackup = fechas; backupPendiente = backup; comparando = true;
 			window.scrollTo({ top: 0, behavior: 'smooth' });
-		} catch (err: any) { alert(err?.message ?? String(err)); }
+		} catch (err: any) { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
 	// ----- Planillas: precarga Excel + exportación CSV -----
@@ -128,7 +129,7 @@
 			const resumen = await importarExcel(file);
 			alert('Importación completa ✅\n' + resumen);
 		} catch (err: any) {
-			alert(err?.message ?? String(err));
+			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
 			input.value = '';
 			importandoCSV = false;
@@ -138,13 +139,13 @@
 	async function onExportarCSV(nombre: string, exportar: () => Promise<string>) {
 		try {
 			descargarArchivo(`rienda-${nombre}-${hoyISO()}.csv`, await exportar());
-		} catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
+		} catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
 	async function onExportarInversiones() {
 		try {
 			descargarBlob(`rienda-inversiones-${hoyISO()}.xlsx`, await exportarInversionesXLSX());
-		} catch (e: any) { alert('Error al exportar: ' + (e?.message ?? e)); }
+		} catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
 	// ----- Borrado total -----
@@ -167,7 +168,8 @@
 			alert('Listo. Se borraron todos los datos de este dispositivo. La app vuelve al inicio.');
 			location.reload();
 		} catch (e: any) {
-			alert(e?.message ?? String(e));
+			console.error(e);
+			alert('Ocurrió un error. Contactá al administrador.');
 			borrando = false;
 		}
 	}

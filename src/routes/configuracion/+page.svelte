@@ -43,6 +43,7 @@
 	let editSubNombre = $state('');
 
 	let msg = $state('');
+	let msgErr = $state(false);
 
 	const explicacionModo: Record<ModoPeriodo, string> = {
 		sueldo: 'Cada período arranca el día que cobrás tu sueldo. Ideal si tenés un ingreso principal fijo.',
@@ -114,8 +115,10 @@
 		return subcategorias.find((s) => s.id === id)?.nombre ?? '?';
 	}
 
-	function flash(t: string) { msg = t; setTimeout(() => (msg = ''), 3000); }
+	function flash(t: string, isErr = false) { msg = t; msgErr = isErr; setTimeout(() => (msg = ''), 3000); }
 	function esUnique(e: any) { return e?.message?.includes('UNIQUE'); }
+	// Error técnico: nunca el mensaje crudo en pantalla (Brief H / B3) — detalle a consola.
+	function flashError(e: any) { console.error(e); flash('Ocurrió un error. Contactá al administrador.', true); }
 
 	// ===== Modo de período =====
 	async function cambiarModo(nuevo: ModoPeriodo) {
@@ -124,40 +127,40 @@
 		try {
 			await query('UPDATE perfil SET modo_periodo=? WHERE id=1', [nuevo]);
 			location.reload();
-		} catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
+		} catch (e: any) { flashError(e); }
 	}
 
 	// ===== Categorías =====
 	async function crearCat() {
 		const n = nuevaCat.trim(); if (!n) return;
 		try { await query('INSERT INTO categoria (perfil_id, nombre) VALUES (1, ?)', [n]); nuevaCat=''; await cargar(); flash('Categoría creada ✅'); }
-		catch (e:any) { flash(esUnique(e) ? 'Ya existe esa categoría.' : 'Error: '+(e?.message??e)); }
+		catch (e:any) { if (esUnique(e)) flash('Ya existe esa categoría.'); else flashError(e); }
 	}
 	function abrirEditCat(c:any){ editCatId=c.id; editCatNombre=c.nombre; }
 	async function guardarCat(){
 		const n=editCatNombre.trim(); if(editCatId==null||!n){editCatId=null;return;}
 		try { await query('UPDATE categoria SET nombre=? WHERE id=? AND perfil_id=1',[n,editCatId]); editCatId=null; await cargar(); flash('Categoría renombrada ✅'); }
-		catch(e:any){ flash(esUnique(e)?'Ya existe esa categoría.':'Error: '+(e?.message??e)); }
+		catch(e:any){ if (esUnique(e)) flash('Ya existe esa categoría.'); else flashError(e); }
 	}
 	async function borrarCat(c:any){
 		if(c.es_ahorro){ alert('No se puede eliminar — es tu categoría de ahorro. Registrá acá cualquier plata que apartes del gasto (dólares, plazo fijo, colchón, etc.).'); return; }
 		if(c.usos>0){ alert(`No se puede eliminar "${c.nombre}": tiene ${c.usos} gasto(s) asociado(s).`); return; }
 		if(!confirm(`¿Eliminar la categoría "${c.nombre}"?`)) return;
 		try { await query('DELETE FROM categoria WHERE id=? AND perfil_id=1',[c.id]); await cargar(); flash('Categoría eliminada ✅'); }
-		catch(e:any){ flash('Error: '+(e?.message??e)); }
+		catch(e:any){ flashError(e); }
 	}
 
 	// ===== Subcategorías =====
 	async function crearSub() {
 		const n = nuevaSub.trim(); if (!n) return;
 		try { await query('INSERT INTO subcategoria (perfil_id, nombre) VALUES (1, ?)', [n]); nuevaSub=''; await cargar(); flash('Subcategoría creada ✅'); }
-		catch (e:any) { flash(esUnique(e) ? 'Ya existe esa subcategoría.' : 'Error: '+(e?.message??e)); }
+		catch (e:any) { if (esUnique(e)) flash('Ya existe esa subcategoría.'); else flashError(e); }
 	}
 	function abrirEditSub(s:any){ editSubId=s.id; editSubNombre=s.nombre; }
 	async function guardarSub(){
 		const n=editSubNombre.trim(); if(editSubId==null||!n){editSubId=null;return;}
 		try { await query('UPDATE subcategoria SET nombre=? WHERE id=? AND perfil_id=1',[n,editSubId]); editSubId=null; await cargar(); flash('Subcategoría renombrada ✅'); }
-		catch(e:any){ flash(esUnique(e)?'Ya existe esa subcategoría.':'Error: '+(e?.message??e)); }
+		catch(e:any){ if (esUnique(e)) flash('Ya existe esa subcategoría.'); else flashError(e); }
 	}
 	async function borrarSub(s:any){
 		if(s.usos>0){ alert(`No se puede eliminar "${s.nombre}": está usada en ${s.usos} regla(s)/gasto(s).`); return; }
@@ -168,26 +171,26 @@
 			await query('DELETE FROM subcategoria WHERE id=? AND perfil_id=1',[s.id]);
 			await cargar(); flash('Subcategoría eliminada ✅');
 		}
-		catch(e:any){ flash('Error: '+(e?.message??e)); }
+		catch(e:any){ flashError(e); }
 	}
 
 	// ===== Tarjetas =====
 	async function crearTar() {
 		const n = ntNombre.trim(); if (!n) return;
 		try { await query('INSERT INTO tarjeta (perfil_id, nombre, proveedor, tipo) VALUES (1, ?, ?, ?)', [n, ntProveedor, ntTipo]); ntNombre=''; await cargar(); flash('Tarjeta creada ✅'); }
-		catch (e:any) { flash(esUnique(e)?'Ya existe esa tarjeta.':'Error: '+(e?.message??e)); }
+		catch (e:any) { if (esUnique(e)) flash('Ya existe esa tarjeta.'); else flashError(e); }
 	}
 	function abrirEditTar(t:any){ editTarId=t.id; editTarNombre=t.nombre; editTarProveedor=t.proveedor ?? 'Visa'; }
 	async function guardarTar(){
 		const n=editTarNombre.trim(); if(editTarId==null||!n){editTarId=null;return;}
 		try { await query('UPDATE tarjeta SET nombre=?, proveedor=? WHERE id=? AND perfil_id=1',[n,editTarProveedor,editTarId]); editTarId=null; await cargar(); flash('Tarjeta actualizada ✅'); }
-		catch(e:any){ flash(esUnique(e)?'Ya existe esa tarjeta.':'Error: '+(e?.message??e)); }
+		catch(e:any){ if (esUnique(e)) flash('Ya existe esa tarjeta.'); else flashError(e); }
 	}
 	async function borrarTar(t:any){
 		if(t.usos>0){ alert(`No se puede eliminar "${t.nombre}": tiene ${t.usos} registro(s) asociado(s).`); return; }
 		if(!confirm(`¿Eliminar la tarjeta "${t.nombre}"?`)) return;
 		try { await query('DELETE FROM tarjeta WHERE id=? AND perfil_id=1',[t.id]); await cargar(); flash('Tarjeta eliminada ✅'); }
-		catch(e:any){ flash('Error: '+(e?.message??e)); }
+		catch(e:any){ flashError(e); }
 	}
 
 	// ===== Diccionario: asignar subcategoría a un detalle =====
@@ -206,7 +209,7 @@
 			}
 			await cargar();
 			flash('Clasificación actualizada ✅');
-		} catch (e: any) { flash('Error: ' + (e?.message ?? e)); }
+		} catch (e: any) { flashError(e); }
 	}
 </script>
 
@@ -215,7 +218,7 @@
 	<Guia clave="configuracion" texto="El cerebro de la clasificación: categorías, tarjetas y el diccionario que conecta cada detalle con su subcategoría. Cambiar el diccionario reclasifica todo tu historial de una." />
 </div>
 
-{#if msg}<p class="msg">{msg}</p>{/if}
+{#if msg}<p class="msg" class:err={msgErr}>{#if msgErr}<span class="err-x">✗</span> {/if}{msg}</p>{/if}
 
 {#if cargando}
 	<p>Cargando…</p>
@@ -263,7 +266,7 @@
 								<td class="acciones">
 									{#if editTarId !== t.id}
 										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditTar(t)} title="Renombrar">✏</button>
-										<button aria-label="Eliminar" class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>🗑</button>
+										<button aria-label="Eliminar" class="del" class:off={t.usos > 0} onclick={() => borrarTar(t)} title={t.usos > 0 ? 'Tiene registros asociados' : 'Eliminar'}>✕</button>
 									{/if}
 								</td>
 							</tr>
@@ -302,7 +305,7 @@
 								<td class="acciones">
 									{#if editCatId !== c.id}
 										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditCat(c)} title="Renombrar">✏</button>
-										<button aria-label="Eliminar" class="del" class:off={c.usos > 0 || c.es_ahorro} onclick={() => borrarCat(c)} title={c.es_ahorro ? 'Es tu categoría de ahorro' : c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>🗑</button>
+										<button aria-label="Eliminar" class="del" class:off={c.usos > 0 || c.es_ahorro} onclick={() => borrarCat(c)} title={c.es_ahorro ? 'Es tu categoría de ahorro' : c.usos > 0 ? 'Tiene gastos asociados' : 'Eliminar'}>✕</button>
 									{/if}
 								</td>
 							</tr>
@@ -342,7 +345,7 @@
 								<td class="acciones">
 									{#if editSubId !== s.id}
 										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏</button>
-										<button aria-label="Eliminar" class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>🗑</button>
+										<button aria-label="Eliminar" class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>✕</button>
 									{/if}
 								</td>
 							</tr>
@@ -409,6 +412,8 @@
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.sub { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 8px; }
 	.msg { font-weight: 600; color: var(--pos); margin: 6px 0; }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.err-x { font-size: 1.3em; line-height: 1; }
 	.alta { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
 	.alta input { padding: 7px; flex: 1; min-width: 160px; }
 	.alta select { padding: 7px; }

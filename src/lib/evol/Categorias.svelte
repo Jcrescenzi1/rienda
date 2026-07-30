@@ -12,10 +12,13 @@
 	} from '$lib/moneda';
 	import Guia from '$lib/Guia.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import { mesCorto } from '$lib/format';
 
 	// Callback del padre (evolucion-finanzas): salta a Evolución de Gastos con una
 	// subcategoría pre-filtrada. Ver el handshake por sessionStorage en Gastos.svelte.
-	let { irAGastos = (_scid: number) => {} }: { irAGastos?: (scid: number) => void } = $props();
+	import type { Snippet } from 'svelte';
+	// Ver Gastos.svelte: `nav` se renderiza debajo del título (Brief H / B5).
+	let { irAGastos = (_scid: number) => {}, nav }: { irAGastos?: (scid: number) => void; nav?: Snippet } = $props();
 
 	type Gasto = { fecha: string; monto: number; moneda: string; categoria_id: number; categoria: string; scid: number | null };
 
@@ -62,8 +65,7 @@
 		cargando = false;
 	});
 
-	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-	const mesCorto = (p: string) => { const [y, m] = p.split('-'); return MESES[+m] + " '" + y.slice(2); };
+	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
 	let subName = $derived(new Map(subcategorias.map((s) => [s.id, s.nombre])));
 	let catName = $derived.by(() => { const m = new Map<number, string>(); for (const g of gastos) m.set(g.categoria_id, g.categoria); return m; });
@@ -232,6 +234,7 @@
 	<h1>Análisis por categoría</h1>
 	<Guia clave="analisis-categoria" texto="Compará tus categorías de gasto: qué pesa más en cada período y cómo se reparte por subcategoría (tocá una categoría para desplegarla), y qué subcategorías crecieron o cayeron. En pesos reales (ajustados por inflación) o nominales." />
 </div>
+{@render nav?.()}
 
 {#if cargando}
 	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>

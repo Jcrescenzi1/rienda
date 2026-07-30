@@ -82,7 +82,17 @@ export function secuenciaPeriodos(
 	const { modo, cortePeriodos, primerDato, actual } = opts;
 	const anio = /^\d{4}$/.test(opts.anio) ? opts.anio : actual.slice(0, 4); // fallback si viene vacío
 	if (modo === 'sueldo' && cortePeriodos.length) {
-		const arr = cortePeriodos.filter((p) => p <= actual); // ascendente
+		// Límite superior real = el último corte conocido, NO el mes calendario
+		// crudo: la regla del veinte puede abrir un período por delante del
+		// calendario (ej. sueldo cobrado el 25/07 abre el período 2026-08), y
+		// filtrar por `actual` (mesActual()) lo descartaba del eje hasta que el
+		// calendario alcanzaba ese mes — el sueldo recién cargado "desaparecía"
+		// de Evolución (Brief I). cortePeriodos viene ascendente por fecha, y el
+		// período derivado de periodoRegla() nunca retrocede cuando la fecha
+		// avanza, así que el último elemento es el corte más nuevo.
+		const ultimoCorte = cortePeriodos[cortePeriodos.length - 1];
+		const limite = ultimoCorte > actual ? ultimoCorte : actual;
+		const arr = cortePeriodos.filter((p) => p <= limite); // ascendente
 		if (vista === 'ult12') return arr.slice(-12);
 		if (vista === 'anio') return arr.filter((p) => p.startsWith(anio));
 		const desde = primerDato ?? arr[0] ?? actual;

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { fechaISO, hoyISO, parseNum, formatNum, soloNum } from '$lib/format';
+	import { fechaISO, hoyISO, parseNum, formatNum, soloNum, pesos, mesCorto, fmtFecha } from '$lib/format';
 	import { calcularFIFO, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
@@ -18,7 +18,7 @@
 	let realizadoMes = $state<any[]>([]);
 	let fFlujo = $state(''); let fValorUSD = $state(0); let fValorARS = $state(0); let fDolar = $state(1);
 	let fFecha = $state(hoyISO());
-	let fMsg = $state(''); let calculando = $state(false);
+	let fMsg = $state(''); let fMsgErr = $state(false); let calculando = $state(false);
 
 	async function cargar() {
 		const rows = (await query('SELECT fecha, valor_usd, flujo_usd, valor_ars, dolar FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
@@ -38,7 +38,7 @@
 
 	// Foto de cartera — cálculo compartido con Inversiones
 	async function prepararFoto() {
-		calculando = true; fMsg = '';
+		calculando = true; fMsg = ''; fMsgErr = false;
 		try {
 			const f = await calcularFoto();
 			fDolar = f.dolar;
@@ -46,25 +46,24 @@
 			fValorARS = f.valorARS;
 			fFlujo = formatNum(f.flujo, 2);
 			showFoto = true;
-		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { console.error(e); fMsgErr = true; fMsg = 'Ocurrió un error. Contactá al administrador.'; }
 		calculando = false;
 	}
 
 	async function guardarFoto() {
+		fMsgErr = false;
 		try {
 			const flujo = parseNum(fFlujo);
 			await guardarSnapshot(fFecha, fValorUSD, Number.isFinite(flujo) ? flujo : 0, fDolar, fValorARS);
 			showFoto = false; fMsg = ''; await cargar();
-		} catch (e: any) { fMsg = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { console.error(e); fMsgErr = true; fMsg = 'Ocurrió un error. Contactá al administrador.'; }
 	}
 
-	const usd = (n: number, d = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
-	const ars = (n: number) => '$' + Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 0 });
+	// Alias locales al helper único de format.ts (ver Brief H / A1).
+	const usd = (n: number, d = 0) => pesos(n, 'USD', d);
+	const ars = (n: number) => pesos(n, 'ARS');
 	const pct = (n: number) => (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + '%';
-	const mesCorto = (f: string) => {
-		const [y, m] = f.split('-');
-		return ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][+m] + " '" + y.slice(2);
-	};
+	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
 	let actual = $derived(snaps.length ? snaps[snaps.length - 1] : null);
 
@@ -138,7 +137,7 @@
 		<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
 		<p class="hint">Calculado de tus Ingresos/Retiros. Editalo si hace falta.</p>
 		<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar foto</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
-		{#if fMsg}<p class="msg">{fMsg}</p>{/if}
+		{#if fMsg}<p class="msg" class:err={fMsgErr}>{#if fMsgErr}<span class="err-x">✗</span> {/if}{fMsg}</p>{/if}
 	</div>
 {/if}
 
@@ -158,7 +157,7 @@
 		<div class="card big"><span>TWR del período</span><strong class={twrVentana >= 0 ? 'pos' : 'neg'}><CountUp value={twrVentana} format={pct} /></strong></div>
 		<div class="card"><span>Valor actual</span><strong><CountUp value={actual.valor_usd} format={usd} /></strong></div>
 		<div class="card"><span>Aportes netos (período)</span><strong><CountUp value={flujoVentana} format={usd} /></strong></div>
-		<div class="card"><span>Desde</span><strong>{baseSnap.fecha}</strong></div>
+		<div class="card"><span>Desde</span><strong>{fmtFecha(baseSnap.fecha)}</strong></div>
 	</div>
 
 	<div class="toggle">
@@ -216,6 +215,8 @@
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; }
 	.botones { display: flex; gap: 8px; }
 	.msg { font-weight: 600; margin: 0; }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.err-x { font-size: 1.3em; line-height: 1; }
 	.periodos { display: flex; gap: 6px; flex-wrap: wrap; margin: 12px 0 4px; }
 	.resumen { display: flex; gap: 10px; flex-wrap: wrap; margin: 12px 0; }
 	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 14px; display: flex; flex-direction: column; min-width: 130px; }

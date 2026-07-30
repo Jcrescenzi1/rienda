@@ -66,14 +66,15 @@
 			alert(msg);
 			location.reload();
 		} catch (e: any) {
-			alert('Error: ' + (e?.message ?? e));
+			console.error(e); // Brief H / B3: detalle a consola, no crudo en pantalla.
+			alert('Ocurrió un error. Contactá al administrador.');
 			actualizando = false;
 		}
 	}
 </script>
 
-<a class="volver" href="/">← Volver a Cuenta Corriente</a>
 <h1>Notificaciones</h1>
+<a class="btn-volver" href="/">← Volver a Cuenta Corriente</a>
 
 {#if cargando}
 	<p class="nota">Cargando…</p>
@@ -85,25 +86,23 @@
 {:else}
 	{#if n.pagos.length}
 		<section class="grupo">
-			<h2>Próximos pagos</h2>
+			<h2><a class="h2-link" href="/suscripciones">Próximos <span class="subrayado">Gastos Recurrentes</span> →</a></h2>
 			<ul class="lista">
 				{#each n.pagos as p (p.nombre)}
 					<li><span class="rec-nombre">{p.nombre}</span><span class="rec-dias">{faltanTxt(p.dias)}</span></li>
 				{/each}
 			</ul>
-			<a class="verlink" href="/suscripciones">Ver todos →</a>
 		</section>
 	{/if}
 
 	{#if n.cobros.length}
 		<section class="grupo">
-			<h2>Próximos cobros</h2>
+			<h2><a class="h2-link" href="/ingresos-fijos">Próximos <span class="subrayado">Ingresos Recurrentes</span> →</a></h2>
 			<ul class="lista">
 				{#each n.cobros as c (c.nombre)}
 					<li><span class="rec-nombre">{c.nombre}</span><span class="rec-dias">{faltanTxt(c.dias)}</span></li>
 				{/each}
 			</ul>
-			<a class="verlink" href="/ingresos-fijos">Ver todos →</a>
 		</section>
 	{/if}
 
@@ -137,10 +136,16 @@
 {/if}
 
 <style>
-	.volver { display: inline-block; margin: 4px 0 8px; color: var(--accent); text-decoration: none; font-size: 0.85rem; }
-	.volver:hover { text-decoration: underline; }
+	/* .volver eliminado (Brief H / B5): usa el .btn-volver global de +layout.svelte,
+	   ahora debajo del título en vez de arriba. */
 	h1 { margin: 0 0 14px; }
 	h2 { font-size: 0.95rem; margin: 0 0 8px; }
+	/* Título de tarjeta como acceso directo a la pantalla de recurrentes (a pedido
+	   de Julián): reemplaza el "Ver todos" que se había sacado por no ser
+	   tap-despliega — acá el link vive en el título, no en un item de la lista. */
+	.h2-link { color: var(--accent); text-decoration: none; }
+	.h2-link .subrayado { text-decoration: underline; }
+	.h2-link:hover { text-decoration: underline; }
 	.nota { color: var(--text-dim); font-size: 0.85rem; }
 
 	/* Onboarding: se lee distinto de las alertas (regla neutra, no roja). */
@@ -173,8 +178,6 @@
 	.lista li:last-child { border-bottom: none; }
 	.rec-nombre { font-weight: 600; }
 	.rec-dias { color: var(--text-dim); font-size: 0.82rem; white-space: nowrap; }
-	.verlink { font-size: 0.82rem; color: var(--accent); text-decoration: none; font-weight: 600; }
-	.verlink:hover { text-decoration: underline; }
 
 	.fila {
 		display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;

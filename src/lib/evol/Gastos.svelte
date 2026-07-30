@@ -17,7 +17,13 @@
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
-	import { parseNum, formatNum, soloNum, fmtFecha, mesActual } from '$lib/format';
+	import { parseNum, formatNum, soloNum, fmtFecha, mesActual, mesCorto, pesos, montoAGuardar } from '$lib/format';
+	import type { Snippet } from 'svelte';
+
+	// `nav` = contenido de navegación secundaria del padre (evolucion-finanzas),
+	// se renderiza DEBAJO del título (Brief H / B5 — antes el padre lo ponía
+	// arriba de este componente, o sea arriba del título).
+	let { nav }: { nav?: Snippet } = $props();
 
 	type Gasto = {
 		fecha: string;
@@ -180,11 +186,7 @@
 	// Período más reciente dentro de la ventana visible (serie va en orden ascendente).
 	let ultimo = $derived(serie.length ? serie[serie.length - 1] : null);
 
-	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-	const mesCorto = (p: string) => {
-		const [y, m] = p.split('-');
-		return MESES[+m] + " '" + y.slice(2);
-	};
+	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
 	// ===== Gráfico de área =====
 	const W = 720, H = 300, P = { l: 56, r: 16, t: 16, b: 28 };
@@ -240,17 +242,24 @@
 			.slice()
 			.sort((a, b) => b.fecha.localeCompare(a.fecha))
 	);
-	const orig = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n).toLocaleString('es-AR');
+	// Alias al helper único de format.ts (ver Brief H / A1).
+	const orig = pesos;
 
 	let editId = $state<number | null>(null);
 	let eFecha = $state(''), eMonto = $state(''), eMoneda = $state('ARS');
+	// Monto original (precisión completa) al abrir la edición inline — ver
+	// montoAGuardar (Brief H / B1): el prefill ahora se redondea a 0 decimales.
+	let eMontoOriginal = $state<number | null>(null);
 	let eCatId = $state<number | null>(null), eDetalle = $state('');
 	let eMedio = $state<'debito' | 'credito'>('debito');
 	let eTarjeta = $state<number | null>(null), eCuotas = $state(1), eMesInicio = $state('');
 	let msgEd = $state('');
+	// true solo para el error técnico del catch (Brief H / B3) — false para los
+	// mensajes de validación de arriba, que no son "error", son guía de formulario.
+	let msgEdErr = $state(false);
 
 	function editar(g: any) {
-		editId = g.id; eFecha = g.fecha; eMonto = formatNum(g.monto); eMoneda = g.moneda;
+		editId = g.id; eFecha = g.fecha; eMonto = formatNum(g.monto, 0); eMontoOriginal = g.monto; eMoneda = g.moneda;
 		eCatId = g.categoria_id; eDetalle = g.detalle; eMedio = g.medio;
 		eTarjeta = g.tarjeta_id; eCuotas = g.cuotas ?? 1;
 		eMesInicio = g.mes_inicio_pago ? g.mes_inicio_pago.slice(0, 7) : '';
@@ -258,7 +267,8 @@
 	}
 	const cancelar = () => (editId = null);
 	async function guardarEd() {
-		const m = parseNum(eMonto);
+		msgEdErr = false;
+		const m = montoAGuardar(eMonto, eMontoOriginal);
 		if (!eFecha) return (msgEd = 'Falta la fecha');
 		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto inválido');
 		if (!eCatId) return (msgEd = 'Elegí categoría');
@@ -275,7 +285,7 @@
 			}
 			editId = null;
 			await cargarGastos();
-		} catch (e: any) { msgEd = 'Error: ' + (e?.message ?? e); }
+		} catch (e: any) { console.error(e); msgEdErr = true; msgEd = 'Ocurrió un error. Contactá al administrador.'; }
 	}
 	async function eliminar(id: number) {
 		if (!confirm('¿Eliminar este gasto? No se puede deshacer.')) return;
@@ -289,6 +299,7 @@
 	<h1>Evolución de Gastos</h1>
 	<Guia clave="gastos-evolucion" texto="Cómo evolucionó tu gasto período a período, con la composición por categoría. Filtrá por fecha, categoría o detalle para enfocar el análisis. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
 </div>
+{@render nav?.()}
 
 
 {#if cargando}
@@ -372,11 +383,11 @@
 
 	<h2>Registros</h2>
 	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico. Cambiar el detalle reclasifica vía diccionario. La composición por categoría se ve en Análisis por categoría.</p>
-	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
-	<div class="regs">
+	{#if msgEd}<p class="msg-ed" class:err={msgEdErr}>{#if msgEdErr}<span class="err-x">✗</span> {/if}{msgEd}</p>{/if}
+	<div class="fichas">
 		{#each registros as g (g.id)}
 			{#if editId === g.id}
-				<div class="reg edit">
+				<div class="ficha edit">
 					<div class="reg-grid">
 						<label>Fecha<input type="date" bind:value={eFecha} /></label>
 						<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={eMonto} /></label>
@@ -396,7 +407,7 @@
 					</div>
 				</div>
 			{:else}
-				<div class="reg">
+				<div class="ficha">
 					<div class="reg-top">
 						<span class="reg-det">{g.detalle}</span>
 						<span class="reg-monto">{orig(g.monto, g.moneda)}</span>
@@ -439,9 +450,11 @@
 	.dot-area { fill: var(--accent); }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 
-	.regs { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-	.reg { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
-	.reg.edit { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+	.fichas { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+	/* Renombrado .reg -> .ficha: mismo patrón de tarjeta de registro que el resto
+	   de la app (Brief H / A3) — antes esta pantalla lo llamaba distinto sin motivo. */
+	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
+	.ficha.edit { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
 	.reg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 	.reg-det { font-weight: 600; font-size: 0.92rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.reg-monto { font-weight: 700; white-space: nowrap; }
@@ -454,5 +467,7 @@
 	.reg-grid input, .reg-grid select { padding: 5px; font-size: 0.9rem; }
 	.reg-acc { display: flex; gap: 8px; margin-top: 8px; }
 	.msg-ed { font-weight: 600; color: var(--text); }
+	.msg-ed.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg-ed .err-x { font-size: 1.3em; line-height: 1; }
 	.vacio { color: var(--text-dim); font-style: italic; }
 </style>

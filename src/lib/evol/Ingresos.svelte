@@ -17,7 +17,11 @@
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 	import { cargarModo, cargarCortes, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
-	import { parseNum, formatNum, soloNum, fmtFecha, mesActual } from '$lib/format';
+	import { parseNum, formatNum, soloNum, fmtFecha, mesActual, mesCorto, pesos, montoAGuardar } from '$lib/format';
+	import type { Snippet } from 'svelte';
+
+	// Ver Gastos.svelte: `nav` se renderiza debajo del título (Brief H / B5).
+	let { nav }: { nav?: Snippet } = $props();
 
 	type Ingreso = {
 		fecha: string;
@@ -124,11 +128,7 @@
 	// Período más reciente dentro de la ventana visible (serie va en orden ascendente).
 	let ultimo = $derived(serie.length ? serie[serie.length - 1] : null);
 
-	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-	const mesCorto = (p: string) => {
-		const [y, m] = p.split('-');
-		return MESES[+m] + " '" + y.slice(2);
-	};
+	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
 	// ===== Gráfico de área =====
 	const W = 720, H = 300, P = { l: 56, r: 16, t: 16, b: 28 };
@@ -183,21 +183,28 @@
 			.slice()
 			.sort((a, b) => b.fecha.localeCompare(a.fecha))
 	);
-	const orig = (n: number, mon: string) => (mon === 'USD' ? 'U$D ' : '$') + Math.round(n).toLocaleString('es-AR');
+	// Alias al helper único de format.ts (ver Brief H / A1).
+	const orig = pesos;
 
 	let editId = $state<number | null>(null);
 	let eFecha = $state(''), eMonto = $state(''), eMoneda = $state('ARS');
+	// Monto original (precisión completa) al abrir la edición inline — ver
+	// montoAGuardar (Brief H / B1): el prefill ahora se redondea a 0 decimales.
+	let eMontoOriginal = $state<number | null>(null);
 	let eCat = $state('Ingreso Principal'), eTipo = $state(''), eDetalle = $state(''), ePeriodo = $state('');
 	let msgEd = $state('');
+	// true solo para el error técnico del catch (Brief H / B3).
+	let msgEdErr = $state(false);
 
 	function editar(i: any) {
-		editId = i.id; eFecha = i.fecha; eMonto = formatNum(i.monto); eMoneda = i.moneda;
+		editId = i.id; eFecha = i.fecha; eMonto = formatNum(i.monto, 0); eMontoOriginal = i.monto; eMoneda = i.moneda;
 		eCat = i.categoria; eTipo = i.tipo ?? ''; eDetalle = i.detalle ?? ''; ePeriodo = i.periodo;
 		msgEd = '';
 	}
 	const cancelar = () => (editId = null);
 	async function guardarEd() {
-		const m = parseNum(eMonto);
+		msgEdErr = false;
+		const m = montoAGuardar(eMonto, eMontoOriginal);
 		if (!eFecha) return (msgEd = 'Falta la fecha');
 		if (!Number.isFinite(m) || m <= 0) return (msgEd = 'Monto inválido');
 		if (!ePeriodo) return (msgEd = 'Falta el periodo');
@@ -206,7 +213,7 @@
 				[eFecha, m, eMoneda, eCat, eTipo || null, eDetalle.trim() || null, ePeriodo, editId]);
 			editId = null;
 			await cargarIngresos();
-		} catch (e: any) { msgEd = 'Error: ' + (e?.message ?? e); }
+		} catch (e: any) { console.error(e); msgEdErr = true; msgEd = 'Ocurrió un error. Contactá al administrador.'; }
 	}
 	async function eliminar(id: number) {
 		if (!confirm('¿Eliminar este ingreso? No se puede deshacer.')) return;
@@ -226,6 +233,7 @@
 	<h1>Evolución de Ingresos</h1>
 	<Guia clave="ingresos-evolucion" texto="Cómo evolucionaron tus ingresos período a período, con la composición por tipo (Regular vs Extraordinario). Filtrá por fecha, categoría, tipo o detalle. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
 </div>
+{@render nav?.()}
 
 
 {#if cargando}
@@ -304,11 +312,11 @@
 
 	<h2>Registros</h2>
 	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico.</p>
-	{#if msgEd}<p class="msg-ed">{msgEd}</p>{/if}
-	<div class="regs">
+	{#if msgEd}<p class="msg-ed" class:err={msgEdErr}>{#if msgEdErr}<span class="err-x">✗</span> {/if}{msgEd}</p>{/if}
+	<div class="fichas">
 		{#each registros as i (i.id)}
 			{#if editId === i.id}
-				<div class="reg edit">
+				<div class="ficha edit">
 					<div class="reg-grid">
 						<label>Fecha<input type="date" bind:value={eFecha} /></label>
 						<label>Monto<input type="text" inputmode="decimal" use:soloNum bind:value={eMonto} /></label>
@@ -324,7 +332,7 @@
 					</div>
 				</div>
 			{:else}
-				<div class="reg">
+				<div class="ficha">
 					<div class="reg-top">
 						<span class="reg-det">{i.detalle ?? '(sin detalle)'}</span>
 						<span class="reg-monto">{orig(i.monto, i.moneda)}</span>
@@ -367,9 +375,11 @@
 	.dot-area { fill: var(--accent); }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 
-	.regs { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-	.reg { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
-	.reg.edit { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+	.fichas { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+	/* Renombrado .reg -> .ficha: mismo patrón de tarjeta de registro que el resto
+	   de la app (Brief H / A3) — antes esta pantalla lo llamaba distinto sin motivo. */
+	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 9px 12px; }
+	.ficha.edit { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
 	.reg-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 	.reg-det { font-weight: 600; font-size: 0.92rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.reg-monto { font-weight: 700; white-space: nowrap; }
@@ -382,5 +392,7 @@
 	.reg-grid input, .reg-grid select { padding: 5px; font-size: 0.9rem; }
 	.reg-acc { display: flex; gap: 8px; margin-top: 8px; }
 	.msg-ed { font-weight: 600; color: var(--text); }
+	.msg-ed.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg-ed .err-x { font-size: 1.3em; line-height: 1; }
 	.vacio { color: var(--text-dim); font-style: italic; }
 </style>

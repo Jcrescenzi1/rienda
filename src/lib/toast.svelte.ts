@@ -38,6 +38,16 @@ export class Toast {
 		this.texto = t;
 	}
 
+	// Error TÉCNICO (excepción/SQL/red) — nunca se muestra el mensaje crudo en
+	// pantalla (Brief H / B3): el detalle real va solo a consola, y en pantalla
+	// queda el texto sobrio fijo. Para errores de VALIDACIÓN de formulario
+	// ("Falta la fecha", "Monto inválido") seguí usando error() directo, esos sí
+	// son mensajes específicos y útiles que el usuario tiene que ver.
+	errorTecnico(e: unknown) {
+		console.error(e);
+		this.error('Ocurrió un error. Contactá al administrador.');
+	}
+
 	limpiar() {
 		this.cancelar();
 		this.esError = false;

@@ -5,6 +5,11 @@
 	import Guia from '$lib/Guia.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
+	import { mesCorto } from '$lib/format';
+	import type { Snippet } from 'svelte';
+
+	// Ver Gastos.svelte: `nav` se renderiza debajo del título (Brief H / B5).
+	let { nav }: { nav?: Snippet } = $props();
 
 	// Ingreso Primario regular (internamente tipo='Sueldo', categoría 'Ingreso Principal')
 	// analizado contra inflación y contra el dólar bolsa. Estos dos análisis tienen
@@ -92,7 +97,7 @@
 		});
 		const step = Math.max(1, Math.floor(n / 8));
 		const xticks = serie.map((s, i) => ({ i, p: s.periodo })).filter((_, i) => i % step === 0)
-			.map((o) => ({ x: px(o.i), label: o.p.slice(2) }));
+			.map((o) => ({ x: px(o.i), label: mesCorto(o.p) }));
 		return {
 			ingreso: linea('ingreso'), inflacion: linea('inflacion'), yticks, xticks,
 			ptsS: serie.map((s, i) => ({ x: px(i), y: py(s.ingreso) })),
@@ -142,7 +147,7 @@
 		});
 		const step = Math.max(1, Math.floor(n / 8));
 		const xticks = s.map((d, i) => ({ i, p: d.periodo })).filter((_, i) => i % step === 0)
-			.map((o) => ({ x: px(o.i), label: o.p.slice(2) }));
+			.map((o) => ({ x: px(o.i), label: mesCorto(o.p) }));
 
 		return {
 			lineaIngreso, lineaDolar, yticksL, yticksR, xticks,
@@ -166,6 +171,7 @@
 	<h1>Poder adquisitivo</h1>
 	<Guia clave="ingreso-primario" texto="Tu ingreso primario regular contra la inflación y contra el dólar bolsa. Si la línea de ingreso va por encima de la inflación, le ganás; si en USD cae mientras el dólar sube, el golpe vino del tipo de cambio." />
 </div>
+{@render nav?.()}
 
 
 {#if cargando}
@@ -192,7 +198,7 @@
 
 	<h2>Ingreso Primario regular vs Inflación</h2>
 	<div class="resumen">
-		<div class="card"><span>Inflación acum. {resumen.desde}→{resumen.hasta}</span><strong>{pct(resumen.inflAcum)}</strong></div>
+		<div class="card"><span>Inflación acum. {mesCorto(resumen.desde)}→{mesCorto(resumen.hasta)}</span><strong>{pct(resumen.inflAcum)}</strong></div>
 		<div class="card"><span>Variación nominal ingreso</span><strong>{pct(resumen.varNominal)}</strong></div>
 		<div class="card" class:ok={resumen.gano} class:bad={!resumen.gano}>
 			<span>Poder adquisitivo vs base</span><strong>{pct(brechaActual)}</strong>

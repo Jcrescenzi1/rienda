@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { hoyISO, fmtFecha, parseNum, formatNum, soloNum } from '$lib/format';
+	import { hoyISO, fmtFecha, parseNum, formatNum, soloNum, pesos, fechaHoraCorta } from '$lib/format';
 	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
 	import { actualizarPrecios } from '$lib/db/precios';
@@ -30,6 +30,7 @@
 	// Auto-actualización de precios
 	let actualizandoPrecios = $state(false);
 	let preciosMsg = $state('');
+	let preciosMsgErr = $state(false);
 	let preciosActualizadosEn = $state<string | null>(null);
 
 	// Guardar Cartera (foto)
@@ -37,6 +38,7 @@
 	let fFlujo = $state(''); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
 	let fotoFecha = $state(hoyISO());
 	let fotoMsg = $state('');
+	let fotoMsgErr = $state(false);
 
 	const anioActual = new Date().getFullYear().toString();
 
@@ -236,17 +238,15 @@
 
 	// Actualiza precios desde data912 (botón manual). El auto al abrir vive en el layout.
 	async function onActualizarPrecios() {
-		actualizandoPrecios = true; preciosMsg = '';
+		actualizandoPrecios = true; preciosMsg = ''; preciosMsgErr = false;
 		try { preciosMsg = await actualizarPrecios(); await cargarTodo(); }
-		catch (e: any) { preciosMsg = 'Error: ' + (e?.message ?? e); }
+		catch (e: any) { console.error(e); preciosMsgErr = true; preciosMsg = 'Ocurrió un error. Contactá al administrador.'; }
 		actualizandoPrecios = false;
 	}
 
-	const fmtFechaHora = (iso: string | null): string => {
-		if (!iso) return 'nunca';
-		const d = new Date(iso);
-		return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-	};
+	// Alias al helper único de format.ts (ver Brief H / A2). Mismo formato de antes,
+	// ya no reimplementado acá.
+	const fmtFechaHora = fechaHoraCorta;
 	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 2); }
 	async function guardarLiq() {
 		const s = parseNum(editSaldo);
@@ -260,7 +260,7 @@
 
 	// Guardar Cartera (snapshot) — cálculo compartido con Evolución
 	async function prepararFoto() {
-		fotoMsg = '';
+		fotoMsg = ''; fotoMsgErr = false;
 		const f = await calcularFoto();
 		fotoDolar = f.dolar;
 		fotoValorUSD = f.valorUSD;
@@ -274,11 +274,12 @@
 			await guardarSnapshot(fotoFecha, fotoValorUSD, Number.isFinite(flujo) ? flujo : 0, fotoDolar, fotoValorARS);
 			showFoto = false; fotoMsg = '📸 Cartera guardada en Evolución ✅';
 			setTimeout(() => (fotoMsg = ''), 3000);
-		} catch (e: any) { fotoMsg = 'Error: ' + (e?.message ?? String(e)); }
+		} catch (e: any) { console.error(e); fotoMsgErr = true; fotoMsg = 'Ocurrió un error. Contactá al administrador.'; }
 	}
 
-	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-	const usd = (n: number, dec = 0) => 'U$D ' + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+	// Alias locales al helper único de format.ts (ver Brief H / A1).
+	const money = pesos;
+	const usd = (n: number, dec = 0) => pesos(n, 'USD', dec);
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
 	// Mismos colores que las barras de "Exposición al tipo de cambio" de arriba.
 	const colorExposicion: Record<string, string> = { Dolar: 'var(--accent)', CER: '#4ade80', Peso: '#e8975b' };
@@ -320,7 +321,7 @@
 		<a href="/carga-inversiones" class="btn btn-primary">Movimientos</a>
 		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Cartera</button>
 	</div>
-	{#if fotoMsg}<p class="msg">{fotoMsg}</p>{/if}
+	{#if fotoMsg}<p class="msg" class:err={fotoMsgErr}>{#if fotoMsgErr}<span class="err-x">✗</span> {/if}{fotoMsg}</p>{/if}
 
 	{#if showFoto}
 		<div class="form">
@@ -380,7 +381,7 @@
 	<div class="preciosbar">
 		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
 		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
-		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · {preciosMsg}{/if}</span>
+		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
 	</div>
 	<div class="tabla-scroll">
 	<table>
@@ -503,6 +504,9 @@
 	.botones { display: flex; gap: 8px; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
+	.msg.err, .preciostamp span.err { color: var(--neg); }
+	.msg.err { display: flex; align-items: center; gap: 6px; }
+	.err-x { font-size: 1.3em; line-height: 1; }
 	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
 	.card { border: 1px solid transparent; background: var(--surface); border-radius: 8px; padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 	.card span { font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }

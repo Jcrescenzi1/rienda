@@ -4,9 +4,13 @@
 	import { setMeta } from '$lib/db/meta';
 	import { cargarModo, cargarCortes, crearAsignador, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
 	import { cargarIPC, fmtMoneda, type IPC } from '$lib/moneda';
-	import { mesActual } from '$lib/format';
+	import { mesActual, mesCorto } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
+	import type { Snippet } from 'svelte';
+
+	// Ver Gastos.svelte: `nav` se renderiza debajo del título (Brief H / B5).
+	let { nav }: { nav?: Snippet } = $props();
 
 	// Capacidad de ahorro: tasa de ahorro NETO / ingreso regular contra un objetivo
 	// editable, por MONEDA separada (ARS pesos reales, USD nominal, sin cruzar), a 6
@@ -60,8 +64,7 @@
 		cargando = false;
 	});
 
-	const MESES = ['', 'ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-	const mesCorto = (p: string) => { const [y, m] = p.split('-'); return MESES[+m] + " '" + y.slice(2); };
+	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
 	// Ventana FIJA: últimos 6 períodos del enumerador de la app (sin toggle).
 	let periodosDato = $derived.by(() => {
@@ -190,6 +193,7 @@
 	<h1>Capacidad de ahorro</h1>
 	<Guia clave="capacidad-ahorro" texto="Tu tasa de ahorro mensual (ahorro neto ÷ ingreso regular) contra un objetivo editable, por moneda separada, a 6 meses. El ahorro neto descuenta el desahorro (plata que sacaste de tu ahorro). Pesos en valor real (ajustado por inflación); dólares nominales." />
 </div>
+{@render nav?.()}
 
 {#if cargando}
 	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>

@@ -1,10 +1,11 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, calc, pesos as fmt } from '$lib/format';
+    import { fmtFecha, hoyISO, mesActual, parseNum, formatNum, calc, pesos as fmt, montoAGuardar } from '$lib/format';
     import Guia from '$lib/Guia.svelte';
     import TabsCorrRec from '$lib/TabsCorrRec.svelte';
     import Calculadora from '$lib/Calculadora.svelte';
+    import CalcIcon from '$lib/CalcIcon.svelte';
     import { Toast } from '$lib/toast.svelte';
 
     let calcAbierto = $state(false);
@@ -36,6 +37,10 @@
     let subcatNuevaNombre = $state('');
 
     let editandoId = $state<number | null>(null);
+    // Monto guardado tal cual (con toda su precisión) al abrir una edición — para
+    // no perder decimales reales si el usuario no toca el campo Monto, que ahora
+    // se prefillea redondeado a 0 decimales para mostrar (Brief H / B1).
+    let montoOriginal = $state<number | null>(null);
     let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
     const toast = new Toast();
 
@@ -146,6 +151,7 @@
 
     function resetForm() {
         editandoId = null;
+        montoOriginal = null;
         monto = ''; detalle = ''; subcatSelId = null; subcatNuevaNombre = ''; modoSubcat = 'existente';
         medio = 'debito'; tarjetaId = null; cuotas = 1;
         // La fecha NO se resetea: si cargaste o editaste un gasto, la próxima
@@ -157,7 +163,8 @@
     function editar(g: any) {
         editandoId = g.id;
         fecha = g.fecha;
-        monto = formatNum(g.monto);
+        monto = formatNum(g.monto, 0);
+        montoOriginal = g.monto;
         moneda = g.moneda;
         categoriaId = g.categoria_id;
         detalle = g.detalle;
@@ -182,7 +189,7 @@
 
     async function guardar() {
         toast.limpiar();
-        const m = parseNum(monto);
+        const m = montoAGuardar(monto, montoOriginal);
         if (!fecha) return toast.error('Falta la fecha');
         if (!Number.isFinite(m) || m <= 0) return toast.error('El monto debe ser mayor a 0');
         if (!categoriaId) return toast.error('Elegí una categoría');
@@ -230,7 +237,7 @@
             await cargarBase();
             await cargarUltimos();
         } catch (e: any) {
-            toast.error('Error: ' + (e?.message ?? String(e)));
+            toast.errorTecnico(e);
         }
     }
 
@@ -268,7 +275,7 @@
 <div class="form">
     {#if editandoId}<p class="editando">✏ Editando gasto #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
     <label>Fecha<input type="date" bind:value={fecha} /></label>
-    <label>Monto<span class="monto-row"><input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /><button type="button" class="calc-btn" onclick={() => (calcAbierto = true)} aria-label="Abrir calculadora" title="Calculadora"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="11" x2="8" y2="11"/><line x1="12" y1="11" x2="12" y2="11"/><line x1="16" y1="11" x2="16" y2="11"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/></svg></button></span></label>
+    <label>Monto<span class="monto-row"><input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /><button type="button" class="calc-btn" onclick={() => (calcAbierto = true)} aria-label="Abrir calculadora" title="Calculadora"><CalcIcon /></button></span></label>
     <label>Moneda
         <select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
     </label>
@@ -326,7 +333,7 @@
     {/if}
 
     <button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar gasto' : 'Guardar gasto'}</button>
-    {#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
+    {#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 </div>
 </details>
 
@@ -388,12 +395,11 @@
     .aviso-tarjeta { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); border: 1px dashed var(--warn); padding: 10px; border-radius: 6px; margin: 0; line-height: 1.4; }
     .hint { font-size: 0.85rem; color: var(--text-dim); margin: 0; }
     .msg { font-weight: 600; color: var(--text); }
+    /* Error técnico: inverso del feedback de éxito (Brief H / B3) */
+    .msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+    .msg .err-x { font-size: 1.3em; line-height: 1; }
     .editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-    .form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
-    .form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
-    .form-panel summary::-webkit-details-marker { display: none; }
-    .form-panel[open] summary { border-bottom: 1px solid var(--border); }
-    .form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+    /* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 
     /* Filtros de la lista */
     .filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }

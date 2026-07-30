@@ -173,28 +173,43 @@
 </script>
 
 {#if tab === 'gastos'}
-	<nav class="subnav">
-		<button onclick={() => (tab = 'categorias')}>Análisis por categoría →</button>
-		<button onclick={() => (tab = 'capacidad')}>Capacidad de ahorro →</button>
-	</nav>
-	<Gastos />
+	<Gastos>
+		{#snippet nav()}
+			<nav class="seg">
+				<button onclick={() => (tab = 'categorias')}>Análisis por categoría →</button>
+				<button onclick={() => (tab = 'capacidad')}>Capacidad de ahorro →</button>
+			</nav>
+		{/snippet}
+	</Gastos>
 {:else if tab === 'ingresos'}
-	<nav class="subnav">
-		<button onclick={() => (tab = 'poder')}>Poder adquisitivo →</button>
-	</nav>
-	<Ingresos />
+	<Ingresos>
+		{#snippet nav()}
+			<nav class="seg">
+				<button onclick={() => (tab = 'poder')}>Poder adquisitivo →</button>
+			</nav>
+		{/snippet}
+	</Ingresos>
 {:else if tab === 'categorias'}
-	<button class="volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
-	<Categorias irAGastos={verSubcatEnGastos} />
+	<Categorias irAGastos={verSubcatEnGastos}>
+		{#snippet nav()}
+			<button class="btn-volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
+		{/snippet}
+	</Categorias>
 {:else if tab === 'capacidad'}
-	<button class="volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
-	<CapacidadAhorro />
+	<CapacidadAhorro>
+		{#snippet nav()}
+			<button class="btn-volver" onclick={() => (tab = 'gastos')}>← Volver a Evolución de Gastos</button>
+		{/snippet}
+	</CapacidadAhorro>
 {:else if tab === 'poder'}
-	<button class="volver" onclick={() => (tab = 'ingresos')}>← Volver a Evolución de Ingresos</button>
-	<Poder />
+	<Poder>
+		{#snippet nav()}
+			<button class="btn-volver" onclick={() => (tab = 'ingresos')}>← Volver a Evolución de Ingresos</button>
+		{/snippet}
+	</Poder>
 {:else if tab === 'resumen'}
-	<button class="volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
 {#if cargando}
+	<button class="btn-volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
 	<div class="sk-vistas">
 		<Skeleton w="92px" h="30px" radius="6px" />
 		<Skeleton w="122px" h="30px" radius="6px" />
@@ -211,6 +226,7 @@
 		<h1>Ingresos vs Gastos</h1>
 		<Guia clave="resumen-evolucion" texto="Comparación período a período entre los ingresos y los gastos reportados. Verde: ingresos, roja: gastos, por cada período. El Balance es la diferencia entre ingresos y gastos de todo el rango visible. El selector de moneda (USD / pesos reales / nominales) solo cambia la unidad de lectura, no los datos." />
 	</div>
+	<button class="btn-volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
 		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
@@ -275,13 +291,9 @@
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
-	/* Sub-navegación a las vistas hijas (bajo la madre). Botones planos secundarios. */
-	.subnav { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 14px; }
-	.subnav button { padding: 8px 12px; font-size: 0.88rem; line-height: 1.15; border: 1px solid var(--border); background: var(--surface); color: var(--accent); border-radius: 8px; cursor: pointer; }
-	.subnav button:hover { border-color: var(--accent); }
-	/* Volver a la madre desde un hijo (mismo patrón que el resto de la app). */
-	.volver { display: inline-block; margin: 2px 0 12px; background: none; border: none; padding: 0; color: var(--accent); font-size: 0.85rem; cursor: pointer; }
-	.volver:hover { text-decoration: underline; }
+	/* .subnav/.volver eliminados (Brief H / B5): la sub-navegación y el "← Volver"
+	   ahora se renderizan DENTRO de cada hijo (snippet `nav`), debajo del título,
+	   con las clases globales .seg y .btn-volver de +layout.svelte. */
 	.sw-ing { background: var(--pos); }
 	.sw-gas { background: var(--neg); }
 	.bar-ing { fill: var(--pos); }

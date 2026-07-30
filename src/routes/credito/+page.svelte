@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
-    import { parseNum, formatNum, soloNum, mesActual } from '$lib/format';
+    import { parseNum, formatNum, soloNum, mesActual, mesCorto } from '$lib/format';
     import { periodoActivoCC } from '$lib/periodo';
     import Guia from '$lib/Guia.svelte';
     import Skeleton from '$lib/Skeleton.svelte';
@@ -149,7 +149,7 @@
         <tbody>
             {#each meses as m (m)}
                 <tr class="mes" onclick={() => toggleMes(m)}>
-                    <td>{mesAbierto === m ? '▾' : '▸'} {m}</td>
+                    <td>{mesAbierto === m ? '▾' : '▸'} {mesCorto(m)}</td>
                     <td class="num total">
                         {#if vacia(totalMes[m])}—{:else}
                             {#if totalMes[m].ars}<div>${n0(totalMes[m].ars)}</div>{/if}

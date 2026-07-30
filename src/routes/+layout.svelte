@@ -29,6 +29,7 @@
 	let modoNuevo = $state<ModoPeriodo>('calendario'); // preseleccionado (Capa 1)
 	let creando = $state(false);
 	let bienvenidaMsg = $state('');
+	let bienvenidaMsgErr = $state(false);
 	let importInputBienvenida: HTMLInputElement | undefined = $state();
 
 	// Stepper de bienvenida (Capa 1): 1 Filosofía · 2 Nombre · 3 Modo · 4 Data · 5 Cierre.
@@ -75,11 +76,17 @@
 	}
 
 	async function onCrearPerfil() {
+		bienvenidaMsgErr = false;
 		if (!nombreNuevo.trim()) { bienvenidaMsg = 'Escribí tu nombre.'; return; }
 		if (!modoNuevo) { bienvenidaMsg = 'Elegí una opción de ingresos.'; return; }
 		creando = true; bienvenidaMsg = '';
 		try { await crearPerfil(nombreNuevo, modoNuevo); location.href = '/'; } // salir del onboarding siempre en Cuenta Corriente
-		catch (e: any) { bienvenidaMsg = e?.message ?? String(e); creando = false; }
+		catch (e: any) {
+			console.error(e); // Brief H / B3: detalle a consola, no crudo en pantalla.
+			bienvenidaMsgErr = true;
+			bienvenidaMsg = 'Ocurrió un error. Contactá al administrador.';
+			creando = false;
+		}
 	}
 
 	// Import en la bienvenida (para recuperar backup en instalación nueva)
@@ -95,7 +102,11 @@
 			alert('Importación completa. La página se va a recargar.');
 			location.href = '/'; // salir del onboarding siempre en Cuenta Corriente
 		} catch (err: any) {
-			alert(err?.message ?? String(err));
+			// Brief H / B3: detalle técnico solo a consola, nunca crudo en pantalla.
+			// Sigue siendo alert() nativo (no hay dónde mostrar UI inline acá antes
+			// de salir del onboarding), pero el contenido ya no expone el error crudo.
+			console.error(err);
+			alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
 			input.value = '';
 		}
@@ -122,7 +133,8 @@
 			alert(msg);
 			location.reload();
 		} catch (e: any) {
-			alert('Error: ' + (e?.message ?? e));
+			console.error(e); // Brief H / B3: detalle a consola, no crudo en pantalla.
+			alert('Ocurrió un error. Contactá al administrador.');
 			actualizandoCotiz = false;
 		}
 	}
@@ -196,7 +208,7 @@
 					<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim()}>{creando ? 'Creando…' : 'Empezar'}</button>
 				{/if}
 			</div>
-			{#if bienvenidaMsg}<p class="bmsg">{bienvenidaMsg}</p>{/if}
+			{#if bienvenidaMsg}<p class="bmsg" class:err={bienvenidaMsgErr}>{#if bienvenidaMsgErr}<span class="err-x">✗</span> {/if}{bienvenidaMsg}</p>{/if}
 
 			{#if paso === 1}
 				<div class="separador"><span>o</span></div>
@@ -397,13 +409,9 @@
 	:global(.del:hover) { background: rgba(248, 113, 113, 0.28); }
 	:global(.del.off) { opacity: 0.35; cursor: not-allowed; }
 
-	/* Toggles estandarizados (mismas clases que ya usan las pantallas) */
-	:global(.vistas button), :global(.tabs button), :global(.periodos button), :global(.toggle button) {
-		font: inherit; font-weight: 600; font-size: 0.82rem; line-height: 1;
-		padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
-		background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap;
-	}
-	:global(.vistas button.activo), :global(.tabs button.activo), :global(.periodos button.activo), :global(.toggle button.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
+	/* .vistas/.tabs/.periodos/.toggle YA vivían fusionados con .seg más abajo
+	   (Brief H / A3): eran una regla duplicada con los mismos valores exactos,
+	   no una variante distinta — ver el selector combinado en ":global(.seg > button)". */
 	:global(.modo-btns button), :global(.medio button), :global(.acciones button) {
 		font: inherit; font-weight: 600; font-size: 0.85rem; line-height: 1;
 		flex: 1; padding: 8px 6px; border: 1px solid var(--border); border-radius: 6px;
@@ -420,20 +428,33 @@
 		padding: 14px 16px;
 	}
 
+	/* ===== Panel colapsable de alta ("+ Cargar/Agregar...", una sola definicion
+	   para toda la app — antes copiada igual en 6 pantallas, ver Brief H / A3) ===== */
+	:global(.form-panel) { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
+	:global(.form-panel summary) { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
+	:global(.form-panel summary::-webkit-details-marker) { display: none; }
+	:global(.form-panel[open] summary) { border-bottom: 1px solid var(--border); }
+	:global(.form-panel .form) { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+
 	/* Links de navegacion / texto */
 	:global(.btn-volver) { display: inline-block; background: none; border: none; cursor: pointer; padding: 0; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }
 	:global(.btn-volver:hover) { text-decoration: underline; }
 	:global(.link) { background: none; border: none; color: var(--accent); cursor: pointer; text-decoration: underline; font-size: 0.85rem; padding: 0; }
 
-	/* Control segmentado: pestanas / vistas / modo / medio */
+	/* Control segmentado (pill): fuente única para .seg y sus alias históricos
+	   .vistas/.tabs/.periodos/.toggle (Brief H / A3 — antes era una regla
+	   duplicada letra por letra en dos bloques separados de este mismo archivo,
+	   no una variante visual distinta; queda igual a como se veía). */
 	:global(.seg) { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-	:global(.seg > button), :global(.seg > a) {
+	:global(.seg > button), :global(.seg > a),
+	:global(.vistas button), :global(.tabs button), :global(.periodos button), :global(.toggle button) {
 		font: inherit; font-weight: 600; font-size: 0.82rem; line-height: 1;
 		padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px;
 		background: var(--surface-2); color: var(--text); cursor: pointer; white-space: nowrap; text-decoration: none;
 	}
 	:global(.seg > button.is-active), :global(.seg > a.is-active),
-	:global(.seg > button.activo), :global(.seg > a.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
+	:global(.seg > button.activo), :global(.seg > a.activo),
+	:global(.vistas button.activo), :global(.tabs button.activo), :global(.periodos button.activo), :global(.toggle button.activo) { background: var(--accent); color: #fff; border-color: var(--accent); }
 	:global(.seg-block) { display: flex; }
 	:global(.seg-block > button) { flex: 1; border-radius: 6px; padding: 8px 6px; }
 
@@ -526,6 +547,8 @@
 	.crear { background: var(--accent); color: #fff; border: none; border-radius: 6px; padding: 10px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
 	.crear:disabled { opacity: 0.6; cursor: default; }
 	.bmsg { font-size: 0.82rem; color: var(--neg); margin: 0; }
+	.bmsg.err { display: flex; align-items: center; gap: 6px; }
+	.bmsg .err-x { font-size: 1.3em; line-height: 1; }
 	.separador { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 0.8rem; }
 	.separador::before, .separador::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 	.importar-b { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px; cursor: pointer; font-size: 0.9rem; }

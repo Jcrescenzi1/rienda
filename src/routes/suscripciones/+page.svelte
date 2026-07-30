@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso } from '$lib/format';
+	import { mesActual, parseNum, formatNum, soloNum, fechaCobroDefault, pesos as peso, montoAGuardar, mesCorto } from '$lib/format';
 	import { setMeta } from '$lib/db/meta';
-	import { periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, type ModoPeriodo } from '$lib/periodo';
+	import { periodoActivoCC, cargarModo, diaCobroActivo, ordenDia, addMonths, type ModoPeriodo } from '$lib/periodo';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import { Toast } from '$lib/toast.svelte';
@@ -12,6 +12,11 @@
 	// en el mes actual. Es solo el default inicial: el usuario lo cambia libremente y
 	// el cambio acá NO se propaga de vuelta a la Home.
 	let periodo = $state(periodoActivoCC() ?? mesActual());
+	// Selector de período alineado al patrón de la Home: flechas + dropdown nativo
+	// superpuesto (Brief H / B6 — antes era un <input type="month"> suelto).
+	let mesInput: HTMLInputElement | undefined = $state();
+	function vecino(dir: -1 | 1) { periodo = addMonths(periodo, dir); cargar(); }
+	function abrirDropdown() { try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); } }
 
 	let subs = $state<any[]>([]);
 	let modo = $state<ModoPeriodo>('sueldo');
@@ -32,6 +37,9 @@
 
 	let disparando = $state<number | null>(null);
 	let dMonto = $state('');
+	// Monto del fijo tal cual (precisión completa) al abrir el disparo del mes —
+	// ver montoAGuardar (Brief H / B1): el prefill ahora se redondea a 0 decimales.
+	let dMontoOriginal = $state<number | null>(null);
 	let dFecha = $state('');
 
 	// Form unificado (alta + edicion). editId null = alta, numero = edicion.
@@ -40,6 +48,9 @@
 	let fNombre = $state('');
 	let fDetalle = $state('');
 	let fMonto = $state('');
+	// Monto original del fijo (precisión completa) al abrir su edición — ver
+	// montoAGuardar (Brief H / B1): el prefill ahora se redondea a 0 decimales.
+	let fMontoOriginal = $state<number | null>(null);
 	let fMoneda = $state('ARS');
 	let fCatId = $state<number | null>(null);
 	let fSubcatId = $state('');
@@ -175,6 +186,7 @@
 		fNombre = '';
 		fDetalle = '';
 		fMonto = '';
+		fMontoOriginal = null;
 		fMoneda = 'ARS';
 		fCatId = null;   // arranca vacío: la categoría se elige a mano (obligatoria)
 		fSubcatId = '';
@@ -195,7 +207,8 @@
 		editId = s.id;
 		fNombre = s.nombre;
 		fDetalle = s.detalle ?? s.nombre;
-		fMonto = formatNum(s.monto);
+		fMonto = formatNum(s.monto, 0);
+		fMontoOriginal = s.monto;
 		fMoneda = s.moneda;
 		fCatId = s.categoria_id;
 		fSubcatId = s.scid != null ? String(s.scid) : '';
@@ -208,7 +221,7 @@
 
 	async function guardar() {
 		toast.limpiar();
-		const m = parseNum(fMonto);
+		const m = montoAGuardar(fMonto, fMontoOriginal);
 		if (!fNombre.trim()) return toast.error('Falta el nombre');
 		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
 		if (!fCatId) return toast.error('Elegí categoría');
@@ -234,7 +247,7 @@
 			resetForm();
 			await cargar();
 		} catch (e: any) {
-			toast.error('Error: ' + (e?.message ?? String(e)));
+			toast.errorTecnico(e);
 		}
 	}
 
@@ -248,14 +261,14 @@
 	}
 
 	function iniciarDisparo(s: any) {
-		disparando = s.id; dMonto = formatNum(s.monto);
+		disparando = s.id; dMonto = formatNum(s.monto, 0); dMontoOriginal = s.monto;
 		// Default editable: hoy montado sobre el mes del selector. El gasto fijo no
 		// abre corte -> el periodo del registro sigue siendo el del selector (guard).
 		dFecha = fechaCobroDefault(periodo);
 		toast.limpiar();
 	}
 	async function confirmarDisparo(s: any) {
-		const m = parseNum(dMonto);
+		const m = montoAGuardar(dMonto, dMontoOriginal);
 		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
 		if (!dFecha) return toast.error('Falta la fecha');
 		try {
@@ -268,7 +281,7 @@
 			await query('INSERT INTO suscripcion_registro (suscripcion_id,gasto_id,periodo) VALUES (?,?,?)', [s.id, g[0].id, periodo]);
 			disparando = null; toast.exito(`"${s.nombre}" registrada en ${periodo} ✅`);
 			await cargar();
-		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
+		} catch (e: any) { toast.errorTecnico(e); }
 	}
 
 </script>
@@ -280,7 +293,14 @@
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 	<TabsCorrRec activo="recurrente" corriente="/gastos" recurrente="/suscripciones" />
-	<label class="sel">Mes / Año: <input type="month" bind:value={periodo} onchange={cargar} /></label>
+	<div class="periodo-nav">
+		<button class="nav-flecha" onclick={() => vecino(-1)} aria-label="Período anterior" title="Período anterior">‹</button>
+		<span class="periodo-medio">
+			<button class="periodo-texto" onclick={abrirDropdown} title="Tocar para elegir otro período">{mesCorto(periodo)}</button>
+			<input type="month" bind:this={mesInput} bind:value={periodo} onchange={cargar} class="periodo-overlay" aria-label="Elegir período" />
+		</span>
+		<button class="nav-flecha" onclick={() => vecino(1)} aria-label="Período siguiente" title="Período siguiente">›</button>
+	</div>
 </div>
 
 <div class="fijo-total">
@@ -372,24 +392,19 @@
 	{/each}
 	{#if subs.length === 0}<p class="vacio">No hay gastos recurrentes. Agregá el primero desde “➕ Agregar gasto recurrente”, arriba.</p>{/if}
 </div>
-{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
+{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 
 
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.sel { font-size: 0.9rem; display: inline-flex; flex-direction: row; gap: 8px; align-items: center; margin-top: 4px; }
 	.fijo-total { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
 	.fijo-total span { font-size: 0.75rem; color: var(--text-dim); }
 	.fijo-total strong { font-size: 1.6rem; }
 	.fijo-nota { font-size: 0.72rem !important; }
 	.disparo-subcat { flex-direction: row !important; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 10px; flex-wrap: wrap; }
 	.disparo-subcat select { max-width: 240px; }
-	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
-	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
-	.form-panel summary::-webkit-details-marker { display: none; }
-	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
-	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 	.form.edit { border-color: var(--accent); }
 	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 6px; font-size: 0.95rem; }
@@ -402,6 +417,8 @@
 	.dim { color: var(--text-dim); font-size: 0.85rem; }
 	.vacio { color: var(--text-dim); font-style: italic; }
 	.msg { color: var(--text-dim); font-weight: 600; }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg .err-x { font-size: 1.3em; line-height: 1; }
 
 	/* Total de recurrentes activos, una línea por moneda (sin convertir) */
 	.totales { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 10px 0; }
@@ -426,5 +443,9 @@
 	/* Nav superior de Corriente/Recurrente: volver + tabs (+ selector de periodo si aplica), apilados */
 	.cr-nav { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 4px 0 14px; }
 	.cr-nav :global(.btn-volver) { margin: 0; }
-	.cr-nav :global(.sel) { margin: 0; }
+	.periodo-nav { display: inline-flex; align-items: stretch; gap: 4px; }
+	.nav-flecha { font-size: 1.2rem; line-height: 1; padding: 4px 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; cursor: pointer; color: var(--text); }
+	.periodo-medio { position: relative; display: inline-flex; }
+	.periodo-texto { font-size: 0.95rem; font-weight: 600; padding: 4px 12px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; cursor: pointer; color: var(--text); min-width: 120px; text-align: center; }
+	.periodo-overlay { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; margin: 0; }
 </style>

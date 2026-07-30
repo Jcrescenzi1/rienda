@@ -27,11 +27,36 @@ export function formatNum(n: number | null | undefined, dec = 2): string {
 	return n.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
-// Importe para MOSTRAR: formato AR redondeado sin decimales, con símbolo de
-// moneda ($ / U$D). La carga y el guardado mantienen los decimales; esto es solo
-// presentación. Único helper de moneda para las vistas de finanzas personales.
-export function pesos(n: number | null | undefined, mon = 'ARS'): string {
-	return (mon === 'USD' ? 'U$D ' : '$') + (Math.round(Number(n)) || 0).toLocaleString('es-AR');
+// Para inputs de "Monto" en edición cuyo prefill se redondea a 0 decimales para
+// mostrar (Brief H / B1): si el usuario NO tocó el campo, devuelve el monto
+// ORIGINAL con toda su precisión (nunca se pierde un decimal real guardado solo
+// porque el display ahora lo redondea); si lo tocó, parsea lo que haya tipeado.
+// `original` es el monto tal cual vino de la base al abrir la edición.
+export function montoAGuardar(textoActual: string, original: number | null | undefined): number {
+	if (original != null && textoActual === formatNum(original, 0)) return original;
+	return parseNum(textoActual);
+}
+
+// Importe para MOSTRAR: formato AR con símbolo de moneda ($ / U$D), redondeado a
+// `dec` decimales (default 0 = sin decimales, el criterio para montos de plata:
+// gastos/ingresos/presupuestos/totales/tipo de cambio/liquidez común). Para precio
+// de activo financiero (bonos/acciones/CEDEARs) se llama con dec=2 (o el que pida
+// el caso puntual) para conservar los centavos. La carga y el guardado mantienen
+// siempre el dato con todos sus decimales; esto es solo presentación. Único
+// helper de moneda de la app — no reimplementar localmente por pantalla.
+export function pesos(n: number | null | undefined, mon = 'ARS', dec = 0): string {
+	const v = Number(n) || 0;
+	const factor = 10 ** dec;
+	const redondeado = Math.round(v * factor) / factor;
+	return (mon === 'USD' ? 'U$D ' : '$') + redondeado.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+// Cantidad de unidades de un activo para MOSTRAR: sin símbolo de moneda, hasta
+// `dec` decimales pero SIN mínimo forzado (10 se ve "10", 10.5 se ve "10,5") —
+// a diferencia de pesos()/precios, que sí fuerzan el mismo número de decimales
+// siempre. Único helper de unidades de la app.
+export function unidades(n: number | null | undefined, dec = 2): string {
+	return (Number(n) || 0).toLocaleString('es-AR', { maximumFractionDigits: dec });
 }
 
 // Action Svelte: filtra en vivo el input al teclear.
@@ -195,6 +220,7 @@ export function fechaCobroDefault(periodo: string): string {
 
 // "yyyy-mm-dd" -> "dd-mmm" para tablas (ej. "2025-06-05" -> "05-jun").
 // Parsea el string crudo (no new Date) para evitar corrimiento de día por UTC.
+// Criterio único de la app para FECHA PUNTUAL de un movimiento (Brief H / B2).
 const MESES_AR = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 export function fmtFecha(iso: string): string {
 	if (!iso) return '';
@@ -202,4 +228,28 @@ export function fmtFecha(iso: string): string {
 	const mi = Number(m) - 1;
 	if (mi < 0 || mi > 11 || !d) return iso;
 	return `${d}-${MESES_AR[mi]}`;
+}
+
+// "yyyy-mm" (o "yyyy-mm-dd", el día se ignora) -> "jun '26". Criterio único de la
+// app para PERÍODO COMO UNIDAD: columnas de consolidado, selectores de mes, ejes
+// de gráfico de evolución (Brief H / B2). Nunca mes completo (desborda, ej.
+// "septiembre"). Reemplaza las ~6 reimplementaciones locales de "mesCorto"/
+// "labelMes" que había repartidas por evol/* y Home.
+export function mesCorto(periodo: string): string {
+	if (!periodo) return '';
+	const [y, m] = periodo.split('-');
+	const mi = Number(m) - 1;
+	if (mi < 0 || mi > 11 || !y) return periodo;
+	return `${MESES_AR[mi]} '${y.slice(2)}`;
+}
+
+// Timestamp de sistema (última edición/importación/actualización de precios) para
+// MOSTRAR: "28/07 14:30", SIEMPRE sin año (criterio único, Brief H / B2 — antes
+// convivían una versión con año en Datos y otra sin año en Inversiones).
+// `sinDato` es el texto para iso null/vacío (cada pantalla puede pedir su propia
+// palabra, ej. "Nunca" vs "nunca").
+export function fechaHoraCorta(iso: string | null | undefined, sinDato = 'nunca'): string {
+	if (!iso) return sinDato;
+	const d = new Date(iso);
+	return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }

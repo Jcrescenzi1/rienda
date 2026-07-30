@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { query, queryBatch } from '$lib/db/client';
-	import { fmtFecha, hoyISO, parseNum, formatNum, calc, pesos as peso } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, calc, pesos as peso, montoAGuardar } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import TabsCorrRec from '$lib/TabsCorrRec.svelte';
 	import Calculadora from '$lib/Calculadora.svelte';
+	import CalcIcon from '$lib/CalcIcon.svelte';
 	import { periodoRegla } from '$lib/periodo';
 	import { Toast } from '$lib/toast.svelte';
 
@@ -21,6 +22,9 @@
 	let formAbierto = $state(false); // panel de alta/edicion colapsable (solo UI)
 	let fecha = $state(hoyISO());
 	let monto = $state('');
+	// Monto guardado tal cual (con toda su precisión) al abrir una edición — ver
+	// montoAGuardar (Brief H / B1): el prefill ahora se redondea a 0 decimales.
+	let montoOriginal = $state<number | null>(null);
 	let moneda = $state('ARS');
 	let categoria = $state<'Ingreso Principal' | 'Ingresos Secundarios' | 'Otros' | 'Desahorro'>('Ingreso Principal');
 	let tipo = $state<'Sueldo' | 'Aciclico'>('Sueldo');
@@ -69,6 +73,7 @@
 
 	function resetForm() {
 		editandoId = null;
+		montoOriginal = null;
 		periodoTocado = false;
 		// La fecha NO se resetea: si cargaste o editaste un ingreso, la próxima
 		// carga arranca con esa misma fecha. Al abrir la página, arranca en hoy.
@@ -84,7 +89,8 @@
 		editandoId = i.id;
 		periodoTocado = false; // respeta el período guardado hasta que toque fecha/cat
 		fecha = i.fecha;
-		monto = formatNum(i.monto);
+		monto = formatNum(i.monto, 0);
+		montoOriginal = i.monto;
 		moneda = i.moneda;
 		categoria = i.categoria;
 		tipo = i.tipo === 'Aciclico' ? 'Aciclico' : 'Sueldo';
@@ -97,7 +103,7 @@
 
 	async function guardar() {
 		toast.limpiar();
-		const m = parseNum(monto);
+		const m = montoAGuardar(monto, montoOriginal);
 		if (!fecha) return toast.error('Falta la fecha');
 		if (!Number.isFinite(m) || m <= 0) return toast.error('Monto inválido');
 		if (!periodoIngreso) return toast.error('Falta el período');
@@ -122,7 +128,7 @@
 			resetForm();
 			await cargar();
 		} catch (e: any) {
-			toast.error('Error: ' + (e?.message ?? String(e)));
+			toast.errorTecnico(e);
 		}
 	}
 
@@ -141,7 +147,9 @@
 	// Etiqueta visible del tipo (interno Sueldo/Aciclico → Regular/Extraordinario)
 	const tipoLabel = (t: string | null) => t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : '—';
 	// Etiqueta visible de la categoría para la ficha
-	const catLabel = (c: string) => c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundario' : c === 'Desahorro' ? 'Desahorro' : 'Otros';
+	// "Secundarios" (plural, Brief H / B8 — antes decía "Secundario" acá y
+	// "Secundarios" en Ingresos Fijos, misma categoría con dos etiquetas).
+	const catLabel = (c: string) => c === 'Ingreso Principal' ? 'Principal' : c === 'Ingresos Secundarios' ? 'Secundarios' : c === 'Desahorro' ? 'Desahorro' : 'Otros';
 	// El período difiere del mes de la fecha de cobro (caso informativo)
 	const periodoDifiere = (i: any) => i.periodo && i.periodo !== i.fecha?.slice(0, 7);
 
@@ -178,7 +186,7 @@
 <div class="form">
 	{#if editandoId}<p class="editando">✏ Editando ingreso #{editandoId} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 	<label>Fecha<input type="date" bind:value={fecha} onchange={() => (periodoTocado = true)} /></label>
-	<label>Monto<span class="monto-row"><input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /><button type="button" class="calc-btn" onclick={() => (calcAbierto = true)} aria-label="Abrir calculadora" title="Calculadora"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><line x1="8" y1="15" x2="8" y2="15"/><line x1="12" y1="15" x2="12" y2="15"/><line x1="16" y1="15" x2="16" y2="18"/></svg></button></span></label>
+	<label>Monto<span class="monto-row"><input type="text" inputmode="decimal" use:calc bind:value={monto} placeholder="0,00" /><button type="button" class="calc-btn" onclick={() => (calcAbierto = true)} aria-label="Abrir calculadora" title="Calculadora"><CalcIcon /></button></span></label>
 	<label>Moneda<select bind:value={moneda}><option>ARS</option><option>USD</option></select></label>
 
 	<label>Categoría
@@ -204,7 +212,7 @@
 
 	<label>Detalle (opcional)<input bind:value={detalle} placeholder="Ej: Aguinaldo, Cochera, Dólares…" /></label>
 	<button class="btn btn-primary" onclick={guardar}>{editandoId ? 'Actualizar ingreso' : 'Guardar ingreso'}</button>
-	{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
+	{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 </div>
 </details>
 
@@ -266,11 +274,7 @@
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.78rem; color: var(--text-dim); margin: 0; line-height: 1.35; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
-	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
-	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
-	.form-panel summary::-webkit-details-marker { display: none; }
-	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
-	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 
 	/* Filtros de la lista */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
@@ -298,6 +302,8 @@
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
 	.vacio { color: var(--text-dim); font-style: italic; }
 	.msg { font-weight: 600; color: var(--text); }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg .err-x { font-size: 1.3em; line-height: 1; }
 
 	/* Nav superior de Corriente/Recurrente: volver + tabs (+ selector de periodo si aplica), apilados */
 	.cr-nav { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; margin: 4px 0 14px; }

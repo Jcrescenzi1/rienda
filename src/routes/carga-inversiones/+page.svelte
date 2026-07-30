@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, calc } from '$lib/format';
+	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, calc, pesos, unidades } from '$lib/format';
 	import { dolarActual } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
 	import { Toast } from '$lib/toast.svelte';
@@ -211,7 +211,7 @@
 			}
 			resetForm();
 			await cargarBase(); await cargarActivos(); await cargarCaja();
-		} catch (e: any) { toast.error('Error: ' + (e?.message ?? String(e))); }
+		} catch (e: any) { toast.errorTecnico(e); }
 	}
 
 	async function borrarActivo(m: any) {
@@ -225,8 +225,9 @@
 		await cargarActivos();
 	}
 
-	const money = (n: number, mon: string, dec = 0) => (mon === 'USD' ? 'U$D ' : '$') + Number(n || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-	const nf = (n: number) => Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+	// Alias locales al helper único de format.ts (ver Brief H / A1).
+	const money = pesos;
+	const nf = unidades;
 </script>
 
 <div class="titulo-guia">
@@ -288,8 +289,8 @@
 			<p class="hint">Entra {money((Number.isFinite(rentaN) ? rentaN : 0) + (Number.isFinite(amortN) ? amortN : 0), fMoneda, 2)} a Líquido {fMoneda} · corrige el resultado del activo (no mueve unidades).</p>
 		{/if}
 	{/if}
-	<button class="btn btn-success" onclick={guardar}>Guardar</button>
-	{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
+	<button class="btn btn-primary" onclick={guardar}>Guardar</button>
+	{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 </div>
 </details>
 
@@ -363,13 +364,11 @@
 	input, select { padding: 6px; font-size: 0.95rem; }
 	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
 	.msg { font-weight: 600; margin: 6px 0; }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg .err-x { font-size: 1.3em; line-height: 1; }
 
 	/* Panel de carga colapsable (patron estandar, igual que Fijos) */
-	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
-	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
-	.form-panel summary::-webkit-details-marker { display: none; }
-	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
-	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 
 	/* Filtros de cada libro */
 	.filtros-tipo { margin: 8px 0; }

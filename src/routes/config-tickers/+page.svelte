@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { actualizarPrecios } from '$lib/db/precios';
 	import { Toast } from '$lib/toast.svelte';
+	import { unidades } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 
 	const TIPOS_ACTIVO = ['Bono', 'ON', 'FCI', 'Accion', 'CEDEAR', 'Indice'];
@@ -133,19 +134,27 @@
 			await cargar();
 		} catch (e: any) {
 			const m = String(e?.message ?? e);
-			toast.error(/unique/i.test(m) ? `Ya existe un activo con el ticker "${ticker}"` : 'Error: ' + m);
+			// Caso amigable ya identificado (violación UNIQUE) se mantiene; cualquier
+			// otro error técnico pasa por el patrón único de B3 (detalle solo a consola).
+			if (/unique/i.test(m)) toast.error(`Ya existe un activo con el ticker "${ticker}"`);
+			else toast.errorTecnico(e);
 		}
 	}
 
 	async function actualizarAhora() {
 		actualizando = true;
 		try { toast.exito(await actualizarPrecios()); await cargar(); }
-		catch (e: any) { toast.error('Error: ' + (e?.message ?? e)); }
+		catch (e: any) { toast.errorTecnico(e); }
 		actualizando = false;
 	}
 
+	// Delega el formateo numérico al helper único de format.ts (ver Brief H / A1).
+	// OJO: acá el precio se muestra hasta 2 decimales SIN forzar los dos (150 → "150",
+	// no "150,00") — comportamiento original de esta ficha, distinto del de la tabla
+	// de Cartera en Inversiones (que sí fuerza 2 fijos); por eso usa unidades(), no
+	// pesos(). Se conserva además el caso especial "sin precio todavía" (→ "—").
 	const money = (n: number | null, mon: string) =>
-		n == null ? '—' : (mon === 'USD' ? 'U$D ' : '$') + Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 });
+		n == null ? '—' : (mon === 'USD' ? 'U$D ' : '$') + unidades(n, 2);
 </script>
 
 <div class="titulo-guia">
@@ -174,7 +183,7 @@
 			<select bind:value={fExposicion} onchange={() => (fExpoTocada = true)}>{#each EXPOSICIONES as e}<option value={e}>{e}</option>{/each}</select>
 		</label>
 		<button class="btn btn-primary" onclick={guardar}>{editId ? 'Actualizar activo' : 'Guardar activo'}</button>
-		{#if toast.texto}<p class="msg">{toast.texto}</p>{/if}
+		{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 	</div>
 </details>
 
@@ -246,14 +255,12 @@
 	ul.nota li { margin: 4px 0; }
 	.acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
 	.msg { font-weight: 600; color: var(--text); }
+	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
+	.msg .err-x { font-size: 1.3em; line-height: 1; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
 
 	/* Panel de carga colapsable (patrón estándar, igual que Gastos/Ingresos) */
-	.form-panel { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); margin: 12px 0; }
-	.form-panel summary { cursor: pointer; padding: 11px 14px; font-family: var(--font-display); font-weight: 600; font-size: 0.92rem; color: var(--accent); list-style: none; }
-	.form-panel summary::-webkit-details-marker { display: none; }
-	.form-panel[open] summary { border-bottom: 1px solid var(--border); }
-	.form-panel .form { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 
 	/* Encabezado de grupo por tipo */
 	.grupo { font-size: 1rem; margin: 18px 0 8px; border-left: 3px solid var(--accent); padding-left: 12px; }
