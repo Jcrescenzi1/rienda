@@ -256,7 +256,7 @@
 			<div class="grupo">
 				<span class="gtit">Datos</span>
 				<button class="item" class:activo={actual === '/datos'} onclick={() => irA('/datos')}>Tus datos</button>
-				<button class="item" class:activo={actual === '/como-funciona'} onclick={() => irA('/como-funciona')}>Cómo funciona</button>
+				<button class="item" class:activo={actual === '/como-funciona'} onclick={() => irA('/como-funciona')}>Sobre Rienda</button>
 				<button class="item" onclick={onActualizarCotiz} disabled={actualizandoCotiz}>
 					{actualizandoCotiz ? 'Actualizando…' : 'Actualizar tipo de cambio'}
 				</button>
@@ -435,6 +435,28 @@
 	:global(.form-panel summary::-webkit-details-marker) { display: none; }
 	:global(.form-panel[open] summary) { border-bottom: 1px solid var(--border); }
 	:global(.form-panel .form) { background: none; border-color: transparent; border-radius: 0; margin: 0; padding: 12px 14px; }
+
+	/* ===== Tarjetas KPI (una sola definicion para toda la app, valores
+	   exactos de /inversiones) ===== Uso: <div class="resumen"><div class="card">
+	   <span>Etiqueta</span><strong>Valor</strong></div></div>. Variantes:
+	   .card.destacado (resalte de acento), .card.big (valor más grande),
+	   .card.ok / .card.bad (semáforo). El hero de "primera tarjeta" de
+	   /inversiones (:first-child) queda local a esa pantalla, no es global. */
+	:global(.resumen) { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
+	:global(.card) {
+		border: 1px solid transparent; background: var(--surface); border-radius: 8px;
+		padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0;
+	}
+	:global(.card > span) {
+		font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem);
+		font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim);
+	}
+	:global(.card strong) { font-size: clamp(0.85rem, 3.6vw, 1.25rem); font-weight: 400; white-space: nowrap; }
+	:global(.card.big strong) { font-size: clamp(1.1rem, 4.2vw, 1.6rem); }
+	:global(.card.destacado) { background: rgba(91, 157, 255, 0.08); border-color: rgba(91, 157, 255, 0.3); }
+	:global(.card.ok) { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
+	:global(.card.bad) { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
+	:global(.sk-card) { gap: 6px; }
 
 	/* Links de navegacion / texto */
 	:global(.btn-volver) { display: inline-block; background: none; border: none; cursor: pointer; padding: 0; color: var(--accent); text-decoration: none; font-size: 0.9rem; margin: 4px 0 12px; }

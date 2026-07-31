@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { hoyISO, fmtFecha, parseNum, formatNum, soloNum, pesos, fechaHoraCorta } from '$lib/format';
+	import { hoyISO, fmtFecha, parseNum, formatNum, montoAGuardar, soloNum, pesos, fechaHoraCorta } from '$lib/format';
 	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
 	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
 	import { actualizarPrecios } from '$lib/db/precios';
@@ -13,7 +13,6 @@
 	let cartera = $state<any[]>([]);
 	let resultadoAbiertasTotal = $state(0);
 	let realizadoAnioActual = $state(0);
-	let realizadoPorAnio = $state<any[]>([]);
 	let buckets = $state<any[]>([]);
 	// Detalle del mix: cada activo (y el líquido) con su renta, tipo y % del total
 	let detalleMix = $state<any[]>([]);
@@ -35,7 +34,7 @@
 
 	// Guardar Cartera (foto)
 	let showFoto = $state(false);
-	let fFlujo = $state(''); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
+	let fFlujo = $state(''); let fFlujoOriginal = $state(0); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
 	let fotoFecha = $state(hoyISO());
 	let fotoMsg = $state('');
 	let fotoMsgErr = $state(false);
@@ -129,13 +128,6 @@
 			+ Object.entries(rentaCerradaPorMes)
 				.filter(([mes]) => mes.startsWith(anioActual))
 				.reduce((s, [, v]) => s + v, 0);
-
-		// Detalle histórico por año (ciclos cerrados), para no perder el resto del
-		// historial aunque el card de arriba solo muestre el año en curso.
-		const porAnio: Record<string, number> = {};
-		for (const [mes, v] of Object.entries(realizadoCerradoPorMes)) porAnio[mes.slice(0, 4)] = (porAnio[mes.slice(0, 4)] ?? 0) + v;
-		for (const [mes, v] of Object.entries(rentaCerradaPorMes)) porAnio[mes.slice(0, 4)] = (porAnio[mes.slice(0, 4)] ?? 0) + v;
-		realizadoPorAnio = Object.keys(porAnio).sort().reverse().map((anio) => ({ anio, monto: porAnio[anio] }));
 
 		const hold: any[] = [];
 		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
@@ -247,9 +239,10 @@
 	// Alias al helper único de format.ts (ver Brief H / A2). Mismo formato de antes,
 	// ya no reimplementado acá.
 	const fmtFechaHora = fechaHoraCorta;
-	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 2); }
+	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 0); }
 	async function guardarLiq() {
-		const s = parseNum(editSaldo);
+		const original = liqSaldos[editLiq ?? ''] ?? 0;
+		const s = montoAGuardar(editSaldo, original);
 		if (editLiq == null || !Number.isFinite(s) || s < 0) { editLiq = null; return; }
 		const ajuste = s - (liqSaldos[editLiq] ?? 0);
 		if (Math.abs(ajuste) > 1e-6)
@@ -265,12 +258,13 @@
 		fotoDolar = f.dolar;
 		fotoValorUSD = f.valorUSD;
 		fotoValorARS = f.valorARS;
-		fFlujo = formatNum(f.flujo, 2);
+		fFlujoOriginal = f.flujo;
+		fFlujo = formatNum(f.flujo, 0);
 		showFoto = true;
 	}
 	async function guardarFoto() {
 		try {
-			const flujo = parseNum(fFlujo);
+			const flujo = montoAGuardar(fFlujo, fFlujoOriginal);
 			await guardarSnapshot(fotoFecha, fotoValorUSD, Number.isFinite(flujo) ? flujo : 0, fotoDolar, fotoValorARS);
 			showFoto = false; fotoMsg = '📸 Cartera guardada en Evolución ✅';
 			setTimeout(() => (fotoMsg = ''), 3000);
@@ -296,7 +290,7 @@
 
 <div class="titulo-guia">
 	<h1>Tenencia Actual</h1>
-	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Cartera' saca la foto que alimenta Evolución." />
+	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Tenencia' saca la foto que alimenta Evolución." />
 </div>
 
 {#if cargando}
@@ -317,47 +311,19 @@
 		<Skeleton w="100%" h="1.4rem" />
 	</div>
 {:else}
-	<div class="topbar">
+	<div class="btn-row">
 		<a href="/carga-inversiones" class="btn btn-primary">Movimientos</a>
-		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Cartera</button>
+		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
+		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
 	</div>
-	{#if fotoMsg}<p class="msg" class:err={fotoMsgErr}>{#if fotoMsgErr}<span class="err-x">✗</span> {/if}{fotoMsg}</p>{/if}
-
-	{#if showFoto}
-		<div class="form">
-			<h3>Guardar foto de cartera — {fotoFecha}</h3>
-			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
-			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {fotoDolar})</p>
-			<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
-			<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
-		</div>
-	{/if}
-
 	<div class="resumen">
 		<div class="card"><span>Cartera total (≈USD)</span><strong><CountUp value={totalUSD} format={(n) => usd(n)} /></strong></div>
-		<div class="card"><span>Resultado Posiciones Abiertas (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertasTotal} format={(n) => usd(n, 2)} /></strong></div>
 		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}><CountUp value={realizadoAnioActual} format={(n) => usd(n, 2)} /></strong></div>
+		<div class="card"><span>Resultado de Tenencia Actual (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertasTotal} format={(n) => usd(n, 2)} /></strong></div>
 	</div>
 
 	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
 
-	{#if realizadoPorAnio.length}
-		<details class="por-anio">
-			<summary>Ganancia realizada por año (ciclos cerrados)</summary>
-			<div class="tabla-scroll">
-			<table class="chica">
-				<thead><tr><th>Año</th><th class="num">Realizado (USD)</th></tr></thead>
-				<tbody>
-					{#each realizadoPorAnio as r (r.anio)}
-						<tr><td>{r.anio}</td><td class="num {r.monto >= 0 ? 'pos' : 'neg'}">{usd(r.monto, 2)}</td></tr>
-					{/each}
-				</tbody>
-			</table>
-			</div>
-		</details>
-	{/if}
-
-	<h2>Cartera actual</h2>
 	<div class="liquidez">
 		{#each ['ARS', 'USD'] as mon}
 			<div class="liqcard">
@@ -380,9 +346,21 @@
 
 	<div class="preciosbar">
 		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
-		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
+		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Tenencia</button>
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
 	</div>
+	{#if fotoMsg}<p class="msg" class:err={fotoMsgErr}>{#if fotoMsgErr}<span class="err-x">✗</span> {/if}{fotoMsg}</p>{/if}
+
+	{#if showFoto}
+		<div class="form">
+			<h3>Guardar foto de cartera — {fotoFecha}</h3>
+			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
+			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {money(fotoDolar, 'ARS')})</p>
+			<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
+			<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
+		</div>
+	{/if}
+
 	<div class="tabla-scroll">
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th>
@@ -428,9 +406,9 @@
 						<div class="barrow"><span class="lbl">{f.label}</span>
 							<div class="track">
 								<div class="bar" style="width:{f.pct * 100}%; background:{f.color}">
-									{#if f.pct >= 0.16}<span class="pct" style="color:{contraste(f.color)}">{(f.pct * 100).toFixed(0)}%</span>{/if}
+									{#if f.pct >= 0.16}<span class="pct" style="color:{contraste(f.color)}">{(f.pct * 100).toFixed(1)}%</span>{/if}
 								</div>
-								{#if f.pct < 0.16}<span class="pct-out">{(f.pct * 100).toFixed(0)}%</span>{/if}
+								{#if f.pct < 0.16}<span class="pct-out">{(f.pct * 100).toFixed(1)}%</span>{/if}
 							</div></div>
 					{/each}
 				</div>
@@ -445,9 +423,9 @@
 					<div class="barrow"><span class="lbl">{b.renta}</span>
 						<div class="track">
 							<div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}">
-								{#if b.pct >= 0.16}<span class="pct" style="color:{contraste(colorRenta[b.renta])}">{(b.pct * 100).toFixed(0)}%</span>{/if}
+								{#if b.pct >= 0.16}<span class="pct" style="color:{contraste(colorRenta[b.renta])}">{(b.pct * 100).toFixed(1)}%</span>{/if}
 							</div>
-							{#if b.pct < 0.16}<span class="pct-out">{(b.pct * 100).toFixed(0)}%</span>{/if}
+							{#if b.pct < 0.16}<span class="pct-out">{(b.pct * 100).toFixed(1)}%</span>{/if}
 						</div></div>
 				{/each}
 			</div>
@@ -490,8 +468,6 @@
 	h3 { margin: 0 0 4px; font-size: 1rem; }
 	h2 { border-left: 3px solid var(--accent); padding-left: 12px; }
 	.graf h2 { border-left: none; padding-left: 0; }
-	.topbar { display: flex; gap: 8px; flex-wrap: wrap; }
-	.sk-card { gap: 6px; }
 	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
@@ -507,11 +483,8 @@
 	.msg.err, .preciostamp span.err { color: var(--neg); }
 	.msg.err { display: flex; align-items: center; gap: 6px; }
 	.err-x { font-size: 1.3em; line-height: 1; }
-	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
-	.card { border: 1px solid transparent; background: var(--surface); border-radius: 8px; padding: 10px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-	.card span { font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
-	.card strong { font-size: clamp(0.85rem, 3.6vw, 1.25rem); font-weight: 400; white-space: nowrap; }
-	/* La cartera total es el numero hero de la pantalla */
+	/* .resumen/.card: base global en +layout.svelte. La cartera total es el
+	   numero hero de esta pantalla — override local, no es parte del global. */
 	.resumen .card:first-child { border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
 	.resumen .card:first-child strong { font-weight: 300; font-size: clamp(0.95rem, 4.2vw, 1.5rem); }
 
@@ -537,10 +510,6 @@
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
 
-	/* Ganancia realizada por año (detalle plegable) */
-	.por-anio { margin: 6px 0 12px; }
-	.por-anio summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	table.chica { max-width: 320px; margin-top: 8px; }
 
 	/* Textos descriptivos de cada visual, colapsados por defecto */
 	.nota-colapsable { margin: 6px 0 12px; }

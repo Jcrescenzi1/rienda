@@ -215,6 +215,40 @@
 		return { line, area, pts, yticks, xticks };
 	});
 
+	// Selección por tap/drag sobre el gráfico: mientras se mantiene el toque, la
+	// tarjeta de "Último período" muestra el valor del punto tocado; al soltar,
+	// vuelve al último valor de la ventana. Promedio y Total no cambian.
+	let tocando = $state(false);
+	let puntoTacto = $state<number | null>(null);
+	let snapTacto = $derived(puntoTacto != null ? serie[puntoTacto] : null);
+	let valorMostrado = $derived(snapTacto ? snapTacto.total : ultimo?.total ?? 0);
+
+	function indiceMasCercano(xViewBox: number): number | null {
+		if (!chart) return null;
+		let best = 0, bestD = Infinity;
+		chart.pts.forEach((p, i) => { const d = Math.abs(p.x - xViewBox); if (d < bestD) { bestD = d; best = i; } });
+		return best;
+	}
+	function actualizarTacto(e: PointerEvent) {
+		const svg = e.currentTarget as SVGSVGElement;
+		const rect = svg.getBoundingClientRect();
+		const x = ((e.clientX - rect.left) / rect.width) * W;
+		puntoTacto = indiceMasCercano(x);
+	}
+	function iniciarTacto(e: PointerEvent) {
+		tocando = true;
+		(e.currentTarget as Element).setPointerCapture(e.pointerId);
+		actualizarTacto(e);
+	}
+	function moverTacto(e: PointerEvent) {
+		if (!tocando) return;
+		actualizarTacto(e);
+	}
+	function soltarTacto() {
+		tocando = false;
+		puntoTacto = null;
+	}
+
 	// Etiquetas de eje Y en miles con separador (8.725.000 -> "8.725m", 500.000 -> "500m").
 	function fmtNum(v: number): string {
 		const a = Math.abs(v);
@@ -242,6 +276,10 @@
 			.slice()
 			.sort((a, b) => b.fecha.localeCompare(a.fecha))
 	);
+	// Suma ARS/USD de los registros visibles (post-filtros), sin convertir — distinto
+	// de la KPI "Total del rango", que sí está convertida a la lente de moneda elegida.
+	let totalRegistrosARS = $derived(registros.filter((g) => g.moneda === 'ARS').reduce((s, g) => s + g.monto, 0));
+	let totalRegistrosUSD = $derived(registros.filter((g) => g.moneda === 'USD').reduce((s, g) => s + g.monto, 0));
 	// Alias al helper único de format.ts (ver Brief H / A1).
 	const orig = pesos;
 
@@ -315,6 +353,12 @@
 	</div>
 	<div class="sk-chart"><Skeleton w="100%" h="clamp(150px, 42vw, 300px)" /></div>
 {:else}
+	<div class="resumen">
+		<div class="card destacado"><span>Último período{snapTacto ? ` · ${mesCorto(snapTacto.periodo)}` : ultimo ? ` · ${mesCorto(ultimo.periodo)}` : ''}</span><strong><CountUp value={valorMostrado} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
+		<div class="card"><span>Promedio por período</span><strong><CountUp value={promedio} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
+		<div class="card"><span>Total del rango</span><strong><CountUp value={totalRango} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
+	</div>
+
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
 		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
@@ -323,6 +367,45 @@
 			<select bind:value={anio}>{#each anios as y (y)}<option value={y}>{y}</option>{/each}</select>
 		{/if}
 	</div>
+
+	<div class="leyenda">
+		<span class="aclara">
+			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
+			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
+		</span>
+	</div>
+
+	{#if chart}
+		<svg viewBox="0 0 {W} {H}" class="chart tacto"
+			onpointerdown={iniciarTacto} onpointermove={moverTacto} onpointerup={soltarTacto} onpointercancel={soltarTacto}>
+			<defs>
+				<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+					<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
+					<stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02" />
+				</linearGradient>
+				<clipPath id="reveal-gastos"><rect x="0" y="0" width={W * $pArea} height={H} /></clipPath>
+			</defs>
+			{#each chart.yticks as t}
+				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
+				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
+			{/each}
+			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
+			<g clip-path="url(#reveal-gastos)">
+				<path d={chart.area} fill="url(#areaGrad)" />
+				<path d={chart.line} class="line-area" />
+				{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
+			</g>
+			{#if puntoTacto != null}
+				<line x1={chart.pts[puntoTacto].x} y1={P.t} x2={chart.pts[puntoTacto].x} y2={H - P.b} class="guia-tacto" />
+				<circle cx={chart.pts[puntoTacto].x} cy={chart.pts[puntoTacto].y} r="5" class="dot-tacto" />
+			{/if}
+		</svg>
+	{:else}
+		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
+	{/if}
+
+	<ToggleMoneda />
+
 	<div class="filtros">
 		<label>Categoría
 			<MultiSelect options={catOptions} selected={selCat} onchange={(s) => (selCat = s)} label="Categoría" />
@@ -341,45 +424,6 @@
 		<label>Detalle <input type="text" bind:value={filtroTexto} placeholder="texto libre" /></label>
 		<button class="btn btn-secondary" onclick={limpiar}>Limpiar</button>
 	</div>
-
-	<ToggleMoneda />
-
-	<div class="resumen">
-		<div class="card"><span>Último período{ultimo ? ` · ${mesCorto(ultimo.periodo)}` : ''}</span><strong><CountUp value={ultimo?.total ?? 0} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
-		<div class="card"><span>Promedio por período</span><strong><CountUp value={promedio} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
-		<div class="card"><span>Total del rango</span><strong><CountUp value={totalRango} format={(n) => fmtMoneda(n, moneda.modo)} /></strong></div>
-	</div>
-
-	<div class="leyenda">
-		<span class="aclara">
-			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
-			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
-		</span>
-	</div>
-
-	{#if chart}
-		<svg viewBox="0 0 {W} {H}" class="chart">
-			<defs>
-				<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-					<stop offset="0%" stop-color="var(--accent)" stop-opacity="0.35" />
-					<stop offset="100%" stop-color="var(--accent)" stop-opacity="0.02" />
-				</linearGradient>
-				<clipPath id="reveal-gastos"><rect x="0" y="0" width={W * $pArea} height={H} /></clipPath>
-			</defs>
-			{#each chart.yticks as t}
-				<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" />
-				<text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>
-			{/each}
-			{#each chart.xticks as t}<text x={t.x} y={H - 8} class="xlbl">{t.label}</text>{/each}
-			<g clip-path="url(#reveal-gastos)">
-				<path d={chart.area} fill="url(#areaGrad)" />
-				<path d={chart.line} class="line-area" />
-				{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
-			</g>
-		</svg>
-	{:else}
-		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
-	{/if}
 
 	<h2>Registros</h2>
 	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico. Cambiar el detalle reclasifica vía diccionario. La composición por categoría se ve en Análisis por categoría.</p>
@@ -424,32 +468,43 @@
 		{/each}
 		{#if registros.length === 0}<p class="vacio">Sin registros para los filtros.</p>{/if}
 	</div>
+	{#if registros.length > 0}
+		<div class="reg-total">
+			<span>Total de los registros visibles</span>
+			<strong>
+				{#if totalRegistrosARS !== 0}{pesos(totalRegistrosARS, 'ARS')}{/if}
+				{#if totalRegistrosARS !== 0 && totalRegistrosUSD !== 0} + {/if}
+				{#if totalRegistrosUSD !== 0}{pesos(totalRegistrosUSD, 'USD')}{/if}
+				{#if totalRegistrosARS === 0 && totalRegistrosUSD === 0}{pesos(0, 'ARS')}{/if}
+			</strong>
+		</div>
+	{/if}
 {/if}
 
 <style>
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
 	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
-	.sk-card { gap: 6px; }
 	.sk-chart { margin-top: 12px; }
 	.vistas select { padding: 5px 8px; }
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
 	.filtros input { padding: 6px 8px; font-size: 0.85rem; }
-	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
-	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
-	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.leyenda { font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.aclara { color: var(--text-dim); }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+	.chart.tacto { touch-action: none; cursor: crosshair; }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.line-area { fill: none; stroke: var(--accent); stroke-width: 2.5; }
 	.dot-area { fill: var(--accent); }
+	.guia-tacto { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
+	.dot-tacto { fill: var(--accent); stroke: var(--surface); stroke-width: 2; pointer-events: none; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 
+	.reg-total { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-top: 10px; padding: 9px 12px; border-top: 1px solid var(--border); font-size: 0.85rem; color: var(--text-dim); }
+	.reg-total strong { color: var(--text); font-weight: 700; }
 	.fichas { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 	/* Renombrado .reg -> .ficha: mismo patrón de tarjeta de registro que el resto
 	   de la app (Brief H / A3) — antes esta pantalla lo llamaba distinto sin motivo. */

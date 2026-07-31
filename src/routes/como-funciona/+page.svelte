@@ -4,7 +4,7 @@
 </script>
 
 <div class="titulo-guia">
-	<h1>Cómo funciona Rienda</h1>
+	<h1>Sobre Rienda</h1>
 </div>
 <a href="/" class="btn-volver">← Volver</a>
 

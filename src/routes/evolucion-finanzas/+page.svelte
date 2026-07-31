@@ -175,18 +175,18 @@
 {#if tab === 'gastos'}
 	<Gastos>
 		{#snippet nav()}
-			<nav class="seg">
-				<button onclick={() => (tab = 'categorias')}>Análisis por categoría →</button>
-				<button onclick={() => (tab = 'capacidad')}>Capacidad de ahorro →</button>
-			</nav>
+			<div class="btn-row">
+				<button class="btn btn-secondary" onclick={() => (tab = 'categorias')}>Análisis por categoría</button>
+				<button class="btn btn-secondary" onclick={() => (tab = 'capacidad')}>Capacidad de ahorro</button>
+			</div>
 		{/snippet}
 	</Gastos>
 {:else if tab === 'ingresos'}
 	<Ingresos>
 		{#snippet nav()}
-			<nav class="seg">
-				<button onclick={() => (tab = 'poder')}>Poder adquisitivo →</button>
-			</nav>
+			<div class="btn-row">
+				<button class="btn btn-secondary" onclick={() => (tab = 'poder')}>Poder adquisitivo</button>
+			</div>
 		{/snippet}
 	</Ingresos>
 {:else if tab === 'categorias'}
@@ -271,15 +271,8 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 12px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
-	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
-	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
-	.card.ok { background: rgba(74, 222, 128, 0.10); border-color: rgba(74, 222, 128, 0.35); }
-	.card.bad { background: rgba(248, 113, 113, 0.10); border-color: rgba(248, 113, 113, 0.35); }
 	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
 	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
-	.sk-card { gap: 6px; }
 	.sk-chart { margin-top: 12px; }
 	.vistas select { padding: 5px 8px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }

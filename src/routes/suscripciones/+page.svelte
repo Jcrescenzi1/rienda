@@ -306,8 +306,8 @@
 <div class="fijo-total">
 	<span>Recurrente del mes</span>
 	<strong>{peso(fijoMesARS)}</strong>
-	<span class="fijo-nota">suma de todos los recurrentes activos (USD al MEP)</span>
 </div>
+<p class="fijo-nota">suma de todos los recurrentes activos (USD al MEP)</p>
 
 <details class="form-panel" bind:open={formAbierto}>
 	<summary>{editando ? '✏ Editar gasto recurrente' : '➕ Agregar gasto recurrente'}</summary>
@@ -401,7 +401,7 @@
 	.fijo-total { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
 	.fijo-total span { font-size: 0.75rem; color: var(--text-dim); }
 	.fijo-total strong { font-size: 1.6rem; }
-	.fijo-nota { font-size: 0.72rem !important; }
+	.fijo-nota { font-size: 0.72rem; color: var(--text-dim); margin: -8px 0 12px; }
 	.disparo-subcat { flex-direction: row !important; align-items: center; gap: 8px; font-size: 0.82rem; margin-bottom: 10px; flex-wrap: wrap; }
 	.disparo-subcat select { max-width: 240px; }
 	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */

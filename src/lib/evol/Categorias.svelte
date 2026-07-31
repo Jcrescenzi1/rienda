@@ -225,7 +225,7 @@
 	// Etiqueta del mover: variación relativa reciente vs baseline, o "nuevo" si el
 	// baseline era cero (apareció desde base nula).
 	const fmtRatio = (m: { pct: number | null; nuevo: boolean }) =>
-		m.nuevo ? 'nuevo' : (m.pct! >= 0 ? '+' : '') + m.pct!.toFixed(0) + '%';
+		m.nuevo ? 'nuevo' : (m.pct! >= 0 ? '+' : '') + m.pct!.toFixed(1) + '%';
 	// Paleta por barra de período (n-2, n-1, n): de tenue a acento.
 	const BAR = ['#94a0b8', '#5b9dff', '#e8975b'];
 </script>

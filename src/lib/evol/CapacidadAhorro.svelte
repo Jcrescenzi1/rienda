@@ -173,7 +173,7 @@
 		if (a >= 1000) return Math.round(v / 1000).toLocaleString('es-AR') + 'm';
 		return Math.round(v).toString();
 	}
-	const pctTasa = (n: number) => (n * 100).toFixed(0) + '%';
+	const pctTasa = (n: number) => (n * 100).toFixed(1) + '%';
 
 	async function guardarTargetARS(v: string) {
 		let p = parseFloat(v); if (!Number.isFinite(p)) return;
@@ -263,10 +263,6 @@
 	.bloque-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 	.target { display: inline-flex; align-items: baseline; gap: 5px; font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
 	.target input { width: 52px; text-align: right; padding: 3px 5px; font-size: 0.85rem; }
-	.resumen { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
-	.card { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 9px; display: flex; flex-direction: column; min-width: 0; }
-	.card span { font-size: clamp(0.58rem, 2.4vw, 0.72rem); color: var(--text-dim); }
-	.card strong { font-size: clamp(0.82rem, 3.4vw, 1.05rem); white-space: nowrap; }
 	.alerta { font-size: 0.78rem; color: var(--warn); margin: 4px 0; }
 	.leyenda { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }

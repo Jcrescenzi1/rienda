@@ -37,7 +37,7 @@
 	{#if abierta}
 		<div class="guia">
 			<p>{texto}</p>
-			{#if verMas}<a class="vermas" href="/como-funciona">Cómo funciona Rienda →</a>{/if}
+			{#if verMas}<a class="vermas" href="/como-funciona">Sobre Rienda →</a>{/if}
 			<button class="ok" onclick={entendido}>Entendido</button>
 		</div>
 	{/if}

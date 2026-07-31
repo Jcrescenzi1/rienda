@@ -446,7 +446,7 @@
     function tituloAhorro(real: number): string {
         if (ingresosRegularesMes <= 0) return 'Sin ingreso regular cargado — objetivo se edita en Capacidad de ahorro';
         const tasa = real / ingresosRegularesMes;
-        return `Ahorrás ${(tasa * 100).toFixed(1)}% del ingreso regular · objetivo ${(umbralAhorro * 100).toFixed(0)}%`;
+        return `Ahorrás ${(tasa * 100).toFixed(1)}% del ingreso regular · objetivo ${(umbralAhorro * 100).toFixed(1)}%`;
     }
 </script>
 
@@ -543,6 +543,7 @@
     </div>
 
     <!-- ===== Crédito del mes que viene (Ítem 2, lectura pura) ===== -->
+    {#if descubierto !== 0 || deudaSigUsd !== 0}
     <div class="deuda-panel" class:ok={descubierto <= 0} class:warn={descubierto > 0}>
         <button class="disp-toggle" onclick={() => (deudaAbierto = !deudaAbierto)} aria-expanded={deudaAbierto} title="Ver/ocultar el detalle">
             <span class="flecha">{deudaAbierto ? '▾' : '▸'}</span>
@@ -560,6 +561,7 @@
             <p class="disp-nota">Reservá plata para el pago de próximos vencimientos desde <a href="/credito">Crédito</a>.</p>
         {/if}
     </div>
+    {/if}
 
 
     <div class="consol-head">
