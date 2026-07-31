@@ -246,7 +246,6 @@
 
 	<!-- Visual 1: barras por categoría con desglose de subcategorías in-place -->
 	<h2>Peso de cada categoría</h2>
-	<p class="aclara">Cada barra es el % que la categoría representó del gasto total de ese período. Ordenadas por peso del mes actual. Tocá una categoría para ver sus subcategorías.</p>
 	{#if v1 && v1.rows.length}
 		<div class="leyenda-periodos">
 			{#each v1.periodos as p, i (p)}<span class="leg"><span class="sw" style="background:{BAR[i]}"></span>{mesCorto(p)}</span>{/each}
@@ -297,10 +296,13 @@
 	{:else}
 		<p class="nota">No hay gastos en los últimos períodos.</p>
 	{/if}
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Peso de cada categoría</summary>
+		<p class="nota">Cada barra es el % que la categoría representó del gasto total de ese período. Ordenadas por peso del mes actual. Tocá una categoría para ver sus subcategorías.</p>
+	</details>
 
 	<!-- Visual 2 — Movers: anomalía reciente vs mediana móvil -->
 	<h2>Subcategorías que más se movieron</h2>
-	<p class="aclara">Últimos 2 períodos contra la mediana de los 9 anteriores, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Detecta lo que se salió de lo habitual, sin sesgo por tamaño. Tocá una para verla en Evolución de Gastos.</p>
 	{#if v3.insuficiente}
 		<p class="nota">Hacen falta al menos 11 períodos con historial para detectar anomalías.</p>
 	{:else}
@@ -327,17 +329,29 @@
 			</div>
 		</div>
 	{/if}
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Subcategorías que más se movieron</summary>
+		<p class="nota">Últimos 2 períodos contra la mediana de los 9 anteriores, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Detecta lo que se salió de lo habitual, sin sesgo por tamaño. Tocá una para verla en Evolución de Gastos.</p>
+	</details>
 {/if}
 
 <style>
 	h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	h3 { font-size: 0.9rem; margin: 0 0 8px; }
-	.aclara { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 10px; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
 	.sk-chart { margin-top: 12px; }
-	.toggle-modo { display: flex; gap: 6px; margin: 8px 0 4px; }
-	.toggle-modo button { padding: 5px 10px; font-size: 0.82rem; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; color: var(--text); cursor: pointer; }
-	.toggle-modo button.activo { border-color: var(--accent); color: var(--accent); }
+	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
+	.nota-colapsable { margin: 6px 0 12px; }
+	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	.nota-colapsable .nota { margin-top: 6px; }
+	/* Cápsula única (mismo look que .toggle-moneda de ToggleMoneda.svelte, ver
+	   Brief "unificar toggle real/nominal" — se copia el CSS exacto en vez de
+	   reusar el componente porque ToggleMoneda está atado al store global de
+	   moneda, y esta pantalla necesita un modo real/nominal propio e independiente). */
+	.toggle-modo { display: inline-flex; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 8px 0 4px; }
+	.toggle-modo button { background: var(--surface-2); color: var(--text); border: none; border-right: 1px solid var(--border); padding: 6px 12px; cursor: pointer; font-size: 0.8rem; white-space: nowrap; }
+	.toggle-modo button:last-child { border-right: none; }
+	.toggle-modo button.activo { background: var(--accent); color: #fff; }
 	.leyenda-periodos { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; color: var(--text-dim); margin: 4px 0 10px; }
 	.leyenda-periodos .leg { display: inline-flex; align-items: center; gap: 5px; }
 	.leyenda-periodos .sw { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }

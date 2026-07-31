@@ -241,7 +241,10 @@
 						<text x={b.cx} y={H - 10} class="xlbl">{mesCorto(b.periodo)}</text>
 					{/each}
 				</svg>
-				<p class="unidad">{mon === 'ARS' ? 'Montos en pesos reales' : 'Montos en dólares nominales'}{mon === 'ARS' && ipc.ultimoPeriodo ? ` (de ${mesCorto(ipc.ultimoPeriodo)})` : ''}. La barra es el ahorro neto; la marca, el objetivo del mes.</p>
+				<details class="nota-colapsable">
+					<summary>Descripción de la visual: {titulo}</summary>
+					<p class="nota">{mon === 'ARS' ? 'Montos en pesos reales' : 'Montos en dólares nominales'}{mon === 'ARS' && ipc.ultimoPeriodo ? ` (de ${mesCorto(ipc.ultimoPeriodo)})` : ''}. La barra es el ahorro neto; la marca, el objetivo del mes.</p>
+				</details>
 			{:else}
 				<p class="nota">No hay ingreso regular en {mon} en la ventana.</p>
 			{/if}
@@ -254,7 +257,10 @@
 		{@render bloque('Ahorro en dólares', 'USD', serieUSD, chartUSD, resUSD, targetUSD, guardarTargetUSD, avisoSinAhorroUSD)}
 	{/if}
 
-	<p class="nota">La tasa es ahorro neto ÷ ingreso regular del período, en la misma moneda (el ajuste por inflación no altera el %). El objetivo en pesos se mueve mes a mes con tu ingreso regular, aunque el % sea fijo. Editar el objetivo repinta todo el histórico visible.</p>
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Capacidad de ahorro</summary>
+		<p class="nota">La tasa es ahorro neto ÷ ingreso regular del período, en la misma moneda (el ajuste por inflación no altera el %). El objetivo en pesos se mueve mes a mes con tu ingreso regular, aunque el % sea fijo. Editar el objetivo repinta todo el histórico visible.</p>
+	</details>
 {/if}
 
 <style>
@@ -280,7 +286,10 @@
 	.bar.ok { fill: var(--pos); } .bar.warn { fill: var(--warn); } .bar.bad { fill: var(--neg); }
 	.bar.sindato { fill: var(--surface-2); stroke: var(--border); stroke-dasharray: 3 2; }
 	.tick { stroke: var(--text); stroke-width: 2; stroke-dasharray: 4 3; }
-	.unidad { font-size: 0.74rem; color: var(--text-dim); margin: 4px 0 0; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.sk-chart { margin-top: 12px; }
+	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
+	.nota-colapsable { margin: 6px 0 12px; }
+	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	.nota-colapsable .nota { margin-top: 6px; }
 </style>

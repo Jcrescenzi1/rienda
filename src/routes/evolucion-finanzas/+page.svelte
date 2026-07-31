@@ -227,6 +227,13 @@
 		<Guia clave="resumen-evolucion" texto="Comparación período a período entre los ingresos y los gastos reportados. Verde: ingresos, roja: gastos, por cada período. El Balance es la diferencia entre ingresos y gastos de todo el rango visible. El selector de moneda (USD / pesos reales / nominales) solo cambia la unidad de lectura, no los datos." />
 	</div>
 	<button class="btn-volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
+	<div class="resumen">
+		<div class="card"><span>Ingresos totales</span><strong>{fmtMoneda(resumenIG.tIng, moneda.modo)}</strong></div>
+		<div class="card"><span>Gastos totales</span><strong>{fmtMoneda(resumenIG.tGas, moneda.modo)}</strong></div>
+		<div class="card" class:ok={resumenIG.balance >= 0} class:bad={resumenIG.balance < 0}>
+			<span>Balance</span><strong>{fmtMoneda(resumenIG.balance, moneda.modo)}</strong>
+		</div>
+	</div>
 	<div class="vistas">
 		<button class:activo={vista === 'historico'} onclick={() => (vista = 'historico')}>Histórico</button>
 		<button class:activo={vista === 'ult12'} onclick={() => (vista = 'ult12')}>Últimos 12 meses</button>
@@ -235,21 +242,9 @@
 			<select bind:value={anio}>{#each anios as y (y)}<option value={y}>{y}</option>{/each}</select>
 		{/if}
 	</div>
-	<ToggleMoneda />
-	<div class="resumen">
-		<div class="card"><span>Ingresos totales</span><strong>{fmtMoneda(resumenIG.tIng, moneda.modo)}</strong></div>
-		<div class="card"><span>Gastos totales</span><strong>{fmtMoneda(resumenIG.tGas, moneda.modo)}</strong></div>
-		<div class="card" class:ok={resumenIG.balance >= 0} class:bad={resumenIG.balance < 0}>
-			<span>Balance</span><strong>{fmtMoneda(resumenIG.balance, moneda.modo)}</strong>
-		</div>
-	</div>
 	<div class="leyenda">
 		<span class="leg"><span class="sw sw-ing"></span> Ingresos</span>
 		<span class="leg"><span class="sw sw-gas"></span> Gastos</span>
-		<span class="aclara">
-			Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}. Los gastos se asignan al período según el modo elegido en tu perfil.
-			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {ipc.ultimoPeriodo} (último mes de inflación cargado).{/if}
-		</span>
 	</div>
 	{#if chartIG}
 		<svg viewBox="0 0 {W} {H}" class="chart">
@@ -266,6 +261,7 @@
 	{:else}
 		<p class="nota">No hay datos para esta ventana.</p>
 	{/if}
+	<ToggleMoneda />
 {/if}
 {/if}
 
@@ -278,7 +274,6 @@
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { width: 16px; height: 3px; border-radius: 2px; display: inline-block; }
-	.aclara { color: var(--text-dim); }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

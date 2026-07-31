@@ -151,6 +151,13 @@
 	}
 
 	let actual = $derived($page.url.pathname);
+	// evolucion-finanzas comparte pathname entre Gastos e Ingresos (se distinguen por
+	// ?tab): sin esto, "Evolución de Gastos" quedaba marcado activo aunque estuvieras
+	// en Ingresos (o en sus hijos poder/categorias/capacidad), y "Evolución de Ingresos"
+	// nunca se marcaba. tabQS null = default 'gastos' del componente.
+	let tabQS = $derived($page.url.searchParams.get('tab'));
+	let enEvolGastos = $derived(actual === '/evolucion-finanzas' && (tabQS === null || tabQS === 'gastos' || tabQS === 'categorias' || tabQS === 'capacidad'));
+	let enEvolIngresos = $derived(actual === '/evolucion-finanzas' && (tabQS === 'ingresos' || tabQS === 'poder'));
 
 	onMount(() => {
 		chequearPerfil();
@@ -242,8 +249,8 @@
 			<div class="grupo">
 				<span class="gtit">Finanzas</span>
 				<button class="item" class:activo={actual === '/'} onclick={() => irA('/')}>Cuenta Corriente</button>
-				<button class="item" class:activo={actual === '/evolucion-finanzas'} onclick={() => irA('/evolucion-finanzas')}>Evolución de Gastos</button>
-				<button class="item" onclick={() => irA('/evolucion-finanzas?tab=ingresos')}>Evolución de Ingresos</button>
+				<button class="item" class:activo={enEvolGastos} onclick={() => irA('/evolucion-finanzas')}>Evolución de Gastos</button>
+				<button class="item" class:activo={enEvolIngresos} onclick={() => irA('/evolucion-finanzas?tab=ingresos')}>Evolución de Ingresos</button>
 				<button class="item" class:activo={actual === '/configuracion'} onclick={() => irA('/configuracion')}>Configuración</button>
 			</div>
 

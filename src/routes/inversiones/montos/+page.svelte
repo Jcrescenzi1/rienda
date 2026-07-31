@@ -153,9 +153,14 @@
 :global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
 	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
-	.vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
-	.vistas button { padding: 6px 14px; border: 1px solid var(--border); background: var(--surface); border-radius: 6px; color: var(--text-dim); cursor: pointer; font-size: 0.85rem; }
-	.vistas button.activo { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+	/* Cápsula única (mismo look que .toggle-moneda de ToggleMoneda.svelte / .toggle-modo
+	   de Categorias.svelte) — acá .vistas es un toggle de moneda, no un selector de
+	   período, así que se separa del patrón .vistas de pastillas sueltas del resto de
+	   la app y se le da el mismo tratamiento que los otros toggles de moneda. */
+	.vistas { display: flex; width: fit-content; gap: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 10px 0; }
+	.vistas button { background: var(--surface-2); color: var(--text); border: none; border-right: 1px solid var(--border); padding: 6px 14px; cursor: pointer; font-size: 0.85rem; white-space: nowrap; }
+	.vistas button:last-child { border-right: none; }
+	.vistas button.activo { background: var(--accent); color: #fff; font-weight: 600; }
 	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 12px; }
 	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }

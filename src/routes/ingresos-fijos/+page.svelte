@@ -266,7 +266,7 @@
 	</div>
 </div>
 
-<div class="fijo-total">
+<div class="card big">
 	<span>Ingreso recurrente del mes</span>
 	<strong>{peso(fijoMesARS)}</strong>
 </div>
@@ -359,9 +359,10 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.fijo-total { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 14px; margin: 12px 0; }
-	.fijo-total span { font-size: 0.75rem; color: var(--text-dim); }
-	.fijo-total strong { font-size: 1.6rem; }
+	/* .card/.card.big vive ahora en +layout.svelte (global, tarjeta única migrada).
+	   .card por sí sola no trae margin (eso lo aporta .resumen cuando envuelve
+	   varias) — acá va suelta, así que el margin hay que ponerlo local. */
+	.card.big { margin: 12px 0; }
 	.fijo-nota { font-size: 0.72rem; color: var(--text-dim); margin: -8px 0 12px; }
 	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
 	.form.edit { border-color: var(--accent); }

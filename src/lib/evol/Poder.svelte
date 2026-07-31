@@ -207,7 +207,6 @@
 	<div class="leyenda">
 		<span class="leg"><span class="sw sw-ing"></span> Ingreso Primario</span>
 		<span class="leg"><span class="sw sw-inf"></span> Inflación</span>
-		<span class="aclara">Ambas en base 100 al inicio de la ventana. Si el ingreso va por encima, le ganás a la inflación.</span>
 	</div>
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart">
@@ -226,6 +225,10 @@
 				<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
 			</g>
 		</svg>
+		<details class="nota-colapsable">
+			<summary>Descripción de la visual: Ingreso Primario vs Inflación</summary>
+			<p class="nota">Ambas en base 100 al inicio de la ventana. Si el ingreso va por encima, le ganás a la inflación.</p>
+		</details>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
@@ -234,7 +237,6 @@
 	<div class="leyenda">
 		<span class="leg"><span class="sw sw-ing"></span> Ingreso Primario (USD, eje izq.)</span>
 		<span class="leg"><span class="sw sw-dolar"></span> Dólar bolsa (ARS, eje der.)</span>
-		<span class="aclara">Si el ingreso en USD cae mientras el dólar sube, el golpe vino del tipo de cambio, no de tu ingreso real.</span>
 	</div>
 	{#if chartUSD}
 		<svg viewBox="0 0 {W} {H}" class="chart">
@@ -254,11 +256,18 @@
 				{#each chartUSD.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
 			</g>
 		</svg>
+		<details class="nota-colapsable">
+			<summary>Descripción de la visual: Ingreso Primario en USD vs Dólar</summary>
+			<p class="nota">Si el ingreso en USD cae mientras el dólar sube, el golpe vino del tipo de cambio, no de tu ingreso real.</p>
+		</details>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
 
-	<p class="nota">El ingreso del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el ingreso del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
+	<details class="nota-colapsable">
+		<summary>Descripción de la visual: Poder adquisitivo</summary>
+		<p class="nota">El ingreso del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el ingreso del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
+	</details>
 {/if}
 
 <style>
@@ -273,7 +282,10 @@
 	.sw-ing { background: var(--accent); }
 	.sw-inf { background: #e8975b; }
 	.sw-dolar { background: #e8975b; }
-	.aclara { color: var(--text-dim); }
+	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
+	.nota-colapsable { margin: 6px 0 12px; }
+	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	.nota-colapsable .nota { margin-top: 6px; }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

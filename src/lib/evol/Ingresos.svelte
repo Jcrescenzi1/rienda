@@ -302,13 +302,6 @@
 		{/if}
 	</div>
 
-	<div class="leyenda">
-		<span class="aclara">
-			Por período de ingreso (el que asignaste a cada cobro).
-			{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
-		</span>
-	</div>
-
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart tacto"
 			onpointerdown={iniciarTacto} onpointermove={moverTacto} onpointerup={soltarTacto} onpointercancel={soltarTacto}>
@@ -334,6 +327,13 @@
 				<circle cx={chart.pts[puntoTacto].x} cy={chart.pts[puntoTacto].y} r="5" class="dot-tacto" />
 			{/if}
 		</svg>
+		<details class="nota-colapsable">
+			<summary>Descripción de la visual: Evolución de Ingresos</summary>
+			<p class="nota">
+				Por período de ingreso (el que asignaste a cada cobro).
+				{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
+			</p>
+		</details>
 	{:else}
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
@@ -415,8 +415,10 @@
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
 	.filtros input, .filtros select { padding: 6px 8px; font-size: 0.85rem; }
-	.leyenda { font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
-	.aclara { color: var(--text-dim); }
+	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
+	.nota-colapsable { margin: 6px 0 12px; }
+	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
+	.nota-colapsable .nota { margin-top: 6px; }
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.chart.tacto { touch-action: none; cursor: crosshair; }
 	.grid { stroke: var(--border); stroke-width: 1; }
