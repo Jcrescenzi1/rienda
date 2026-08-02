@@ -13,6 +13,7 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
@@ -370,6 +371,7 @@
 
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart tacto"
+			role="img" aria-label="Evolución del gasto por período"
 			onpointerdown={iniciarTacto} onpointermove={moverTacto} onpointerup={soltarTacto} onpointercancel={soltarTacto}>
 			<defs>
 				<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -393,13 +395,12 @@
 				<circle cx={chart.pts[puntoTacto].x} cy={chart.pts[puntoTacto].y} r="5" class="dot-tacto" />
 			{/if}
 		</svg>
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Evolución de Gastos</summary>
-			<p class="nota">
-				Por período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, contando cada gasto en su fecha de compra.
-				{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
-			</p>
-		</details>
+		<NotaVisual objetivo="Cómo evolucionó tu gasto período a período" glosario="periodos">
+			{#snippet muestra()}El gasto total de cada período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, con los filtros de abajo ya aplicados.{/snippet}
+			{#snippet leer()}Cada gasto se cuenta entero en su <strong>fecha de compra</strong>, también los de crédito: una compra en cuotas aparece completa el mes que la hiciste, no repartida. Los períodos sin gasto se dibujan en cero, así que bajan el promedio.{/snippet}
+			{#snippet usar()}Ver si tu nivel de gasto sube o baja de verdad; cambiá la moneda a pesos reales para que la inflación no te haga ver una suba que no existe.{/snippet}
+			{#snippet fuente()}{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Expresado en pesos de {mesCorto(ipc.ultimoPeriodo)}, el último mes de inflación cargado.{:else}Montos nominales, tal como los cargaste.{/if}{/snippet}
+		</NotaVisual>
 	{:else}
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
@@ -490,10 +491,7 @@
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
 	.filtros input { padding: 6px 8px; font-size: 0.85rem; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.chart.tacto { touch-action: none; cursor: crosshair; }
 	.grid { stroke: var(--border); stroke-width: 1; }

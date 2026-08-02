@@ -7,8 +7,20 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 
+	// Dos formas de escribir la guía:
+	//   - estructurada (`para` + `uso`): para qué es esta PANTALLA y cómo se opera.
+	//     Es la forma nueva; deja el "qué muestra cada gráfico" para el descriptivo
+	//     de cada visual (NotaVisual), que es donde corresponde.
+	//   - `texto` suelto: forma vieja, se mantiene mientras se migran las pantallas.
 	// verMas: si true, agrega un link a la página "Cómo funciona" (Capa 3).
-	let { clave, texto, verMas = false }: { clave: string; texto: string; verMas?: boolean } = $props();
+	let {
+		clave,
+		texto = '',
+		para = '',
+		uso = '',
+		verMas = false
+	}: { clave: string; texto?: string; para?: string; uso?: string; verMas?: boolean } = $props();
+	const estructurada = $derived(Boolean(para || uso));
 	let abierta = $state(false);
 	let lista = $state(false);
 
@@ -36,7 +48,14 @@
 	<button class="abrir" class:activo={abierta} onclick={toggle} title="¿Cómo funciona esta pantalla?" aria-label="Ayuda">?</button>
 	{#if abierta}
 		<div class="guia">
-			<p>{texto}</p>
+			{#if estructurada}
+				<dl>
+					{#if para}<dt>Objetivo</dt><dd>{para}</dd>{/if}
+					{#if uso}<dt>Cómo hacerlo</dt><dd>{uso}</dd>{/if}
+				</dl>
+			{:else}
+				<p>{texto}</p>
+			{/if}
 			{#if verMas}<a class="vermas" href="/como-funciona">Sobre Rienda →</a>{/if}
 			<button class="ok" onclick={entendido}>Entendido</button>
 		</div>
@@ -60,6 +79,16 @@
 		display: flex; flex-direction: column; gap: 8px; align-items: flex-start;
 	}
 	.guia p { margin: 0; }
+	/* Guía estructurada: una etiqueta por ranura, en small-caps, con el texto
+	   debajo. Mismo criterio que NotaVisual, para que las dos capas de ayuda se
+	   lean igual. */
+	.guia dl { margin: 0; }
+	.guia dt {
+		font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.05em;
+		color: var(--text-dim); margin-top: 8px;
+	}
+	.guia dt:first-child { margin-top: 0; }
+	.guia dd { margin: 2px 0 0; }
 	.vermas { font-size: 0.82rem; color: var(--accent); font-weight: 600; text-decoration: none; }
 	.vermas:hover { text-decoration: underline; }
 	.ok {

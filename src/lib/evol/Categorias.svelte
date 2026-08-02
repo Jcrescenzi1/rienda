@@ -11,6 +11,7 @@
 		type ModoMoneda
 	} from '$lib/moneda';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { mesCorto } from '$lib/format';
 
@@ -296,10 +297,11 @@
 	{:else}
 		<p class="nota">No hay gastos en los últimos períodos.</p>
 	{/if}
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Peso de cada categoría</summary>
-		<p class="nota">Cada barra es el % que la categoría representó del gasto total de ese período. Ordenadas por peso del mes actual. Tocá una categoría para ver sus subcategorías.</p>
-	</details>
+	<NotaVisual objetivo="Cómo se reparte tu gasto entre categorías">
+		{#snippet muestra()}El % que cada categoría representó del gasto total de cada período, ordenadas por su peso en el mes actual.{/snippet}
+		{#snippet leer()}Son porcentajes, no montos: una categoría puede subir de % simplemente porque bajó el gasto total, sin que hayas gastado más en ella.{/snippet}
+		{#snippet usar()}Detectar qué está ocupando más lugar en tu gasto; tocá una categoría para abrir sus subcategorías y ver de dónde viene.{/snippet}
+	</NotaVisual>
 
 	<!-- Visual 2 — Movers: anomalía reciente vs mediana móvil -->
 	<h2>Subcategorías que más se movieron</h2>
@@ -329,10 +331,11 @@
 			</div>
 		</div>
 	{/if}
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Subcategorías que más se movieron</summary>
-		<p class="nota">Últimos 2 períodos contra la mediana de los 9 anteriores, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}. Detecta lo que se salió de lo habitual, sin sesgo por tamaño. Tocá una para verla en Evolución de Gastos.</p>
-	</details>
+	<NotaVisual objetivo="Qué se salió de lo habitual">
+		{#snippet muestra()}Las subcategorías cuyo gasto de los últimos 2 períodos más se despegó de su propia mediana de los 9 períodos anteriores, en {modoLocal === 'real' ? 'pesos reales' : 'pesos nominales'}.{/snippet}
+		{#snippet leer()}Compara cada subcategoría contra sí misma, no contra las demás: por eso una subcategoría chica que se duplicó puede aparecer antes que una grande que subió poco. La mediana se usa para que un mes raro suelto no mueva la referencia.{/snippet}
+		{#snippet usar()}Encontrar desvíos temprano; tocá una para verla en detalle en Evolución de Gastos.{/snippet}
+	</NotaVisual>
 {/if}
 
 <style>
@@ -340,10 +343,7 @@
 	h3 { font-size: 0.9rem; margin: 0 0 8px; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
 	.sk-chart { margin-top: 12px; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 	/* Cápsula única (mismo look que .toggle-moneda de ToggleMoneda.svelte, ver
 	   Brief "unificar toggle real/nominal" — se copia el CSS exacto en vez de
 	   reusar el componente porque ToggleMoneda está atado al store global de

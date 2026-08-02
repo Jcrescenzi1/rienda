@@ -11,7 +11,7 @@
 <p class="intro">Rienda te deja arrancar con lo mínimo (cargar gastos e ingresos) y sumar profundidad cuando quieras. Acá está el detalle de lo avanzado, por si te interesa. Nada de esto es obligatorio.</p>
 
 <section>
-	<h2>Períodos: sueldo vs calendario</h2>
+	<h2 id="periodos">Períodos: sueldo vs calendario</h2>
 	<p>Tenés dos formas de definir tu "mes financiero" (la cambiás en Configuración):</p>
 	<ul>
 		<li><strong>Calendario</strong>: el período es el mes del 1 al último día. Simple y predecible.</li>
@@ -38,7 +38,7 @@
 </section>
 
 <section>
-	<h2>Tenencia Actual y Tenencia en montos (FIFO, PPC, PPV)</h2>
+	<h2 id="tenencia">Tenencia Actual y Tenencia en montos (FIFO, PPC, PPV)</h2>
 	<p>La cartera se valúa a precio de mercado en dólares, con método <strong>FIFO</strong> (las ventas consumen primero los lotes más viejos). <strong>Tenencia Actual</strong> muestra la foto sin montos —solo %, precio por unidad y rendimiento—; los montos y la edición de precio de mercado y caja viven en <strong>Tenencia en montos</strong>.</p>
 	<ul>
 		<li><strong>PPC</strong> (precio promedio de compra): cuánto te costó en promedio lo que tenés.</li>
@@ -51,12 +51,14 @@
 </section>
 
 <section>
-	<h2>Mercado</h2>
-	<p>Desde <strong>Mercado</strong> (antes "Tickers") das de alta y editás tus activos. "🔍 Buscar en el mercado" busca entre los instrumentos que cotizan en el mercado argentino y precarga ticker y tipo al elegir uno — el resto del alta se completa igual que siempre. Tocando la ficha de un activo cargado se despliega su gráfico de precio histórico, con selector de ventana (1M/3M/6M/1A/Todo).</p>
+	<h2 id="mercado">Mercado</h2>
+	<p><strong>Mercado</strong> es el catálogo de referencia de activos. Con <strong>"⬇ Sincronizar catálogo"</strong> se dan de alta de una sola vez todos los instrumentos que publica la fuente de precios, así no hay que cargar un activo a mano cada vez que operás uno nuevo; se puede volver a correr cuando quieras y solo agrega lo que apareció nuevo, sin tocar lo que ya está. Los que no cotizan ahí (FCI, activos del exterior) se cargan con <strong>"➕ Nuevo activo"</strong>.</p>
+	<p>Cada instrumento aparece en sus <strong>especies</strong>: el ticker pelado cotiza en pesos, el terminado en D es dólar MEP y el terminado en C es dólar CCL. El gráfico de arriba muestra la evolución del activo que elijas, con media móvil de 200 ruedas y volumen operado; la serie histórica se baja en el momento y no se guarda, y la fuente la publica solo para la especie en pesos.</p>
+	<p>Los activos que traés del catálogo entran con el ticker como nombre y con su renta y exposición puestas por regla — conviene corregir a mano solo los pocos que efectivamente operás.</p>
 </section>
 
 <section>
-	<h2>Poder adquisitivo</h2>
+	<h2 id="poder">Poder adquisitivo</h2>
 	<p>Compara tu ingreso principal regular contra la inflación (base 100) y contra el dólar. Sirve para ver si tu sueldo le gana a los precios, y si una caída en dólares vino de tu ingreso o del tipo de cambio.</p>
 </section>
 

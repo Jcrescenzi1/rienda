@@ -40,13 +40,22 @@ export function tieneHistoricoData912(tipo: string): boolean {
 	return tipo in ENDPOINT_HISTORICO;
 }
 
+export type PuntoHistorico = {
+	fecha: string;
+	precio: number;
+	// Volumen NOCIONAL de la rueda (campo `v` de data912): es MONTO operado en la
+	// moneda de cotización, no cantidad de papeles. Importa para leerlo: una barra
+	// alta significa mucha plata movida, no muchos nominales. Opcional porque no
+	// está garantizado que todos los endpoints lo publiquen.
+	volumen?: number;
+};
+
 // Baja la serie completa de un símbolo desde el histórico de data912. Devuelve
 // [] (no lanza) si el símbolo no tiene serie (típico: VIST, GLD, NU y otros
 // activos que cotizan pero no están en el histórico) o si falla la conexión.
-export async function descargarHistoricoData912(
-	simbolo: string,
-	tipo: string
-): Promise<{ fecha: string; precio: number }[]> {
+// Versión completa (con volumen), para el gráfico. El backfill que persiste en
+// `precio_historico` usa el wrapper de abajo: esa tabla solo guarda precio.
+export async function descargarSerieData912(simbolo: string, tipo: string): Promise<PuntoHistorico[]> {
 	const endpoint = ENDPOINT_HISTORICO[tipo];
 	if (!endpoint) return [];
 	let data: any;
@@ -58,20 +67,47 @@ export async function descargarHistoricoData912(
 		return [];
 	}
 	if (!Array.isArray(data)) return [];
-	const out: { fecha: string; precio: number }[] = [];
+	const out: PuntoHistorico[] = [];
 	for (const fila of data) {
 		const fecha = String(fila?.date ?? '').slice(0, 10);
 		const c = Number(fila?.c);
 		if (!fecha || !Number.isFinite(c) || c <= 0) continue;
-		out.push({ fecha, precio: ajustarEscala(c, tipo) });
+		// Nombre del campo de volumen: 'v' es la convención OHLCV que sigue el resto
+		// de la respuesta (o/h/l/c), pero se prueban también los alias habituales
+		// por si el endpoint lo publica con otro nombre. Si no viene ninguno, el
+		// punto queda sin volumen y la banda no se dibuja.
+		const vRaw = fila?.v ?? fila?.volume ?? fila?.vol;
+		const v = Number(vRaw);
+		const p: PuntoHistorico = { fecha, precio: ajustarEscala(c, tipo) };
+		if (Number.isFinite(v) && v >= 0) p.volumen = v;
+		out.push(p);
 	}
 	return out;
 }
 
+// Wrapper histórico (solo fecha + precio), que es lo que persiste el backfill.
+export async function descargarHistoricoData912(
+	simbolo: string,
+	tipo: string
+): Promise<{ fecha: string; precio: number }[]> {
+	const serie = await descargarSerieData912(simbolo, tipo);
+	return serie.map((p) => ({ fecha: p.fecha, precio: p.precio }));
+}
+
 // Upsert de una fila. origen decide la regla de conflicto:
-//  - 'manual'                        -> siempre pisa (corrección explícita del usuario).
-//  - 'data912' | 'panel_vivo'        -> pisa cualquier cosa MENOS una fila 'manual'.
-//  - 'transaccion'                   -> nunca pisa nada ya guardado (solo llena huecos).
+//  - 'manual'                 -> siempre pisa (corrección explícita del usuario).
+//  - 'data912' | 'panel_vivo' -> pisan cualquier cosa, incluida una fila 'manual',
+//                                SALVO que el activo no tenga símbolo de cotización.
+//  - 'transaccion'            -> nunca pisa nada ya guardado (solo llena huecos).
+//
+// Sobre la excepción de 'manual': la corrección a mano existe para los activos que
+// NO se actualizan solos (FCI y cualquiera sin `simbolo_cotizacion`), y como escape
+// puntual si la fuente falla. Para todo lo que la API cubre, el valor de la API
+// manda — es la misma regla que aplica `actualizarPrecios` sobre `precio_actual`.
+// Antes 'manual' ganaba siempre acá, y eso dejaba las dos cosas en desacuerdo: la
+// pantalla mostraba el precio de la API y la fila guardada de ese día conservaba la
+// corrección para siempre, alimentando la valuación histórica con otro número.
+//
 // Exportada: el refresco de precios (Bloque 2) arma sus propios lotes con esta
 // misma regla para no reimplementarla ni pagar N viajes por activo.
 export function sqlUpsertPrecioHistorico(origen: string): string {
@@ -82,10 +118,16 @@ export function sqlUpsertPrecioHistorico(origen: string): string {
 	if (origen === 'transaccion') {
 		return `INSERT OR IGNORE INTO precio_historico (perfil_id,activo_id,fecha,precio,origen) VALUES (1,?,?,?,?)`;
 	}
-	// data912 / panel_vivo
+	// data912 / panel_vivo: una fila 'manual' solo se respeta si ese activo no tiene
+	// cobertura automática. Si la tiene, la fuente gana y la corrección se pisa.
 	return `INSERT INTO precio_historico (perfil_id,activo_id,fecha,precio,origen) VALUES (1,?,?,?,?)
 		ON CONFLICT(perfil_id,activo_id,fecha) DO UPDATE SET precio=excluded.precio, origen=excluded.origen
-		WHERE precio_historico.origen != 'manual'`;
+		WHERE precio_historico.origen != 'manual'
+		   OR EXISTS (
+		        SELECT 1 FROM activo a
+		        WHERE a.id = precio_historico.activo_id AND a.perfil_id = precio_historico.perfil_id
+		          AND a.simbolo_cotizacion IS NOT NULL AND TRIM(a.simbolo_cotizacion) <> ''
+		      )`;
 }
 
 export async function upsertPrecioHistorico(

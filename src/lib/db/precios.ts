@@ -121,11 +121,25 @@ export async function actualizarPrecios(): Promise<string> {
 		matches.push({ id: a.id, tipo: a.tipo, precio: ajustarEscala(px, a.tipo) });
 	}
 
+	// Activos que el usuario efectivamente opera (tienen alguna compra/venta o
+	// alguna renta cobrada). SOLO estos loguean su cierre diario en
+	// precio_historico: con el catálogo entero sincronizado, hacerlo para todos
+	// serían cientos de filas nuevas por día — creciendo la base y el backup para
+	// siempre, y ensuciando el flag de "cambios sin respaldar" en cada refresco.
+	// El resto del catálogo igual actualiza su precio_actual (se pisa en el lugar,
+	// no crece), que es lo único que necesita el listado de Mercado.
+	const operadosRows = (await query(
+		'SELECT DISTINCT activo_id FROM transaccion WHERE perfil_id=1' +
+			' UNION SELECT DISTINCT activo_id FROM renta_activo WHERE perfil_id=1'
+	)) as any[];
+	const operados = new Set<number>(operadosRows.map((r) => r.activo_id));
+	const conHistorico = matches.filter((m) => operados.has(m.id));
+
 	// Precios ya guardados en precio_historico para la fecha de cierre, para el
 	// guard de recalc condicional (una sola consulta, no una por activo).
 	const yaGuardados = new Map<number, number>();
-	if (matches.length) {
-		const ids = matches.map((m) => m.id);
+	if (conHistorico.length) {
+		const ids = conHistorico.map((m) => m.id);
 		const filas = (await query(
 			`SELECT activo_id, precio FROM precio_historico WHERE perfil_id=1 AND fecha=? AND activo_id IN (${ids.map(() => '?').join(',')})`,
 			[fechaCierre, ...ids]
@@ -135,12 +149,19 @@ export async function actualizarPrecios(): Promise<string> {
 
 	const stmts: { sql: string; bind?: unknown[] }[] = [];
 	for (const m of matches) {
-		// precio_actual: como siempre, se actualiza sin condición (no dirtea el
-		// flag de backup — worker.ts lo excluye explícitamente).
+		// precio_actual: se actualiza SIEMPRE, sin mirar si hubo corrección manual.
+		// Es deliberado: para todo lo que la API cubre, el valor de la API manda.
+		// La edición de precio en Tenencia en montos existe para los activos que NO
+		// se actualizan solos (FCI y cualquiera sin símbolo, que quedan afuera de
+		// esta consulta por el filtro de simbolo_cotizacion) y como escape puntual
+		// si la fuente falla — no como una anulación permanente.
+		// No dirtea el flag de backup: worker.ts excluye este UPDATE explícitamente.
 		stmts.push({
 			sql: 'UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1',
 			bind: [m.precio, sello, m.id]
 		});
+	}
+	for (const m of conHistorico) {
 		// precio_historico: solo si cambió respecto a lo ya guardado para ese día.
 		const previo = yaGuardados.get(m.id);
 		if (previo == null || Math.abs(previo - m.precio) > 1e-9) {
@@ -151,7 +172,14 @@ export async function actualizarPrecios(): Promise<string> {
 	await setMeta('precios_actualizados_en', sello);
 
 	let msg = `Precios actualizados ✅ ${matches.length}/${activos.length} activos`;
-	if (sinMatch.length) msg += ` · sin coincidencia: ${sinMatch.join(', ')}`;
+	// Con el catálogo sincronizado, "sin coincidencia" puede ser una lista larga
+	// (símbolos delistados, tickers cargados a mano que no existen en los paneles).
+	// Se muestran los primeros y se cuenta el resto, para que el mensaje siga siendo legible.
+	if (sinMatch.length) {
+		const MUESTRA = 8;
+		msg += ` · sin coincidencia: ${sinMatch.slice(0, MUESTRA).join(', ')}`;
+		if (sinMatch.length > MUESTRA) msg += ` y ${sinMatch.length - MUESTRA} más`;
+	}
 	if (panelesOk < PANELES.length) msg += ` · (${panelesOk}/${PANELES.length} paneles ok)`;
 	return msg;
 }
@@ -174,14 +202,45 @@ const PANEL_TIPO: Record<string, string> = {
 	arg_stocks: 'Accion'
 };
 
-export type CatalogoItem = { simbolo: string; tipo: string; precio: number };
+export type CatalogoItem = { simbolo: string; tipo: string; precio: number; moneda: 'ARS' | 'USD' };
+
+// Especie de un símbolo, derivada del ticker + la moneda ya resuelta. NO se
+// guarda en la base: es una etiqueta de lectura para el filtro de Mercado.
+//   Pesos = ticker pelado (cotiza en ARS)
+//   MEP   = especie D (dólar bolsa)
+//   CCL   = especie C (contado con liquidación)
+// El sufijo solo se interpreta si la moneda ya salió 'USD' (ver monedaDeSimbolo):
+// así 'AMD' (CEDEAR de AMD, en pesos) no se confunde con una especie D.
+// LÍMITE CONOCIDO: un activo cargado a mano en USD sin sufijo (p.ej. una ON
+// suscripta en dólares) se etiqueta MEP por descarte — es la especie usual en
+// el mercado local, pero es una suposición, no un dato.
+export type Especie = 'Pesos' | 'MEP' | 'CCL';
+export function especieDeTicker(ticker: string, moneda: string): Especie {
+	if (moneda !== 'USD') return 'Pesos';
+	const t = ticker.trim().toUpperCase();
+	if (t.endsWith('C')) return 'CCL';
+	return 'MEP';
+}
+
+// Moneda de cotización de un símbolo del panel. Los instrumentos aparecen hasta
+// tres veces (TICKER en pesos, TICKERD en MEP, TICKERC en CCL), así que la regla
+// natural sería "termina en D o C -> USD". Pero hay tickers propios que terminan
+// en esas letras sin ser especie dólar (AMD y BBD son CEDEARs que cotizan en
+// pesos; YPFD es el ticker de YPF, no la especie D de 'YPF'). Por eso el sufijo
+// solo cuenta si el símbolo base TAMBIÉN está en el mismo panel: 'GD35D' es USD
+// porque 'GD35' está al lado, 'AMD' no lo es porque 'AM' no existe. La regla sale
+// del propio dato que se baja, no de una lista negra a mantener a mano.
+function monedaDeSimbolo(sym: string, simbolosDelPanel: Set<string>): 'ARS' | 'USD' {
+	const ultima = sym.slice(-1);
+	if (ultima !== 'D' && ultima !== 'C') return 'ARS';
+	return simbolosDelPanel.has(sym.slice(0, -1)) ? 'USD' : 'ARS';
+}
 
 // Catálogo completo de instrumentos que devuelven los paneles en vivo de
-// data912 (Bloque 7 — "Mercado"), con el tipo ya inferido por panel de origen,
-// para que el usuario los busque y cargue sin tipear el ticker a mano. El
-// nombre real NO viene en los paneles: el usuario lo sigue completando al
-// cargar. Si un símbolo aparece en más de un panel, se queda con la primera
-// aparición (orden de PANELES).
+// data912, con tipo inferido por panel de origen y moneda derivada por la regla
+// de arriba. El nombre real NO viene en los paneles (por eso el sync guarda
+// nombre = ticker y el usuario lo corrige solo en los que opera). Si un símbolo
+// aparece en más de un panel, gana la primera aparición (orden de PANELES).
 export async function listarCatalogoData912(): Promise<CatalogoItem[]> {
 	const out: CatalogoItem[] = [];
 	const vistos = new Set<string>();
@@ -197,15 +256,91 @@ export async function listarCatalogoData912(): Promise<CatalogoItem[]> {
 		const r = resultados[i];
 		if (r.status !== 'fulfilled' || !Array.isArray(r.value)) return;
 		const tipo = PANEL_TIPO[p];
+		// Primera pasada: todos los símbolos de ESTE panel, para poder chequear
+		// si el símbolo base de un sufijo D/C existe (ver monedaDeSimbolo).
+		const delPanel = new Set<string>();
+		for (const fila of r.value) {
+			const sym = String(fila?.symbol ?? '').trim().toUpperCase();
+			if (sym) delPanel.add(sym);
+		}
 		for (const fila of r.value) {
 			const sym = String(fila?.symbol ?? '').trim().toUpperCase();
 			const px = Number(fila?.c);
 			if (!sym || vistos.has(sym) || !Number.isFinite(px) || px <= 0) continue;
 			vistos.add(sym);
-			out.push({ simbolo: sym, tipo, precio: ajustarEscala(px, tipo) });
+			out.push({ simbolo: sym, tipo, precio: ajustarEscala(px, tipo), moneda: monedaDeSimbolo(sym, delPanel) });
 		}
 	});
 	return out.sort((a, b) => a.simbolo.localeCompare(b.simbolo));
+}
+
+// Renta por defecto según el panel de origen: renta fija para deuda (bonos,
+// letras y ONs), variable para lo demás (acciones y CEDEARs). Es un default de
+// alta masiva — el usuario corrige a mano los pocos que efectivamente opera.
+function rentaPorTipo(tipo: string): string {
+	return tipo === 'Bono' || tipo === 'ON' ? 'Fija' : 'Variable';
+}
+
+// Exposición al tipo de cambio por defecto. Misma regla que ya usa el alta
+// manual (exposicionSugerida en la pantalla de Mercado): no es la moneda de
+// cotización — un CEDEAR cotiza en pesos pero sigue al dólar.
+function exposicionPorRegla(moneda: string, tipo: string): string {
+	return moneda === 'USD' || tipo === 'CEDEAR' || tipo === 'Indice' ? 'Dolar' : 'Peso';
+}
+
+// Sincroniza el catálogo de data912 contra la tabla `activo`: da de alta los
+// símbolos que todavía no existen y NO toca ninguno de los que ya están (así
+// las correcciones de renta/exposición/nombre que hizo el usuario nunca se
+// pisan). Idempotente: volver a correrlo solo agrega lo que apareció nuevo.
+//
+// Los activos entran con nombre = ticker (los paneles no traen el nombre real),
+// simbolo_cotizacion = ticker (para que el refresco de precios los encuentre) y
+// precio_actual ya sembrado con el precio del panel — sin un fetch extra, porque
+// el catálogo ya lo trae. NO se baja histórico: eso lo resuelve el gráfico de
+// Mercado on-demand, en memoria, sin persistirlo.
+export async function sincronizarCatalogoData912(): Promise<string> {
+	const catalogo = await listarCatalogoData912();
+	if (catalogo.length === 0) {
+		throw new Error('No se pudo conectar con data912 (¿sin internet o bloqueo CORS?).');
+	}
+
+	// Tickers ya cargados, comparados en mayúsculas: el UNIQUE de la tabla es
+	// sensible a mayúsculas, así que un 'cepu' cargado a mano no frenaría el
+	// INSERT de 'CEPU' — este set sí lo frena y evita el duplicado por caja.
+	const existentes = (await query('SELECT ticker FROM activo WHERE perfil_id=1')) as any[];
+	const yaCargados = new Set(existentes.map((a) => String(a.ticker).trim().toUpperCase()));
+
+	const sello = new Date().toISOString();
+	const nuevos = catalogo.filter((c) => !yaCargados.has(c.simbolo));
+	if (nuevos.length) {
+		await queryBatch(
+			nuevos.map((c) => ({
+				// OR IGNORE como segunda red: si dos símbolos normalizan al mismo
+				// ticker, el lote no se cae entero por una colisión.
+				sql: `INSERT OR IGNORE INTO activo
+					(perfil_id, ticker, nombre, tipo, renta, moneda, exposicion, simbolo_cotizacion, precio_actual, precio_actualizado_en)
+					VALUES (1,?,?,?,?,?,?,?,?,?)`,
+				bind: [
+					c.simbolo, c.simbolo, c.tipo, rentaPorTipo(c.tipo), c.moneda,
+					exposicionPorRegla(c.moneda, c.tipo), c.simbolo, c.precio, sello
+				]
+			}))
+		);
+	}
+
+	// Resumen: sirve de diagnóstico real de la fuente (cuántos símbolos trae cada
+	// tipo y cuántos son especie dólar), que es justo lo que no se puede saber sin
+	// llamar a la API.
+	const porTipo = new Map<string, number>();
+	let mep = 0, ccl = 0;
+	for (const c of catalogo) {
+		porTipo.set(c.tipo, (porTipo.get(c.tipo) ?? 0) + 1);
+		const e = especieDeTicker(c.simbolo, c.moneda);
+		if (e === 'MEP') mep++; else if (e === 'CCL') ccl++;
+	}
+	const detalle = [...porTipo.entries()].sort().map(([t, n]) => `${t} ${n}`).join(' · ');
+	return `Catálogo sincronizado ✅ ${nuevos.length} nuevos de ${catalogo.length} símbolos` +
+		` · ${detalle} · especies: MEP ${mep}, CCL ${ccl}`;
 }
 
 // Bloque 2: la foto de cartera deja de ser una acción del usuario y pasa a ser

@@ -4,6 +4,7 @@
 	import { fechaISO, pesos, mesCorto, fmtFecha } from '$lib/format';
 	import { calcularFIFO } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import CountUp from '$lib/CountUp.svelte';
 	import { progresoReplay } from '$lib/anim';
@@ -200,6 +201,7 @@
 			<span class="leg"><span class="sw sw-twr"></span> TWR (%, eje der.)</span>
 		</div>
 		<svg viewBox="0 0 {W} {H}" class="chart tacto"
+			role="img" aria-label="Valor de cartera y rendimiento TWR en el tiempo"
 			onpointerdown={iniciarTacto} onpointermove={moverTacto} onpointerup={soltarTacto} onpointercancel={soltarTacto}>
 			<defs><clipPath id="reveal-cartera"><rect x="0" y="0" width={W * $pArea} height={H} /></clipPath></defs>
 			{#each chart.yticksL as t}<line x1={P.l} y1={t.y} x2={W - P.r} y2={t.y} class="grid" /><text x={P.l - 6} y={t.y + 3} class="ylbl">{t.label}</text>{/each}
@@ -218,13 +220,11 @@
 				<circle cx={chart.ptsTwr[puntoTacto].x} cy={chart.ptsTwr[puntoTacto].y} r="4.5" class="dot-tacto-twr" />
 			{/if}
 		</svg>
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Valor de cartera y TWR</summary>
-			<p class="nota">
-				<strong>Valor de cartera:</strong> valuación de tu cartera en el período correspondiente — incluyendo ingreso/retiro de liquidez.<br />
-				<strong>TWR (Time-Weighted Return):</strong> crecimiento de tu cartera de valores — no afectado por ingreso/retiro de liquidez.
-			</p>
-		</details>
+		<NotaVisual objetivo="Cuánto vale tu cartera y cuánto rindió" glosario="tenencia" glosarioTexto="Qué es el TWR">
+			{#snippet muestra()}Dos series sobre el mismo eje de tiempo: el <strong>valor de cartera</strong> en cada foto y el <strong>TWR</strong> acumulado desde el inicio de la ventana.{/snippet}
+			{#snippet leer()}El valor sube y baja también cuando metés o sacás plata; el TWR no —descuenta ese efecto— así que mide el rendimiento de tus decisiones y no el tamaño de la cartera. Si el valor crece y el TWR está plano, creciste por aporte, no por rendimiento.{/snippet}
+			{#snippet usar()}Separar cuánto de tu crecimiento vino de ahorrar y cuánto de invertir bien.{/snippet}
+		</NotaVisual>
 	{:else}
 		<p class="nota">Sin datos suficientes en este rango.</p>
 	{/if}
@@ -255,10 +255,11 @@
 		<p class="nota">Todavía no hay ventas registradas.</p>
 	{/if}
 
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Ganancia realizada</summary>
-		<p class="nota">"Realizada" es la ganancia o pérdida que quedó fija al vender un activo (método FIFO) — no incluye la valorización de lo que todavía tenés en cartera y no vendiste (esa es ganancia no realizada, en papel, y ya está reflejada en el Valor de cartera de arriba).</p>
-	</details>
+	<NotaVisual objetivo="Resultado que cerraste cada año" glosario="tenencia" glosarioTexto="Cómo funciona el FIFO">
+		{#snippet muestra()}La ganancia o pérdida que quedó fija al vender, año por año, en dólares.{/snippet}
+		{#snippet leer()}Solo cuenta lo vendido, calculado por <strong>FIFO</strong> (cada venta consume primero los lotes más viejos). Lo que todavía tenés en cartera no aparece acá: esa es ganancia en papel y ya está dentro del valor de cartera de arriba.{/snippet}
+		{#snippet usar()}Ver qué años cerraste en ganancia de verdad, sin que lo tape la valorización de lo que no vendiste.{/snippet}
+	</NotaVisual>
 {/if}
 
 <style>
@@ -268,10 +269,7 @@
 	.sk-chart { margin-top: 12px; }
 	.leyenda { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 	.sw { width: 16px; height: 3px; border-radius: 2px; display: inline-block; flex-shrink: 0; }
 	.sw-valor { background: var(--accent); }
 	.sw-twr { background: #e8975b; }

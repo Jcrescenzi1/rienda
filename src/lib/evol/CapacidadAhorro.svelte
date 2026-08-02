@@ -6,6 +6,7 @@
 	import { cargarIPC, fmtMoneda, type IPC } from '$lib/moneda';
 	import { mesActual, mesCorto } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import type { Snippet } from 'svelte';
 
@@ -241,10 +242,12 @@
 						<text x={b.cx} y={H - 10} class="xlbl">{mesCorto(b.periodo)}</text>
 					{/each}
 				</svg>
-				<details class="nota-colapsable">
-					<summary>Descripción de la visual: {titulo}</summary>
-					<p class="nota">{mon === 'ARS' ? 'Montos en pesos reales' : 'Montos en dólares nominales'}{mon === 'ARS' && ipc.ultimoPeriodo ? ` (de ${mesCorto(ipc.ultimoPeriodo)})` : ''}. La barra es el ahorro neto; la marca, el objetivo del mes.</p>
-				</details>
+				<NotaVisual objetivo="Cuánto ahorraste cada mes contra tu objetivo">
+					{#snippet muestra()}Una barra por período con tu <strong>ahorro neto</strong> en {mon}, y una marca horizontal con el objetivo de ese mes.{/snippet}
+					{#snippet leer()}El color compara la barra contra su marca, no contra las otras barras: verde llegó al 90% del objetivo o más, amarillo entre 50 y 90, rojo por debajo o negativo. La marca se mueve mes a mes porque el objetivo es un % de tu ingreso regular, aunque el % sea fijo. <strong>s/d</strong> es un período sin ingreso regular en {mon}.{/snippet}
+					{#snippet usar()}Ver en qué meses llegaste y en cuáles no, y ajustar el objetivo si quedó siempre fuera de alcance o siempre corto.{/snippet}
+					{#snippet fuente()}{mon === 'ARS' ? 'Montos en pesos reales' : 'Montos en dólares nominales'}{mon === 'ARS' && ipc.ultimoPeriodo ? `, de ${mesCorto(ipc.ultimoPeriodo)}` : ''}.{/snippet}
+				</NotaVisual>
 			{:else}
 				<p class="nota">No hay ingreso regular en {mon} en la ventana.</p>
 			{/if}
@@ -257,10 +260,11 @@
 		{@render bloque('Ahorro en dólares', 'USD', serieUSD, chartUSD, resUSD, targetUSD, guardarTargetUSD, avisoSinAhorroUSD)}
 	{/if}
 
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Capacidad de ahorro</summary>
-		<p class="nota">La tasa es ahorro neto ÷ ingreso regular del período, en la misma moneda (el ajuste por inflación no altera el %). El objetivo en pesos se mueve mes a mes con tu ingreso regular, aunque el % sea fijo. Editar el objetivo repinta todo el histórico visible.</p>
-	</details>
+	<NotaVisual objetivo="Cómo se calcula la tasa de ahorro">
+		{#snippet muestra()}El criterio común de los bloques de arriba.{/snippet}
+		{#snippet leer()}La tasa es tu ahorro neto dividido el ingreso regular de ese período, siempre dentro de la misma moneda —por eso el ajuste por inflación no mueve el porcentaje, mueve los dos números por igual—. El ahorro neto descuenta los desahorros del período.{/snippet}
+		{#snippet usar()}Tener presente que cambiar el objetivo repinta todo el histórico visible: no cambia lo que ahorraste, cambia la vara contra la que se lo mide.{/snippet}
+	</NotaVisual>
 {/if}
 
 <style>
@@ -288,8 +292,5 @@
 	.tick { stroke: var(--text); stroke-width: 2; stroke-dasharray: 4 3; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.sk-chart { margin-top: 12px; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 </style>

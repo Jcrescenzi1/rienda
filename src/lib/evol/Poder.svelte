@@ -3,6 +3,7 @@
 	import { query } from '$lib/db/client';
 	import { dolarDeFecha } from '$lib/moneda';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 	import { progresoReplay } from '$lib/anim';
 	import { mesCorto } from '$lib/format';
@@ -225,10 +226,11 @@
 				<text x={chart.finI.x + 5} y={chart.finI.y + 3} class="endlbl inf">{serie[serie.length-1].inflacion.toFixed(0)}</text>
 			</g>
 		</svg>
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Ingreso Primario vs Inflación</summary>
-			<p class="nota">Ambas en base 100 al inicio de la ventana. Si el ingreso va por encima, le ganás a la inflación.</p>
-		</details>
+		<NotaVisual objetivo="Si tu sueldo le gana a los precios">
+			{#snippet muestra()}Tu ingreso principal regular y la inflación, las dos en <strong>base 100</strong> al inicio de la ventana.{/snippet}
+			{#snippet leer()}Base 100 significa que las dos arrancan en el mismo punto, así se comparan aunque midan cosas distintas. Si el ingreso va por encima de la inflación, le estás ganando; si va por debajo, perdiste poder de compra desde el arranque de la ventana.{/snippet}
+			{#snippet usar()}Saber si tus aumentos siguieron el ritmo de los precios, y desde cuándo se abrió la brecha.{/snippet}
+		</NotaVisual>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
@@ -256,18 +258,20 @@
 				{#each chartUSD.ptsS as p}<circle cx={p.x} cy={p.y} r="2" class="dot-ing" />{/each}
 			</g>
 		</svg>
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Ingreso Primario en USD vs Dólar</summary>
-			<p class="nota">Si el ingreso en USD cae mientras el dólar sube, el golpe vino del tipo de cambio, no de tu ingreso real.</p>
-		</details>
+		<NotaVisual objetivo="Cuánto vale tu sueldo medido en dólares">
+			{#snippet muestra()}Tu ingreso principal convertido a dólares (eje izquierdo) y el dólar bolsa (eje derecho), sobre el mismo período.{/snippet}
+			{#snippet leer()}Son dos ejes distintos, así que importa la forma de cada línea, no cuál está más arriba. Si el ingreso en dólares cae mientras el dólar sube, el golpe vino del tipo de cambio y no de tu sueldo.{/snippet}
+			{#snippet usar()}Distinguir una caída real de tu ingreso de una devaluación, antes de sacar conclusiones.{/snippet}
+		</NotaVisual>
 	{:else}
 		<p class="nota">No hay suficientes meses en esta ventana para graficar.</p>
 	{/if}
 
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Poder adquisitivo</summary>
-		<p class="nota">El ingreso del período N se compara contra la inflación acumulada hasta el mes anterior (la inflación de un mes impacta el ingreso del mes siguiente). La brecha entre las líneas es tu poder adquisitivo respecto al inicio de la ventana.</p>
-	</details>
+	<NotaVisual objetivo="Cómo se calculan los dos gráficos de arriba" glosario="poder">
+		{#snippet muestra()}El criterio común de las dos comparaciones de esta pantalla.{/snippet}
+		{#snippet leer()}El ingreso de un período se compara contra la inflación acumulada <strong>hasta el mes anterior</strong>: la inflación de un mes te pega en el sueldo del mes siguiente. La brecha entre las líneas es tu poder adquisitivo respecto del inicio de la ventana, no respecto de hoy.{/snippet}
+		{#snippet usar()}Tener presente que cambiar la ventana cambia el punto de partida, y con eso cambia la brecha que ves.{/snippet}
+	</NotaVisual>
 {/if}
 
 <style>
@@ -282,10 +286,7 @@
 	.sw-ing { background: var(--accent); }
 	.sw-inf { background: #e8975b; }
 	.sw-dolar { background: #e8975b; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

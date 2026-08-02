@@ -5,6 +5,7 @@
 	import { dolarActual, invalidarFotosDesde } from '$lib/cartera';
 	import { registrarPrecioTransaccion } from '$lib/db/precios_historicos';
 	import Guia from '$lib/Guia.svelte';
+	import ComboActivo from '$lib/ComboActivo.svelte';
 	import { Toast } from '$lib/toast.svelte';
 
 	let cuentas = $state<any[]>([]);
@@ -44,22 +45,10 @@
 	});
 	let esTrade = $derived(fAccion === 'Compra' || fAccion === 'Venta');
 
-	// Agrupa los activos por tipo para los selectores: grupos en orden alfabético
-	// y, dentro de cada uno, activos alfabéticos. Sin dato nuevo: usa el campo
-	// `tipo` que ya trae la tabla `activo`.
-	const activosPorTipo = $derived.by(() => {
-		const grupos = new Map<string, any[]>();
-		for (const a of activosList) {
-			const t = a.tipo || 'Otros';
-			if (!grupos.has(t)) grupos.set(t, []);
-			grupos.get(t)!.push(a);
-		}
-		return [...grupos.entries()]
-			.sort((x, y) => x[0].localeCompare(y[0], 'es'))
-			.map(([tipo, items]) => ({
-				tipo,
-				items: [...items].sort((p, q) => String(p.nombre).localeCompare(String(q.nombre), 'es'))
-			}));
+	// Nombre legible del activo elegido en el filtro (el combo guarda el id).
+	const nombreFiltroActivo = $derived.by(() => {
+		const a = activosList.find((x) => String(x.id) === filtroActivo);
+		return a ? a.ticker : '';
 	});
 
 	const rentaN = $derived(parseNum(fRenta));
@@ -268,10 +257,9 @@
 				<option value="nueva">+ Cuenta nueva…</option></select></label>
 		{#if fCuenta === 'nueva'}<label>Nombre cuenta<input bind:value={fCuentaNueva} /></label>{/if}
 		<label>Activo
-			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
-				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
-			</select></label>
-		<a class="link-crear" href="/config-tickers">¿No está? Crealo en Tickers →</a>
+			<ComboActivo activos={activosList} bind:value={fActivo} />
+		</label>
+		<a class="link-crear" href="/config-tickers">¿No está? Crealo en Mercado →</a>
 		<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
 		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} en<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:calc bind:value={fMonto} placeholder="0,00" /></label>
@@ -292,9 +280,8 @@
 		{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 	{:else if fAccion === 'Renta'}
 		<label>Activo
-			<select bind:value={fActivo}><option value="" disabled>Elegir…</option>
-				{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre} ({a.tipo}/{a.moneda})</option>{/each}</optgroup>{/each}
-			</select></label>
+			<ComboActivo activos={activosList} bind:value={fActivo} />
+		</label>
 		<label>Moneda (renta y amortización)<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:calc bind:value={fRenta} placeholder="0,00" /></label>
 		<label>Monto amortización<input type="text" inputmode="decimal" use:calc bind:value={fAmort} placeholder="0,00" /></label>
@@ -316,12 +303,13 @@
 		<button type="button" class:is-active={filtroTipoAct === t} onclick={() => (filtroTipoAct = t as any)}>{t === 'Renta' ? 'Renta y Amort.' : t}</button>
 	{/each}
 </div>
-<label class="filtro-activo">Activo
-	<select bind:value={filtroActivo}>
-		<option value="">Todos</option>
-		{#each activosPorTipo as g (g.tipo)}<optgroup label={g.tipo}>{#each g.items as a (a.id)}<option value={String(a.id)}>{a.nombre}</option>{/each}</optgroup>{/each}
-	</select>
-</label>
+<div class="filtro-activo">
+	<span class="filtro-lbl">Activo</span>
+	<ComboActivo activos={activosList} bind:value={filtroActivo} placeholder="Buscar por ticker o nombre…" />
+	{#if filtroActivo}
+		<button class="btn btn-secondary" onclick={() => (filtroActivo = '')}>Todos ({nombreFiltroActivo} ✕)</button>
+	{/if}
+</div>
 
 <div class="fichas">
 	{#each activosLedger as m (m.tipo + '-' + m.id)}
@@ -388,7 +376,8 @@
 
 	/* Filtros de cada libro */
 	.filtros-tipo { margin: 8px 0; }
-	.filtro-activo { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; max-width: 240px; margin: 0 0 8px; }
+	.filtro-activo { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 4px; max-width: 280px; margin: 0 0 8px; }
+	.filtro-lbl { font-size: 0.82rem; color: var(--text-dim); }
 
 	/* Fichas (diario de activos + caja) */
 	.fichas { display: flex; flex-direction: column; gap: 8px; }

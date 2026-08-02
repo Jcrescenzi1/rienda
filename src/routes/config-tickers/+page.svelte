@@ -1,11 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { actualizarPreciosYFoto, listarCatalogoData912, type CatalogoItem } from '$lib/db/precios';
+	import {
+		actualizarPreciosYFoto,
+		sincronizarCatalogoData912,
+		especieDeTicker,
+		type Especie
+	} from '$lib/db/precios';
 	import { backfillHistoricoActivo, tieneHistoricoData912 } from '$lib/db/precios_historicos';
 	import { Toast } from '$lib/toast.svelte';
 	import { unidades } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
+	import GraficoPrecio from '$lib/GraficoPrecio.svelte';
 
 	const TIPOS_ACTIVO = ['Bono', 'ON', 'FCI', 'Accion', 'CEDEAR', 'Indice'];
 	const RENTAS = ['Fija', 'Mixta', 'Variable', 'Liquido'];
@@ -13,14 +19,23 @@
 	// la moneda de cotización: un CEDEAR o una ON dollar-linked cotizan en ARS pero
 	// su exposición es 'Dolar'. Alimenta la tabla de Exposición en Inversiones.
 	const EXPOSICIONES = ['Dolar', 'CER', 'Peso'];
+	const ESPECIES: Especie[] = ['Pesos', 'MEP', 'CCL'];
+
+	// Tope de fichas dibujadas por grupo. Con el catálogo de data912 sincronizado
+	// la tabla `activo` pasa de ~15 filas a varios cientos (cada instrumento
+	// aparece además en sus especies pesos/MEP/CCL): montar todas las fichas de una
+	// se nota en mobile. Mismo criterio que ya usaba el buscador de mercado.
+	const TOPE_GRUPO = 30;
 
 	let activos = $state<any[]>([]);
 	let cargando = $state(true);
 	let actualizando = $state(false);
+	let sincronizando = $state(false);
 	const toast = new Toast();
 
-	// Filtro de la lista (combinable): tipo + texto contra ticker/nombre.
+	// Filtro de la lista (combinable): tipo + especie + texto contra ticker/nombre.
 	let filtroTipo = $state('Todos');
+	let filtroEspecie = $state('Todas');
 	let filtroTexto = $state('');
 
 	// Formulario unificado (alta + edición). editId null = alta, número = edición.
@@ -35,22 +50,52 @@
 	// Marca si el usuario tocó la exposición a mano; si no, se sugiere por regla.
 	let fExpoTocada = $state(false);
 
+	// Activo dibujado en el gráfico fijo de arriba.
+	let graficoId = $state<string>('');
+
 	async function cargar() {
-		// Todos los activos del perfil (incluidos FCI): esta pantalla es el único
-		// lugar de alta/edición. Orden: por tipo y, dentro, por ticker.
+		// Todos los activos del perfil (incluidos FCI): esta pantalla es el catálogo
+		// de referencia y el único lugar de alta/edición manual. Orden: por tipo y,
+		// dentro, por ticker.
 		activos = (await query(
 			"SELECT id, ticker, nombre, tipo, renta, moneda, precio_actual, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY tipo COLLATE NOCASE, ticker COLLATE NOCASE"
 		)) as any[];
 		cargando = false;
+		if (!graficoId) await elegirDefaultGrafico();
 	}
 	onMount(cargar);
 
-	// Filtro combinable: tipo + texto (substring case-insensitive contra ticker y
-	// nombre). Solo reduce qué fichas se ven; no altera orden ni agrupado.
+	// El gráfico no arranca vacío. Default = el activo con mayor tenencia valuada;
+	// si todavía no hay ninguna operación cargada, el primero del catálogo por
+	// orden alfabético de ticker. La valuación acá es aproximada a propósito (no
+	// convierte ARS/USD a una moneda común): es solo para elegir cuál mostrar
+	// primero, no un número que se muestre en pantalla.
+	async function elegirDefaultGrafico() {
+		try {
+			const r = (await query(
+				`SELECT t.activo_id AS id,
+				        SUM(CASE WHEN t.operacion='Compra' THEN t.unidades ELSE -t.unidades END) * COALESCE(a.precio_actual, 0) AS val
+				 FROM transaccion t JOIN activo a ON a.id = t.activo_id
+				 WHERE t.perfil_id = 1
+				 GROUP BY t.activo_id HAVING val > 0 ORDER BY val DESC LIMIT 1`
+			)) as any[];
+			if (r[0]?.id != null) { graficoId = String(r[0].id); return; }
+		} catch (e) {
+			console.error('[mercado] no se pudo determinar el activo de mayor tenencia:', e);
+		}
+		const primero = [...activos].sort((x, y) =>
+			String(x.ticker).localeCompare(String(y.ticker), 'es')
+		)[0];
+		if (primero) graficoId = String(primero.id);
+	}
+
+	// Filtro combinable: tipo + especie + texto (substring case-insensitive contra
+	// ticker y nombre). Solo reduce qué fichas se ven; no altera orden ni agrupado.
 	const activosFiltrados = $derived.by(() => {
 		const q = filtroTexto.trim().toLowerCase();
 		return activos.filter((a) =>
 			(filtroTipo === 'Todos' || a.tipo === filtroTipo) &&
+			(filtroEspecie === 'Todas' || especieDeTicker(a.ticker, a.moneda) === filtroEspecie) &&
 			(!q || a.ticker.toLowerCase().includes(q) || a.nombre.toLowerCase().includes(q))
 		);
 	});
@@ -65,7 +110,7 @@
 		}
 		return [...grupos.entries()]
 			.sort((x, y) => x[0].localeCompare(y[0], 'es'))
-			.map(([tipo, items]) => ({ tipo, items }));
+			.map(([tipo, items]) => ({ tipo, items, total: items.length }));
 	});
 
 	// Misma regla que usaba Movimientos al crear un activo al vuelo.
@@ -134,10 +179,13 @@
 				activoId = r[0].id;
 				toast.exito('Activo creado ✅');
 			}
-			// Precio histórico (Bloque 1): si el tipo tiene endpoint de data912 y hay
-			// símbolo, baja la serie completa en segundo plano. Fire-and-forget: no
-			// bloquea el guardado ni el toast; si falla (sin internet, símbolo sin
-			// serie), no rompe nada — la cadena de respaldo sigue funcionando igual.
+			// Precio histórico: si el tipo tiene endpoint de data912 y hay símbolo,
+			// baja la serie completa en segundo plano. Se hace SOLO acá (alta/edición
+			// manual, que son los activos que el usuario efectivamente opera) y no en
+			// el sync masivo ni al mirar el gráfico, para no llenar la base con el
+			// histórico de cientos de activos del catálogo. Fire-and-forget: no
+			// bloquea el guardado ni el toast; si falla, la cadena de respaldo sigue
+			// funcionando igual.
 			if (simbolo && tieneHistoricoData912(fTipo)) {
 				backfillHistoricoActivo(activoId).catch(() => {});
 			}
@@ -159,112 +207,16 @@
 		actualizando = false;
 	}
 
-	// --- Bloque 7: catálogo de instrumentos de data912 -----------------------
-	// Se baja una sola vez, al abrir el panel por primera vez (no en onMount:
-	// son 5 fetches extra que no hacen falta si el usuario nunca abre el buscador).
-	let catalogoAbierto = $state(false);
-	let catalogo = $state<CatalogoItem[]>([]);
-	let catalogoCargando = $state(false);
-	let catalogoErr = $state('');
-	let catFiltroTipo = $state('Todos');
-	let catFiltroTexto = $state('');
-
-	async function abrirCatalogo() {
-		catalogoAbierto = true;
-		if (catalogo.length > 0 || catalogoCargando) return;
-		catalogoCargando = true;
-		catalogoErr = '';
-		try { catalogo = await listarCatalogoData912(); }
-		catch (e) { console.error(e); catalogoErr = 'No se pudo conectar con data912.'; }
-		catalogoCargando = false;
-	}
-
-	// Símbolos ya cargados como activo (para el badge "Ya cargado ✓" en vez de
-	// ofrecer un alta duplicada).
-	const simbolosCargados = $derived(new Set(activos.map((a) => String(a.ticker).toUpperCase())));
-
-	const catalogoFiltrado = $derived.by(() => {
-		const q = catFiltroTexto.trim().toLowerCase();
-		return catalogo.filter((c) =>
-			(catFiltroTipo === 'Todos' || c.tipo === catFiltroTipo) &&
-			(!q || c.simbolo.toLowerCase().includes(q))
-		);
-	});
-
-	// Precarga el form de alta con lo que ya sabemos del catálogo (ticker/tipo/
-	// precio-moneda) y deja el resto (nombre, renta, exposición) a completar a
-	// mano — el alta/edición manual sigue siendo el mismo formulario de siempre.
-	function cargarDesdeCatalogo(c: CatalogoItem) {
-		resetForm();
-		fTicker = c.simbolo;
-		fTipo = c.tipo;
-		fRenta = c.tipo === 'Bono' || c.tipo === 'ON' ? 'Fija' : 'Variable';
-		formAbierto = true;
+	// Alta masiva del catálogo de data912. Acción manual y explícita: son 5 fetches
+	// y cientos de altas, no algo para disparar en cada visita. Es idempotente, así
+	// que volver a correrlo más adelante solo suma los símbolos nuevos.
+	async function sincronizarCatalogo() {
+		sincronizando = true;
 		toast.limpiar();
-		window.scrollTo({ top: 0, behavior: 'smooth' });
+		try { toast.exito(await sincronizarCatalogoData912()); await cargar(); }
+		catch (e: any) { toast.errorTecnico(e); }
+		sincronizando = false;
 	}
-
-	// --- Bloque 7: gráfico de precio in-place (tap-to-expand) -----------------
-	// Mismo patrón que otras pantallas (tocar el cuerpo de una ficha para
-	// desplegar el detalle). Un solo activo expandido por vez.
-	let expandidoId = $state<number | null>(null);
-	let serieActivo = $state<{ fecha: string; precio: number }[]>([]);
-	let serieCargando = $state(false);
-
-	const VENTANAS: [string, string][] = [['1m', '1M'], ['3m', '3M'], ['6m', '6M'], ['1a', '1A'], ['total', 'Todo']];
-	const DIAS_VENTANA: Record<string, number | null> = { '1m': 30, '3m': 91, '6m': 182, '1a': 365, total: null };
-	let ventanaActiva = $state('6m');
-
-	async function toggleExpandir(a: any) {
-		if (expandidoId === a.id) { expandidoId = null; return; }
-		expandidoId = a.id;
-		serieCargando = true;
-		const traer = () => query(
-			'SELECT fecha, precio FROM precio_historico WHERE perfil_id=1 AND activo_id=? ORDER BY fecha',
-			[a.id]
-		) as Promise<any[]>;
-		serieActivo = await traer();
-		// Backfill al vuelo: el backfill de precio_historico (Bloque 1) solo se
-		// dispara al guardar/editar un activo desde este formulario — los activos
-		// que ya estaban cargados antes de esta pantalla nunca lo corrieron, así
-		// que su gráfico arrancaba vacío. Si hay menos de 2 puntos y el tipo tiene
-		// serie en data912, se baja acá (mismo mecanismo, on-demand).
-		if (serieActivo.length < 2 && tieneHistoricoData912(a.tipo)) {
-			try { await backfillHistoricoActivo(a.id); serieActivo = await traer(); } catch {}
-		}
-		serieCargando = false;
-	}
-
-	const serieVentana = $derived.by(() => {
-		const dias = DIAS_VENTANA[ventanaActiva];
-		if (dias == null || serieActivo.length === 0) return serieActivo;
-		const ultima = serieActivo[serieActivo.length - 1].fecha;
-		const [y, m, d] = ultima.split('-').map(Number);
-		const corte = new Date(Date.UTC(y, m - 1, d) - dias * 86400000);
-		const corteISO = corte.getUTCFullYear() + '-' + String(corte.getUTCMonth() + 1).padStart(2, '0') + '-' + String(corte.getUTCDate()).padStart(2, '0');
-		return serieActivo.filter((s) => s.fecha >= corteISO);
-	});
-
-	// SVG propio (sin librerías de terceros), mismo espíritu que el gráfico de
-	// Evolución de cartera: una sola línea, escala lineal, piso en 0.
-	const CW = 320, CH = 110, CPAD = { l: 4, r: 4, t: 8, b: 6 };
-	const chartActivo = $derived.by(() => {
-		const s = serieVentana;
-		if (s.length < 2) return null;
-		const xs = s.map((p) => new Date(p.fecha + 'T00:00:00Z').getTime());
-		const minX = xs[0], maxX = xs[xs.length - 1];
-		const px = (x: number) => CPAD.l + ((x - minX) / (maxX - minX || 1)) * (CW - CPAD.l - CPAD.r);
-		const vals = s.map((p) => p.precio);
-		let minY = Math.min(...vals), maxY = Math.max(...vals);
-		const pad = (maxY - minY) * 0.1 || Math.max(1, maxY * 0.05);
-		minY = Math.max(0, minY - pad); maxY += pad;
-		const py = (y: number) => CH - CPAD.b - ((y - minY) / (maxY - minY || 1)) * (CH - CPAD.t - CPAD.b);
-		const pts = s.map((p, i) => ({ x: px(xs[i]), y: py(p.precio) }));
-		const linea = pts.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ',' + p.y.toFixed(1)).join(' ');
-		const primero = s[0].precio, ultimo = s[s.length - 1].precio;
-		const variacion = primero ? ultimo / primero - 1 : 0;
-		return { linea, ultimo, variacion, ultimaX: pts[pts.length - 1].x, ultimaY: pts[pts.length - 1].y };
-	});
 
 	// Delega el formateo numérico al helper único de format.ts (ver Brief H / A1).
 	// OJO: acá el precio se muestra hasta 2 decimales SIN forzar los dos (150 → "150",
@@ -277,7 +229,7 @@
 
 <div class="titulo-guia">
 	<h1>Mercado</h1>
-	<Guia clave="config-tickers" texto="Acá se dan de alta y se editan todos los activos. Cada uno se crea sin tenencia: recién tiene posición cuando le cargás movimientos. Buscá en '🔍 Buscar en el mercado' para precargar ticker y tipo desde data912, o cargalo a mano. Tocá una ficha para ver su gráfico de precio." />
+	<Guia clave="config-tickers" texto="Catálogo de referencia de activos y actualización de precios. Con “Sincronizar catálogo” se dan de alta de una vez todos los instrumentos que publica data912, para no tener que cargarlos a mano cada vez que operás uno nuevo; los que no cotizan ahí (FCI, activos del exterior) se cargan con “➕ Nuevo activo”. El gráfico de arriba muestra la evolución del activo que elijas: tocá una ficha del listado o buscalo en el selector. Mantené el dedo sobre el gráfico para marcar un día y ver cuánto varió desde ahí hasta hoy." />
 </div>
 
 <a href="/inversiones" class="btn-volver">← Volver a Inversiones</a>
@@ -305,46 +257,11 @@
 	</div>
 </details>
 
-<details class="form-panel" bind:open={catalogoAbierto} ontoggle={() => { if (catalogoAbierto) abrirCatalogo(); }}>
-	<summary>🔍 Buscar en el mercado</summary>
-	<div class="form">
-		{#if catalogoCargando}
-			<p class="nota">Buscando en data912…</p>
-		{:else if catalogoErr}
-			<p class="msg err"><span class="err-x">✗</span> {catalogoErr}</p>
-		{:else}
-			<div class="filtros">
-				<label>Tipo
-					<select bind:value={catFiltroTipo}>
-						<option value="Todos">Todos</option>
-						<option value="Accion">Accion</option>
-						<option value="CEDEAR">CEDEAR</option>
-						<option value="Bono">Bono</option>
-						<option value="ON">ON</option>
-					</select>
-				</label>
-				<label>Buscar
-					<input type="search" bind:value={catFiltroTexto} placeholder="Símbolo…" />
-				</label>
-			</div>
-			<div class="fichas cat-fichas">
-				{#each catalogoFiltrado.slice(0, 60) as c (c.simbolo)}
-					<div class="ficha cat-ficha">
-						<span class="ficha-detalle"><strong class="tk">{c.simbolo}</strong> · {c.tipo}</span>
-						<span class="ficha-monto">{money(c.precio, 'ARS')}</span>
-						{#if simbolosCargados.has(c.simbolo)}
-							<span class="ya-cargado">Ya cargado ✓</span>
-						{:else}
-							<button class="btn btn-secondary" onclick={() => cargarDesdeCatalogo(c)}>Cargar</button>
-						{/if}
-					</div>
-				{/each}
-				{#if catalogoFiltrado.length === 0}<p class="vacio">Sin resultados.</p>{/if}
-				{#if catalogoFiltrado.length > 60}<p class="nota">Mostrando 60 de {catalogoFiltrado.length} — afiná la búsqueda.</p>{/if}
-			</div>
-		{/if}
-	</div>
-</details>
+<!-- Gráfico fijo: acompaña el scroll del listado, así tocar una ficha de abajo
+     cambia lo que se ve arriba sin tener que volver al tope de la pantalla. -->
+<section class="grafico-fijo">
+	<GraficoPrecio {activos} bind:value={graficoId} especieDe={(a) => especieDeTicker(a.ticker, a.moneda)} />
+</section>
 
 <ul class="nota">
 	<li>El ticker (código) de un instrumento cambia según nombre y moneda de cotización. Validar asegura la carga intra-app de las cotizaciones.</li>
@@ -353,12 +270,13 @@
 
 <div class="acciones">
 	<button class="btn btn-primary" onclick={actualizarAhora} disabled={actualizando}>{actualizando ? 'Actualizando…' : '⟳ Actualizar precios ahora'}</button>
+	<button class="btn btn-secondary" onclick={sincronizarCatalogo} disabled={sincronizando}>{sincronizando ? 'Sincronizando…' : '⬇ Sincronizar catálogo'}</button>
 </div>
 
 {#if cargando}
 	<p>Cargando…</p>
 {:else if activos.length === 0}
-	<p class="vacio">No tenés activos cargados. Creá el primero con “➕ Nuevo activo”.</p>
+	<p class="vacio">No tenés activos cargados. Traé el catálogo con “⬇ Sincronizar catálogo”, o creá el primero a mano con “➕ Nuevo activo”.</p>
 {:else}
 	<div class="filtros">
 		<label>Tipo
@@ -367,54 +285,42 @@
 				{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}
 			</select>
 		</label>
+		<label>Especie
+			<select bind:value={filtroEspecie}>
+				<option value="Todas">Todas</option>
+				{#each ESPECIES as e}<option value={e}>{e}</option>{/each}
+			</select>
+		</label>
 		<label>Buscar
 			<input type="search" bind:value={filtroTexto} placeholder="Ticker o nombre…" />
 		</label>
-		{#if filtroTipo !== 'Todos' || filtroTexto.trim()}<button class="btn btn-secondary" onclick={() => { filtroTipo = 'Todos'; filtroTexto = ''; }}>Limpiar</button>{/if}
+		{#if filtroTipo !== 'Todos' || filtroEspecie !== 'Todas' || filtroTexto.trim()}
+			<button class="btn btn-secondary" onclick={() => { filtroTipo = 'Todos'; filtroEspecie = 'Todas'; filtroTexto = ''; }}>Limpiar</button>
+		{/if}
 	</div>
 	{#if activosPorTipo.length === 0}
 		<p class="vacio">No hay activos para el filtro.</p>
 	{:else}
 	{#each activosPorTipo as g (g.tipo)}
-		<h2 class="grupo">{g.tipo}</h2>
+		<h2 class="grupo">{g.tipo} <span class="grupo-cuenta">{g.total}</span></h2>
 		<div class="fichas">
-			{#each g.items as a (a.id)}
-				<div class="ficha" class:editrow={editId === a.id}>
-					<div class="ficha-top" role="button" tabindex="0" onclick={() => toggleExpandir(a)} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleExpandir(a); } }}>
-						<span class="ficha-detalle"><strong class="tk">{a.ticker}</strong> · {a.nombre}</span>
+			{#each g.items.slice(0, TOPE_GRUPO) as a (a.id)}
+				<div class="ficha" class:editrow={editId === a.id} class:enGrafico={graficoId === String(a.id)}>
+					<div class="ficha-top" role="button" tabindex="0" onclick={() => (graficoId = String(a.id))} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); graficoId = String(a.id); } }}>
+						<span class="ficha-detalle"><strong class="tk">{a.ticker}</strong>{a.nombre && a.nombre !== a.ticker ? ' · ' + a.nombre : ''}</span>
 						<span class="ficha-monto">{money(a.precio_actual, a.moneda)}</span>
 					</div>
 					<div class="ficha-bot">
-						<span class="ficha-meta">{a.moneda} · exp. {a.exposicion}</span>
+						<span class="ficha-meta">{a.moneda} · {especieDeTicker(a.ticker, a.moneda)} · exp. {a.exposicion}</span>
 						<span class="ficha-acc">
 							<button aria-label="Editar" class="lapiz" onclick={() => editar(a)} title="Editar">✏</button>
 						</span>
 					</div>
-					{#if expandidoId === a.id}
-						<div class="chart-panel">
-							{#if serieCargando}
-								<p class="nota">Cargando historial…</p>
-							{:else if !chartActivo}
-								<p class="nota">Sin serie histórica para este activo todavía.</p>
-							{:else}
-								<div class="chart-head">
-									<span class="chart-precio">{money(chartActivo.ultimo, a.moneda)}</span>
-									<span class="chart-var" class:pos={chartActivo.variacion >= 0} class:neg={chartActivo.variacion < 0}>{chartActivo.variacion >= 0 ? '+' : ''}{(chartActivo.variacion * 100).toFixed(1)}%</span>
-								</div>
-								<svg viewBox="0 0 {CW} {CH}" class="mini-chart" preserveAspectRatio="none">
-									<path d={chartActivo.linea} fill="none" stroke="var(--accent)" stroke-width="1.6" />
-									<circle cx={chartActivo.ultimaX} cy={chartActivo.ultimaY} r="2.4" fill="var(--accent)" />
-								</svg>
-							{/if}
-							<div class="ventanas">
-								{#each VENTANAS as [k, lbl] (k)}
-									<button type="button" class:activo={ventanaActiva === k} onclick={() => (ventanaActiva = k)}>{lbl}</button>
-								{/each}
-							</div>
-						</div>
-					{/if}
 				</div>
 			{/each}
+			{#if g.total > TOPE_GRUPO}
+				<p class="nota">Mostrando {TOPE_GRUPO} de {g.total} — afiná la búsqueda para ver el resto.</p>
+			{/if}
 		</div>
 	{/each}
 	{/if}
@@ -441,16 +347,30 @@
 	.msg .err-x { font-size: 1.3em; line-height: 1; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
 
-	/* Panel de carga colapsable (patrón estándar, igual que Gastos/Ingresos) */
-	/* .form-panel vive ahora en +layout.svelte (global, Brief H / A3). */
+	/* Gráfico fijo. El fondo opaco es necesario: sin él, las fichas del listado se
+	   ven por debajo del gráfico al hacer scroll. */
+	.grafico-fijo {
+		position: sticky;
+		top: 0;
+		z-index: 20;
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+		margin: 12px 0;
+		padding: 10px 0 12px;
+		background: var(--bg);
+		border-bottom: 1px solid var(--border);
+	}
 
 	/* Encabezado de grupo por tipo */
 	.grupo { font-size: 1rem; margin: 18px 0 8px; border-left: 3px solid var(--accent); padding-left: 12px; }
+	.grupo-cuenta { font-size: 0.78rem; font-weight: 400; color: var(--text-dim); }
 
 	/* Fichas por activo */
 	.fichas { display: flex; flex-direction: column; gap: 8px; }
 	.ficha { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 10px 12px; }
 	.ficha.editrow { border-color: var(--accent); background: rgba(91, 157, 255, 0.08); }
+	.ficha.enGrafico { border-color: var(--accent); }
 	.ficha-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; cursor: pointer; }
 	.ficha-detalle { font-weight: 600; font-size: 0.95rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.tk { font-family: var(--font-mono, monospace); color: var(--accent); }
@@ -459,24 +379,4 @@
 	.ficha-meta { font-size: 0.78rem; color: var(--text-dim); line-height: 1.35; }
 	.ficha-acc { white-space: nowrap; flex-shrink: 0; }
 	.vacio { color: var(--text-dim); font-style: italic; }
-
-	/* Catálogo de instrumentos de data912 (Bloque 7) — mismo patrón visual de
-	   ficha que la lista de activos, en fila (sin apilar top/bot: acá no hay
-	   edición, solo símbolo/tipo/precio + acción). */
-	.cat-fichas { max-height: 360px; overflow-y: auto; }
-	.cat-ficha { display: flex; align-items: center; gap: 10px; }
-	.cat-ficha .ficha-detalle { flex: 1; }
-	.ya-cargado { font-size: 0.78rem; color: var(--pos); white-space: nowrap; flex-shrink: 0; }
-
-	/* Gráfico de precio in-place (tap-to-expand sobre la ficha) */
-	.chart-panel { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
-	.chart-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
-	.chart-precio { font-weight: 700; font-size: 0.95rem; }
-	.chart-var { font-size: 0.82rem; font-weight: 600; }
-	.chart-var.pos { color: var(--pos); }
-	.chart-var.neg { color: var(--neg); }
-	.mini-chart { width: 100%; height: 90px; display: block; }
-	.ventanas { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
-	.ventanas button { font-size: 0.72rem; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim); cursor: pointer; }
-	.ventanas button.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>

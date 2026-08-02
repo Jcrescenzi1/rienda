@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { calcularTenencia, invalidarFotosDesde } from '$lib/cartera';
+	import { actualizarPreciosYFoto } from '$lib/db/precios';
 	import { upsertPrecioHistorico } from '$lib/db/precios_historicos';
 	import { pesos, unidades, parseNum, formatNum, montoAGuardar, soloNum, hoyISO } from '$lib/format';
 	import { Toast } from '$lib/toast.svelte';
@@ -34,6 +35,22 @@
 		cargando = false;
 	}
 	onMount(cargarTodo);
+
+	// Mismo botón que en Tenencia Actual, para no tener que ir y volver solo para
+	// ver los montos frescos. Ojo con la convivencia con la edición manual de esta
+	// pantalla: se cierra cualquier edición abierta antes de refrescar (si no, el
+	// input quedaría apuntando a una fila ya recargada), y del lado del cálculo,
+	// actualizarPrecios respeta el precio corregido a mano hoy y no lo pisa.
+	let actualizandoPrecios = $state(false);
+	async function onActualizarPrecios() {
+		editId = null; editPrecio = '';
+		editCaja = null; editSaldo = '';
+		actualizandoPrecios = true;
+		toast.limpiar();
+		try { toast.exito(await actualizarPreciosYFoto()); await cargarTodo(); }
+		catch (e: any) { toast.errorTecnico(e); }
+		actualizandoPrecios = false;
+	}
 
 	// Filas de la tabla: activos en tenencia + líquido (ARS/USD), con el monto
 	// ya calculado en las dos monedas para no recalcular al togglear vista.
@@ -149,6 +166,10 @@
 		<span class="moneda-badge">Dólar MEP (bolsa) {money(dolar, 'ARS')}</span>
 	</div>
 
+	<div class="preciosbar">
+		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
+	</div>
+
 	{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 
 	<div class="tabla-scroll">
@@ -203,6 +224,7 @@
 	.vistas button.activo { background: var(--accent); color: #fff; font-weight: 600; }
 	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0 12px; }
 	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
+	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }

@@ -5,6 +5,7 @@
 	import { calcularTenencia, calcularSerieTWR, rendimientoVentana } from '$lib/cartera';
 	import { actualizarPreciosYFoto } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 
 	let cargando = $state(true);
@@ -70,9 +71,14 @@
 		];
 		filasMix.sort((a, b) => b.mercadoUSD - a.mercadoUSD);
 		const UMBRAL_CONCENTRACION = 0.2; // 20% del total
+		// La alerta de concentración marca APUESTAS, no liquidez. Se excluye toda la
+		// renta 'Liquido': la caja ARS/USD y también los activos líquidos cargados
+		// como tal (un money market o un FCI de liquidez). Tener plata parada no es
+		// un riesgo de concentración — es justamente lo contrario.
 		detalleMix = filasMix.map((r) => {
 			const pct = t.totalUSD ? r.mercadoUSD / t.totalUSD : 0;
-			return { ...r, pct, concentrado: r.tipo !== 'Caja' && pct >= UMBRAL_CONCENTRACION };
+			const esLiquidez = r.tipo === 'Caja' || r.renta === 'Liquido';
+			return { ...r, pct, concentrado: !esLiquidez && pct >= UMBRAL_CONCENTRACION };
 		});
 
 		cargando = false;
@@ -115,7 +121,12 @@
 
 <div class="titulo-guia">
 	<h1>Tenencia Actual</h1>
-	<Guia clave="inversiones" texto="Tu cartera sin montos: PPC vs PPV, precio de mercado, rendimiento por ventana y estructura de renta/exposición. Las operaciones se cargan desde '➕ Cargar movimiento'. Los precios se actualizan solos (o con '⟳ Actualizar precios'); cada actualización deja hecha la foto que alimenta Evolución. Los montos y la edición viven en Tenencia en montos." />
+	<Guia
+		clave="inversiones"
+		para="Consolidar tu tenencia y tomar decisiones sobre ella."
+		uso="Cargá tus operaciones en Movimientos y ajustá los tickers en Mercado para que la tenencia las refleje. Los montos y las correcciones de precio viven en Tenencia en montos."
+		verMas
+	/>
 </div>
 
 {#if cargando}
@@ -146,12 +157,17 @@
 		<div class="card"><span>Rendimiento del trimestre</span><strong>{fmtRend(rendTrimestre)}</strong></div>
 		<div class="card"><span>Rendimiento del mes</span><strong>{fmtRend(rendMes)}</strong></div>
 	</div>
+	<NotaVisual objetivo="Cuánto rindió tu cartera" glosario="tenencia" glosarioTexto="Qué es el TWR">
+		{#snippet muestra()}El rendimiento de toda tu cartera en el último año, trimestre y mes.{/snippet}
+		{#snippet leer()}Es <strong>TWR</strong>: descuenta el efecto de tus ingresos y retiros de plata, así que mide cómo rindió lo invertido y no cuánto creció el saldo. <strong>“Sin datos suficientes”</strong> significa que esa ventana todavía no tiene dos fotos de cartera.{/snippet}
+		{#snippet usar()}Compararlo contra un plazo fijo, la inflación o el dólar del mismo plazo, para saber si la estrategia valió la pena.{/snippet}
+	</NotaVisual>
 
 	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
 
 	<div class="preciosbar">
-		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
 		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
+		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
 	</div>
 
@@ -172,16 +188,11 @@
 		</tbody>
 	</table>
 	</div>
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Cartera actual</summary>
-		<p class="nota">
-			<strong>PPC</strong> (Precio Promedio de Compra): precio promedio de las compras de cada activo.<br />
-			<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
-			• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
-			• <strong>Rojo</strong> si está por debajo.<br />
-			<strong>Rend. %</strong> = ganancia (realizada + no realizada) de la posición abierta, sobre lo invertido en USD.
-		</p>
-	</details>
+	<NotaVisual objetivo="Tu tenencia consolidada" glosario="tenencia" glosarioTexto="Cómo se calculan PPC y PPV">
+		{#snippet muestra()}Cada posición abierta con su precio promedio de compra (<strong>PPC</strong>), su precio promedio de salida (<strong>PPV</strong>) y el precio de mercado de hoy.{/snippet}
+		{#snippet leer()}El PPV va en <strong>verde</strong> si quedó arriba del PPC —ganás en la moneda del activo— y en <strong>rojo</strong> si quedó abajo. <strong>Rend. %</strong> suma la ganancia realizada y la no realizada sobre lo invertido, en dólares.{/snippet}
+		{#snippet usar()}Ver qué posiciones sostienen el resultado y cuáles lo restan, antes de decidir dónde reforzar o de dónde salir.{/snippet}
+	</NotaVisual>
 
 	<div class="graf-fila">
 		<div class="graf">
@@ -218,10 +229,11 @@
 		</div>
 	</div>
 	{#if exposicion.tot > 0}
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Exposición y estructura de renta</summary>
-			<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>. Estructura de renta agrupa caja y fondos money market bajo "Líquido".</p>
-		</details>
+		<NotaVisual objetivo="Nivel de exposición al tipo de cambio y al tipo de renta">
+			{#snippet muestra()}Cómo se reparte tu cartera entre <strong>Dólar</strong>, <strong>CER</strong> y <strong>Peso</strong>, y entre renta fija, mixta, variable y líquido. Incluye la liquidez.{/snippet}
+			{#snippet leer()}Es exposición, no moneda de cotización: un CEDEAR cotiza en pesos pero sigue al dólar, y una ON dollar-linked también. <strong>Peso</strong> es la porción que no te cubre ante una devaluación; <strong>CER</strong> sigue la inflación.{/snippet}
+			{#snippet usar()}Chequear si estás cubierto ante un salto del tipo de cambio; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Mercado</a>.{/snippet}
+		</NotaVisual>
 	{/if}
 
 	<h2>Detalle del mix — ranking de concentración</h2>
@@ -242,10 +254,11 @@
 		</tbody>
 	</table>
 	</div>
-	<details class="nota-colapsable">
-		<summary>Descripción de la visual: Detalle del mix</summary>
-		<p class="nota">Ordenado por % del total, de mayor a menor. ⚠ marca posiciones que superan el 20% de la cartera (riesgo de concentración) — la liquidez no se marca, porque no es una apuesta en un activo. La columna <strong>Exposición</strong> muestra a qué tipo de cambio sigue cada fila (Dólar / CER / Peso) — sirve para ver en qué se compone el desglose del gráfico "Exposición al tipo de cambio" de arriba.</p>
-	</details>
+	<NotaVisual objetivo="Ponderación de cada activo en el total de tu tenencia">
+		{#snippet muestra()}Todas tus posiciones, incluida la liquidez, ordenadas por peso en la cartera de mayor a menor.{/snippet}
+		{#snippet leer()}El <strong>⚠</strong> marca lo que supera el 20% del total; la liquidez no se marca —ni la caja ni un money market o FCI de liquidez— porque tener plata parada no es una apuesta concentrada.{/snippet}
+		{#snippet usar()}Detectar concentración de riesgo y ver qué filas componen cada barra del gráfico de exposición de arriba.{/snippet}
+	</NotaVisual>
 {/if}
 
 <style>
@@ -288,10 +301,8 @@
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.06); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 
-	/* Textos descriptivos de cada visual, colapsados por defecto */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+	/* Los textos descriptivos de cada visual viven ahora en NotaVisual (estructura
+	   y estilos propios del componente): el CSS local ya no hace falta. */
 
 	/* Los dos gráficos de barras, lado a lado. En pantallas angostas se compactan
 	   (labels/altura/fuente más chicos) en vez de apilarse, para que entren en

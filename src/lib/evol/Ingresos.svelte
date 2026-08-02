@@ -12,6 +12,7 @@
 	import { moneda } from '$lib/moneda.svelte';
 	import ToggleMoneda from '$lib/ToggleMoneda.svelte';
 	import Guia from '$lib/Guia.svelte';
+	import NotaVisual from '$lib/NotaVisual.svelte';
 	import MultiSelect from '$lib/MultiSelect.svelte';
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
@@ -304,6 +305,7 @@
 
 	{#if chart}
 		<svg viewBox="0 0 {W} {H}" class="chart tacto"
+			role="img" aria-label="Evolución del ingreso por período"
 			onpointerdown={iniciarTacto} onpointermove={moverTacto} onpointerup={soltarTacto} onpointercancel={soltarTacto}>
 			<defs>
 				<linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -327,13 +329,12 @@
 				<circle cx={chart.pts[puntoTacto].x} cy={chart.pts[puntoTacto].y} r="5" class="dot-tacto" />
 			{/if}
 		</svg>
-		<details class="nota-colapsable">
-			<summary>Descripción de la visual: Evolución de Ingresos</summary>
-			<p class="nota">
-				Por período de ingreso (el que asignaste a cada cobro).
-				{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Pesos de {mesCorto(ipc.ultimoPeriodo)} (último mes de inflación cargado).{/if}
-			</p>
-		</details>
+		<NotaVisual objetivo="Cómo evolucionó tu ingreso período a período" glosario="periodos">
+			{#snippet muestra()}El ingreso total de cada período, con los filtros de abajo ya aplicados.{/snippet}
+			{#snippet leer()}Cada cobro cuenta en el <strong>período que le asignaste</strong> al cargarlo, no en su fecha: por eso un sueldo cobrado a fin de mes puede figurar en el mes siguiente. Los períodos sin ingreso se dibujan en cero y bajan el promedio.{/snippet}
+			{#snippet usar()}Ver si tu ingreso crece de verdad; pasá a pesos reales para descontar la inflación y no confundir un aumento nominal con uno real.{/snippet}
+			{#snippet fuente()}{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Expresado en pesos de {mesCorto(ipc.ultimoPeriodo)}, el último mes de inflación cargado.{:else}Montos nominales, tal como los cargaste.{/if}{/snippet}
+		</NotaVisual>
 	{:else}
 		<p class="nota">Hacen falta al menos 2 períodos con datos para graficar la evolución. Ajustá los filtros.</p>
 	{/if}
@@ -415,10 +416,7 @@
 	.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 	.filtros label { display: flex; flex-direction: column; font-size: 0.75rem; color: var(--text-dim); gap: 3px; }
 	.filtros input, .filtros select { padding: 6px 8px; font-size: 0.85rem; }
-	/* Texto descriptivo de la visual, colapsado por defecto (mismo patrón que /inversiones y /evolucion) */
-	.nota-colapsable { margin: 6px 0 12px; }
-	.nota-colapsable summary { cursor: pointer; font-size: 0.82rem; color: var(--text-dim); }
-	.nota-colapsable .nota { margin-top: 6px; }
+
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.chart.tacto { touch-action: none; cursor: crosshair; }
 	.grid { stroke: var(--border); stroke-width: 1; }
