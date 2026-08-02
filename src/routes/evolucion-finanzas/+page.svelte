@@ -224,7 +224,11 @@
 {:else}
 	<div class="titulo-guia">
 		<h1>Ingresos vs Gastos</h1>
-		<Guia clave="resumen-evolucion" texto="Comparación período a período entre los ingresos y los gastos reportados. Verde: ingresos, roja: gastos, por cada período. El Balance es la diferencia entre ingresos y gastos de todo el rango visible. El selector de moneda (USD / pesos reales / nominales) solo cambia la unidad de lectura, no los datos." />
+		<Guia
+		clave="resumen-evolucion"
+		para="Comparar cuánto entró contra cuánto salió, período a período."
+		uso="Elegí el rango arriba. Verde son ingresos y roja gastos; el Balance es la diferencia de todo el rango visible. El selector de moneda cambia la unidad de lectura, no los datos."
+	/>
 	</div>
 	<button class="btn-volver" onclick={() => goto('/')}>← Volver a Cuenta Corriente</button>
 	<div class="resumen">

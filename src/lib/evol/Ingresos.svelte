@@ -270,7 +270,11 @@
 
 <div class="titulo-guia">
 	<h1>Evolución de Ingresos</h1>
-	<Guia clave="ingresos-evolucion" texto="Cómo evolucionaron tus ingresos período a período, con la composición por tipo (Regular vs Extraordinario). Filtrá por fecha, categoría, tipo o detalle. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
+	<Guia
+		clave="ingresos-evolucion"
+		para="Ver si tu ingreso crece de verdad."
+		uso="Filtrá por fecha, categoría, tipo o detalle, y pasá a pesos reales para descontar la inflación y no confundir un aumento nominal con uno real."
+	/>
 </div>
 {@render nav?.()}
 

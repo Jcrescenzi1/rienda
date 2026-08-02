@@ -99,6 +99,11 @@
 	const fmtFechaHora = fechaHoraCorta;
 	// Alias locales al helper único de format.ts (ver Brief H / A1).
 	const money = pesos;
+	// Mismo redondeo que pesos() pero SIN símbolo de moneda (U$D/$): usado en la
+	// tabla Cartera Actual, donde la columna Moneda ya dice ARS/USD y repetir el
+	// símbolo en cada celda numérica desperdiciaba ancho en mobile.
+	const num = (n: number | null | undefined, dec = 2) =>
+		(Number(n) || 0).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
 	// Mismos colores que las barras de "Exposición al tipo de cambio" de arriba.
 	const colorExposicion: Record<string, string> = { Dolar: 'var(--accent)', CER: '#4ade80', Peso: '#e8975b' };
@@ -174,17 +179,19 @@
 	<div class="tabla-scroll">
 	<table class="tabla-cartera">
 		<thead><tr><th>Activo</th>
+			<th class="mon">Moneda</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr>
 					<td><div class="activo-cell"><span class="tipo-mini">{h.tipo}</span><span>{h.nombre}</span></div></td>
-					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl {h.ppv >= h.ppc ? 'pos' : 'neg'}">{money(h.ppv, h.moneda, 2)}</td>
-					<td class="num">{money(h.precioActual, h.moneda, 2)}</td>
+					<td class="mon">{h.moneda}</td>
+					<td class="num hl">{num(h.ppc)}</td><td class="num hl {h.ppv >= h.ppc ? 'pos' : 'neg'}">{num(h.ppv)}</td>
+					<td class="num">{num(h.precioActual)}</td>
 					<td class="num hl {h.rendPct != null && h.rendPct >= 0 ? 'pos' : 'neg'}">{h.rendPct != null ? (h.rendPct * 100).toFixed(1) + '%' : '—'}</td>
 				</tr>
 			{/each}
-			{#if cartera.length === 0}<tr><td colspan="5" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 	</div>
@@ -284,12 +291,23 @@
 	/* Cartera actual: las 4 columnas numéricas (PPC/PPV/Precio mercado/Rend. %)
 	   con el mismo ancho, para que los valores queden alineados en vertical sin
 	   importar cuántos dígitos tenga cada uno. table-layout:fixed + width fijo
-	   en las .num. "Activo" tiene min-width propio (no se lo lleva puesto un
-	   viewport angosto) y la tabla tiene min-width total: si no entra, scrollea
-	   horizontal dentro de .tabla-scroll en vez de aplastar/superponer columnas. */
-	table.tabla-cartera { table-layout: fixed; min-width: 460px; }
+	   en las .num. La tabla tiene min-width total: si no entra, scrollea
+	   horizontal dentro de .tabla-scroll en vez de aplastar/superponer columnas.
+	   "Activo" queda angosta (90px, con ellipsis en .activo-cell) y sticky a la
+	   izquierda: al scrollear horizontal por Moneda/PPC/PPV/etc. el nombre del
+	   activo se mantiene visible. background sólido (var(--bg), mismo patrón que
+	   .grafico-fijo en config-tickers) para que las columnas que scrollean no se
+	   vean superpuestas por detrás; z-index por encima del resto de las celdas. */
+	table.tabla-cartera { table-layout: fixed; min-width: 475px; }
 	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 80px; }
-	table.tabla-cartera th:first-child, table.tabla-cartera td:first-child { width: 140px; }
+	table.tabla-cartera th.mon, table.tabla-cartera td.mon { width: 55px; text-align: center; }
+	table.tabla-cartera th:first-child, table.tabla-cartera td:first-child {
+		width: 90px;
+		position: sticky;
+		left: 0;
+		z-index: 1;
+		background: var(--bg);
+	}
 	.activo-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
 	.activo-cell span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.tipo-mini { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }

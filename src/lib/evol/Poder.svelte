@@ -170,7 +170,11 @@
 
 <div class="titulo-guia">
 	<h1>Poder adquisitivo</h1>
-	<Guia clave="ingreso-primario" texto="Tu ingreso primario regular contra la inflación y contra el dólar bolsa. Si la línea de ingreso va por encima de la inflación, le ganás; si en USD cae mientras el dólar sube, el golpe vino del tipo de cambio." />
+	<Guia
+		clave="ingreso-primario"
+		para="Saber si tu sueldo le gana a los precios y al dólar."
+		uso="Elegí la ventana arriba: todo se compara contra el inicio de esa ventana, así que cambiarla cambia la brecha que ves."
+	/>
 </div>
 {@render nav?.()}
 

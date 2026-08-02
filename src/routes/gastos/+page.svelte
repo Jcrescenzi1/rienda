@@ -263,7 +263,12 @@
 
 <div class="titulo-guia">
     <h1>Gastos</h1>
-    <Guia clave="gastos" texto="Elegí categoría y escribí un detalle ('Pizza', 'Super'); la primera vez le asignás subcategoría y después se clasifica solo. El gasto se cuenta entero el día que lo hacés —también el crédito—; si pagaste en cuotas, indicá tarjeta y cuotas y la app reparte el vencimiento mes a mes." verMas />
+    <Guia
+		clave="gastos"
+		para="Cargar tus gastos y que se clasifiquen solos."
+		uso="Elegí categoría y escribí un detalle (Pizza, Super): la primera vez le asignás subcategoría y después se clasifica solo. Si pagaste en cuotas, indicá tarjeta y cantidad y la app reparte los vencimientos. El gasto cuenta entero el día que lo hacés, también el de crédito."
+		verMas
+	/>
 </div>
 <div class="cr-nav">
     <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>

@@ -192,7 +192,11 @@
 
 <div class="titulo-guia">
 	<h1>Capacidad de ahorro</h1>
-	<Guia clave="capacidad-ahorro" texto="Tu tasa de ahorro mensual (ahorro neto ÷ ingreso regular) contra un objetivo editable, por moneda separada, a 6 meses. El ahorro neto descuenta el desahorro (plata que sacaste de tu ahorro). Pesos en valor real (ajustado por inflación); dólares nominales." />
+	<Guia
+		clave="capacidad-ahorro"
+		para="Medir cuánto de tu ingreso estás ahorrando y si llegás a tu objetivo."
+		uso="Editá el objetivo en % por moneda: el histórico se repinta contra la vara nueva. Pesos y dólares se miden por separado, cada uno contra su propio ingreso regular."
+	/>
 </div>
 {@render nav?.()}
 

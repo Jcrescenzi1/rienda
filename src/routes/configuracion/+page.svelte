@@ -215,7 +215,11 @@
 
 <div class="titulo-guia">
 	<h1>Configuración</h1>
-	<Guia clave="configuracion" texto="El cerebro de la clasificación: categorías, tarjetas y el diccionario que conecta cada detalle con su subcategoría. Cambiar el diccionario reclasifica todo tu historial de una." />
+	<Guia
+		clave="configuracion"
+		para="Definir cómo se clasifica todo lo que cargás."
+		uso="Administrá categorías, tarjetas y el diccionario que conecta cada detalle con su subcategoría. Ojo: cambiar el diccionario reclasifica todo tu historial de una."
+	/>
 </div>
 
 {#if msg}<p class="msg" class:err={msgErr}>{#if msgErr}<span class="err-x">✗</span> {/if}{msg}</p>{/if}

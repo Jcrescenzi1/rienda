@@ -237,7 +237,11 @@
 
 <div class="titulo-guia">
 	<h1>Movimientos</h1>
-	<Guia clave="carga-inversiones" texto="Registrá compras, ventas, renta/amortización, ingresos/retiros de caja y conversiones. Abajo tenés dos libros: el diario de activos, donde podés borrar una fila pero no editarla, y la caja, que es de solo lectura una vez cargada." />
+	<Guia
+		clave="carga-inversiones"
+		para="Registrar todo lo que mueve tu cartera."
+		uso="Cargá compras, ventas, renta y amortización, ingresos y retiros de caja, y conversiones. Abajo hay dos libros: el diario de activos, donde podés borrar una fila pero no editarla, y la caja, que es de solo lectura."
+	/>
 </div>
 <a href="/inversiones" class="btn-volver">← Volver a Inversiones</a>
 

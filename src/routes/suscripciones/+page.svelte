@@ -288,7 +288,11 @@
 
 <div class="titulo-guia">
 	<h1>Gastos</h1>
-	<Guia clave="suscripciones" texto="Tus gastos recurrentes mensuales (apps, servicios, impuestos, gym, escuela). Solo lo que pagás todos los meses. Cada uno alimenta automáticamente el presupuesto de su subcategoría. 'Registrar Pago' lo convierte en gasto real del mes." />
+	<Guia
+		clave="suscripciones"
+		para="Tener tus gastos recurrentes en un solo lugar, sin cargarlos todos los meses."
+		uso="Cargá acá solo lo que pagás todos los meses: apps, servicios, impuestos, gym, escuela. Cada uno alimenta el presupuesto de su subcategoría, y Registrar Pago lo convierte en un gasto real del mes."
+	/>
 </div>
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>

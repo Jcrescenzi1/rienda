@@ -336,7 +336,11 @@
 
 <div class="titulo-guia">
 	<h1>Evolución de Gastos</h1>
-	<Guia clave="gastos-evolucion" texto="Cómo evolucionó tu gasto período a período, con la composición por categoría. Filtrá por fecha, categoría o detalle para enfocar el análisis. Cambiá la moneda para ver en dólares, pesos reales (ajustados por inflación a hoy) o pesos nominales." />
+	<Guia
+		clave="gastos-evolucion"
+		para="Ver si tu nivel de gasto sube o baja de verdad."
+		uso="Filtrá por fecha, categoría o detalle para enfocar el análisis, y pasá a pesos reales para que la inflación no te muestre una suba que no existe."
+	/>
 </div>
 {@render nav?.()}
 

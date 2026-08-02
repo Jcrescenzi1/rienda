@@ -174,7 +174,11 @@
 
 <div class="titulo-guia">
 	<h1>Ingresos</h1>
-	<Guia clave="carga-ingresos" texto="El Ingreso Principal regular (tu sueldo) marca el ritmo de tus períodos; los demás ingresos se acomodan a ese mes. El período se sugiere solo según la fecha de cobro." />
+	<Guia
+		clave="carga-ingresos"
+		para="Registrar los ingresos que cobrás."
+		uso="El período se sugiere solo según la fecha de cobro. Tu Ingreso Principal regular es el que marca el ritmo de los períodos; el resto se acomoda a ese mes."
+	/>
 </div>
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>

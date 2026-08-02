@@ -233,7 +233,11 @@
 
 <div class="titulo-guia">
 	<h1>Análisis por categoría</h1>
-	<Guia clave="analisis-categoria" texto="Compará tus categorías de gasto: qué pesa más en cada período y cómo se reparte por subcategoría (tocá una categoría para desplegarla), y qué subcategorías crecieron o cayeron. En pesos reales (ajustados por inflación) o nominales." />
+	<Guia
+		clave="analisis-categoria"
+		para="Entender en qué se te va la plata y qué se salió de lo habitual."
+		uso="Tocá una categoría para desplegar sus subcategorías, y tocá una del detector de movimientos para verla en detalle en Evolución de Gastos."
+	/>
 </div>
 {@render nav?.()}
 

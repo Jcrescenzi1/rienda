@@ -168,7 +168,11 @@
 
 <div class="titulo-guia">
 	<h1>Evolución de cartera</h1>
-	<Guia clave="evolucion" texto="La historia de tu cartera, foto a foto. El TWR mide el rendimiento de tu estrategia sin que aportes o retiros lo distorsionen. Las fotos se sacan solas cada vez que se actualizan los precios (automático, o con '⟳ Actualizar precios' desde Tenencia) — no hace falta ninguna acción manual." />
+	<Guia
+		clave="evolucion"
+		para="Ver la historia de tu cartera y cuánto rindió tu estrategia."
+		uso="Elegí el período arriba y mantené el dedo sobre el gráfico para leer una foto puntual. Las fotos se sacan solas cada vez que se actualizan los precios: no hace falta ninguna acción manual."
+	/>
 </div>
 
 <h2>Valor y rendimiento (TWR)</h2>

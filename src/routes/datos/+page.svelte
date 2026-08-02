@@ -177,7 +177,11 @@
 
 <div class="titulo-guia">
 	<h1>Tus datos</h1>
-	<Guia clave="datos" texto="Tus datos viven SOLO en este dispositivo. La copia de seguridad JSON es tu ÚNICO respaldo total: descargala seguido y guardala fuera del teléfono. Las planillas Excel/CSV NO son respaldo — solo mueven datos entre Rienda y una planilla." />
+	<Guia
+		clave="datos"
+		para="Respaldar tus datos, que viven solo en este dispositivo."
+		uso="Descargá la copia de seguridad JSON seguido y guardala fuera del teléfono: es tu único respaldo total. Las planillas Excel y CSV no son respaldo, solo mueven datos entre Rienda y una planilla."
+	/>
 </div>
 
 {#if cargando}

@@ -4,7 +4,7 @@
 	import { calcularTenencia, invalidarFotosDesde } from '$lib/cartera';
 	import { actualizarPreciosYFoto } from '$lib/db/precios';
 	import { upsertPrecioHistorico } from '$lib/db/precios_historicos';
-	import { pesos, unidades, parseNum, formatNum, montoAGuardar, soloNum, hoyISO } from '$lib/format';
+	import { pesos, unidades, parseNum, formatNum, soloNum, hoyISO } from '$lib/format';
 	import { Toast } from '$lib/toast.svelte';
 	import Guia from '$lib/Guia.svelte';
 	import CountUp from '$lib/CountUp.svelte';
@@ -37,14 +37,11 @@
 	onMount(cargarTodo);
 
 	// Mismo botón que en Tenencia Actual, para no tener que ir y volver solo para
-	// ver los montos frescos. Ojo con la convivencia con la edición manual de esta
-	// pantalla: se cierra cualquier edición abierta antes de refrescar (si no, el
-	// input quedaría apuntando a una fila ya recargada), y del lado del cálculo,
-	// actualizarPrecios respeta el precio corregido a mano hoy y no lo pisa.
+	// ver los montos frescos. Se cierra la edición de precio que estuviera abierta
+	// antes de refrescar: si no, el input quedaría apuntando a una fila ya recargada.
 	let actualizandoPrecios = $state(false);
 	async function onActualizarPrecios() {
 		editId = null; editPrecio = '';
-		editCaja = null; editSaldo = '';
 		actualizandoPrecios = true;
 		toast.limpiar();
 		try { toast.exito(await actualizarPreciosYFoto()); await cargarTodo(); }
@@ -59,7 +56,7 @@
 			id: h.id, tipo: h.tipo, nombre: h.nombre, unidades: h.unidades, precio: h.precioActual, moneda: h.moneda,
 			montoARS: h.moneda === 'USD' ? h.mercado * dolar : h.mercado,
 			montoUSD: h.mercadoUSD,
-			esCaja: false as const, cajaMoneda: null as string | null
+			esCaja: false as const
 		}));
 		const filasLiq = (['ARS', 'USD'] as const)
 			.map((mon) => {
@@ -68,7 +65,7 @@
 					id: -1, tipo: 'Caja', nombre: 'Líquido ' + mon, unidades: saldo, precio: 1, moneda: mon,
 					montoARS: mon === 'USD' ? saldo * dolar : saldo,
 					montoUSD: mon === 'USD' ? saldo : saldo / dolar,
-					esCaja: true as const, cajaMoneda: mon as string | null
+					esCaja: true as const
 				};
 			})
 			.filter((f) => Math.abs(f.montoARS) > 1e-6);
@@ -104,33 +101,24 @@
 		} catch (e: any) { toast.errorTecnico(e); }
 	}
 
-	// Edición de Caja ARS/USD: escape para corregir el saldo (p. ej. mientras el
-	// money market no esté modelado como activo — Bloque 3). Ledger append-only:
-	// no pisa nada, inserta el ajuste como un mov_caja más.
-	let editCaja = $state<string | null>(null);
-	let editSaldo = $state('');
-	function abrirEditCaja(mon: string) { editCaja = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 0); }
-	async function guardarCaja() {
-		const original = liqSaldos[editCaja ?? ''] ?? 0;
-		const s = montoAGuardar(editSaldo, original);
-		if (editCaja == null || !Number.isFinite(s) || s < 0) { editCaja = null; return; }
-		const ajuste = s - (liqSaldos[editCaja] ?? 0);
-		if (Math.abs(ajuste) <= 1e-6) { editCaja = null; return; }
-		const mon = editCaja;
-		try {
-			await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,nota) VALUES (1,?,?,?,?,?)',
-				[hoyISO(), 'Ajuste', mon, ajuste, 'Ajuste de saldo']);
-			invalidarFotosDesde(hoyISO()).catch(() => {});
-			editCaja = null; editSaldo = '';
-			await cargarTodo();
-			toast.exito('Caja actualizada ✅');
-		} catch (e: any) { toast.errorTecnico(e); }
-	}
+	// La CAJA NO SE EDITA acá. La liquidez es una consecuencia del ledger: cambia
+	// solo por movimientos registrados (ingresos, retiros, conversiones y el efecto
+	// caja de compras, ventas y rentas). Antes esta pantalla ofrecía un lápiz que
+	// insertaba un mov_caja de 'Ajuste' para cuadrar el saldo a mano; se quitó
+	// porque convertía la caja en un número editable y rompía la trazabilidad: el
+	// saldo dejaba de poder explicarse por los movimientos que lo formaron. Si el
+	// saldo no cuadra, lo que falta es un movimiento, y ese se carga en Movimientos.
+	// Los ajustes ya insertados en su momento siguen contando: son mov_caja como
+	// cualquier otro, no hay nada que migrar.
 </script>
 
 <div class="titulo-guia">
 	<h1>Tenencia en montos</h1>
-	<Guia clave="inversiones-montos" texto="Valuación con montos, en pesos o dólares al MEP de hoy. Acá se edita: el precio de mercado de cada activo (✏) y la caja en ARS/USD (✏). Ganancia realizada del año, en Evolución de cartera." />
+	<Guia
+		clave="inversiones-montos"
+		para="Ver tu cartera con montos y corregir lo que la fuente de precios no cubre."
+		uso="Lo único editable acá es el precio de mercado de un activo, con el lápiz, y es para lo que no se actualiza solo, como los FCI: en lo demás el próximo refresco vuelve al valor de la fuente. La caja no se edita, cambia sola con los movimientos que registrás."
+	/>
 </div>
 <a href="/inversiones" class="btn-volver">← Volver a Tenencia Actual</a>
 
@@ -168,6 +156,7 @@
 
 	<div class="preciosbar">
 		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
+		<a href="/carga-inversiones" class="btn btn-secondary">💵 Mover caja</a>
 	</div>
 
 	{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
@@ -191,15 +180,8 @@
 							{money(f.precio, f.moneda, 2)}<button aria-label="Editar" class="lapiz" onclick={() => abrirEditPrecio(f)}>✏</button>
 						{/if}
 					</td>
-					<td class="num precioedit">
-						{#if f.esCaja && editCaja === f.cajaMoneda}
-							<input type="text" inputmode="decimal" use:soloNum bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarCaja()} />
-							<button aria-label="Guardar" class="okp" onclick={guardarCaja}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editCaja = null)}>✕</button>
-						{:else if f.esCaja}
-							{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}<button aria-label="Editar" class="lapiz" onclick={() => abrirEditCaja(f.cajaMoneda ?? '')}>✏</button>
-						{:else}
-							{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}
-						{/if}
+					<td class="num">
+						{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}
 					</td>
 					<td class="num">{(f.pct * 100).toFixed(1)}%</td>
 				</tr>

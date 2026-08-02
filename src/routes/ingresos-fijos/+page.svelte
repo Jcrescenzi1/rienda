@@ -251,7 +251,11 @@
 
 <div class="titulo-guia">
 	<h1>Ingresos</h1>
-	<Guia clave="ingresos-fijos" texto="Tus ingresos recurrentes (sueldo, alquiler, renta, freelance recurrente). Solo lo que cobrás todos los meses. 'Registrar Ingreso' lo convierte en un ingreso real del mes elegido, con su categoría y tipo. Si tu sueldo (Principal + Regular) es recurrente, registralo desde acá y no lo cargues además a mano el mismo mes." />
+	<Guia
+		clave="ingresos-fijos"
+		para="Tener tus ingresos recurrentes en un solo lugar, sin cargarlos todos los meses."
+		uso="Cargá acá solo lo que cobrás todos los meses: sueldo, alquiler, renta, freelance fijo. Registrar Ingreso lo convierte en un ingreso real del mes elegido. Si tu sueldo está acá, registralo desde acá y no lo cargues además a mano."
+	/>
 </div>
 <div class="cr-nav">
 	<a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>

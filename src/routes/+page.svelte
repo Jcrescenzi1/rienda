@@ -452,7 +452,12 @@
 
 <div class="titulo-guia">
     <h1>Cuenta Corriente</h1>
-    <Guia clave="home" texto="Tu día a día: cuánto gastaste este período y cómo venís contra tu presupuesto; las flechas cambian de período. En modo sueldo un gasto puede caer en 'otro mes': el período lo abre el día que cobrás, no el calendario. Los dólares de tus gastos/ingresos recurrentes y de cuotas entran a tus pesos; los sueltos quedan aparte, solo informativos. Tocá el casillero de Presupuesto de una subcategoría para fijar un monto." verMas />
+    <Guia
+		clave="home"
+		para="Ver cuánto gastaste este período y cómo venís contra tu presupuesto."
+		uso="Las flechas cambian de período; tocá el casillero de Presupuesto de una subcategoría para fijarle un monto. Dos reglas que sorprenden: en modo sueldo el período lo abre el día que cobrás, no el calendario, y los dólares sueltos quedan aparte de tus pesos."
+		verMas
+	/>
 </div>
 {#if nombre}<p class="saludo">Hola, {nombre}!</p>{/if}
 

@@ -127,7 +127,11 @@
 
 <div class="titulo-guia">
     <h1>Crédito</h1>
-    <Guia clave="credito" texto="Cuánto vas a pagar de tarjetas cada mes, con las cuotas de cada compra ya repartidas. Los montos en pesos y en dólares se muestran por separado (no se mezclan). En 'Reservado' anotás cuánta plata ya apartaste para pagar el vencimiento de ese mes: eso suma a tu ingreso disponible en Cuenta Corriente. Tocá un mes para ver el detalle." />
+    <Guia
+		clave="credito"
+		para="Saber cuánto vas a pagar de tarjetas cada mes y apartar la plata a tiempo."
+		uso="Tocá un mes para ver el detalle con las cuotas ya repartidas. En Reservado anotás cuánto apartaste para ese vencimiento, y eso suma a tu ingreso disponible. Pesos y dólares van por separado, no se mezclan."
+	/>
 </div>
 <a href="/" class="btn-volver">← Volver a Cuenta Corriente</a>
 

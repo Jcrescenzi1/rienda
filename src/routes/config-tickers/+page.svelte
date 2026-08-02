@@ -229,7 +229,11 @@
 
 <div class="titulo-guia">
 	<h1>Mercado</h1>
-	<Guia clave="config-tickers" texto="Catálogo de referencia de activos y actualización de precios. Con “Sincronizar catálogo” se dan de alta de una vez todos los instrumentos que publica data912, para no tener que cargarlos a mano cada vez que operás uno nuevo; los que no cotizan ahí (FCI, activos del exterior) se cargan con “➕ Nuevo activo”. El gráfico de arriba muestra la evolución del activo que elijas: tocá una ficha del listado o buscalo en el selector. Mantené el dedo sobre el gráfico para marcar un día y ver cuánto varió desde ahí hasta hoy." />
+	<Guia
+		clave="config-tickers"
+		para="Tener el catálogo de activos al día y los precios actualizados."
+		uso="Sincronizar catálogo da de alta de una vez todos los instrumentos que publica la fuente; los que no cotizan ahí, como FCI o activos del exterior, se cargan con Nuevo activo. Tocá una ficha del listado o buscá en el selector para ver su gráfico."
+	/>
 </div>
 
 <a href="/inversiones" class="btn-volver">← Volver a Inversiones</a>
