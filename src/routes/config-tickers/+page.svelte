@@ -219,10 +219,19 @@
 		if (expandidoId === a.id) { expandidoId = null; return; }
 		expandidoId = a.id;
 		serieCargando = true;
-		serieActivo = (await query(
+		const traer = () => query(
 			'SELECT fecha, precio FROM precio_historico WHERE perfil_id=1 AND activo_id=? ORDER BY fecha',
 			[a.id]
-		)) as any[];
+		) as Promise<any[]>;
+		serieActivo = await traer();
+		// Backfill al vuelo: el backfill de precio_historico (Bloque 1) solo se
+		// dispara al guardar/editar un activo desde este formulario — los activos
+		// que ya estaban cargados antes de esta pantalla nunca lo corrieron, así
+		// que su gráfico arrancaba vacío. Si hay menos de 2 puntos y el tipo tiene
+		// serie en data912, se baja acá (mismo mecanismo, on-demand).
+		if (serieActivo.length < 2 && tieneHistoricoData912(a.tipo)) {
+			try { await backfillHistoricoActivo(a.id); serieActivo = await traer(); } catch {}
+		}
 		serieCargando = false;
 	}
 

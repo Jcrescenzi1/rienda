@@ -142,9 +142,9 @@
 	</div>
 
 	<div class="resumen">
-		<div class="card"><span>Rendimiento del mes</span><strong>{fmtRend(rendMes)}</strong></div>
-		<div class="card"><span>Rendimiento del trimestre</span><strong>{fmtRend(rendTrimestre)}</strong></div>
 		<div class="card"><span>Rendimiento del año</span><strong>{fmtRend(rendAnio)}</strong></div>
+		<div class="card"><span>Rendimiento del trimestre</span><strong>{fmtRend(rendTrimestre)}</strong></div>
+		<div class="card"><span>Rendimiento del mes</span><strong>{fmtRend(rendMes)}</strong></div>
 	</div>
 
 	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
@@ -271,10 +271,14 @@
 	/* Cartera actual: las 4 columnas numéricas (PPC/PPV/Precio mercado/Rend. %)
 	   con el mismo ancho, para que los valores queden alineados en vertical sin
 	   importar cuántos dígitos tenga cada uno. table-layout:fixed + width fijo
-	   en las .num; "Activo" (sin width) se queda con el resto. */
-	table.tabla-cartera { table-layout: fixed; }
-	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 92px; }
-	.activo-cell { display: flex; flex-direction: column; gap: 1px; }
+	   en las .num. "Activo" tiene min-width propio (no se lo lleva puesto un
+	   viewport angosto) y la tabla tiene min-width total: si no entra, scrollea
+	   horizontal dentro de .tabla-scroll en vez de aplastar/superponer columnas. */
+	table.tabla-cartera { table-layout: fixed; min-width: 460px; }
+	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 80px; }
+	table.tabla-cartera th:first-child, table.tabla-cartera td:first-child { width: 140px; }
+	.activo-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; overflow: hidden; }
+	.activo-cell span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 	.tipo-mini { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
 
 	/* Detalle del mix — ranking de concentración */

@@ -38,17 +38,21 @@
 </section>
 
 <section>
-	<h2>Tenencia Actual (FIFO, PPC, PPV)</h2>
-	<p>La cartera se valúa a precio de mercado en dólares. Los resultados se calculan con método <strong>FIFO</strong> (las ventas consumen primero los lotes más viejos):</p>
+	<h2>Tenencia Actual y Tenencia en montos (FIFO, PPC, PPV)</h2>
+	<p>La cartera se valúa a precio de mercado en dólares, con método <strong>FIFO</strong> (las ventas consumen primero los lotes más viejos). <strong>Tenencia Actual</strong> muestra la foto sin montos —solo %, precio por unidad y rendimiento—; los montos y la edición de precio de mercado y caja viven en <strong>Tenencia en montos</strong>.</p>
 	<ul>
 		<li><strong>PPC</strong> (precio promedio de compra): cuánto te costó en promedio lo que tenés.</li>
 		<li><strong>PPV</strong> (precio de salida ponderado): lo recuperado en ventas, rentas y amortizaciones más la tenencia a precio actual, sobre el total comprado.</li>
-		<li><strong>Rend. %</strong>: Result. Real de la posición ÷ lo invertido en USD del episodio abierto. Es el % que le falta al monto absoluto para saber si un resultado es grande o chico.</li>
-		<li><strong>Resultado Posiciones Abiertas</strong> (card): la ganancia total de todo lo que tenés hoy, en USD — ventas parciales + rentas/amortización cobradas + valor de mercado actual, menos lo invertido. Reemplaza al viejo concepto de "ganancia no realizada", que ignoraba la plata ya cobrada por renta y por eso subestimaba (o exageraba) cómo te estaba yendo.</li>
-		<li><strong>Ganancia realizada del año</strong> (card) y su detalle <strong>por año</strong> (tabla plegable debajo): solo cuenta ciclos que cerraste del todo (vendiste el 100%). Lo de una posición que seguís teniendo, aunque hayas vendido una parte, ya está adentro de "Resultado Posiciones Abiertas" — así no se duplica ni se pierde nada entre un año y el siguiente.</li>
+		<li><strong>Rend. %</strong>: ganancia (realizada + no realizada) de la posición abierta, sobre lo invertido en USD de ese episodio.</li>
+		<li><strong>Rendimiento del mes / trimestre / año</strong> (cards): TWR de toda la cartera, rebasado a cada ventana — descuenta el efecto de tus propios ingresos y retiros, para medir solo el resultado de tu estrategia.</li>
 		<li><strong>Detalle del mix</strong>: ranking de tus posiciones ordenado por % de la cartera, de mayor a menor (cruza todas las categorías de renta). Incluye Renta y Exposición (Dólar/CER/Peso) por fila, para ver de dónde sale cada % del gráfico de arriba. Marca con ⚠ cualquier posición que supere el 20% del total, como alerta de concentración.</li>
 	</ul>
-	<p>Podés guardar "fotos" de la cartera para ver su evolución (rendimiento descontando ingresos/retiros, base 100).</p>
+	<p>Los precios se actualizan solos cada 20 minutos en horario de mercado (o con "⟳ Actualizar precios"), y cada actualización deja hecha la <strong>foto del día automáticamente</strong> — no hace falta ninguna acción manual para que la curva de Evolución tenga datos. La liquidez tampoco se ajusta a mano: cambia únicamente por movimientos de caja, el efecto caja de tus compras/ventas y los cobros de renta.</p>
+</section>
+
+<section>
+	<h2>Mercado</h2>
+	<p>Desde <strong>Mercado</strong> (antes "Tickers") das de alta y editás tus activos. "🔍 Buscar en el mercado" busca entre los instrumentos que cotizan en el mercado argentino y precarga ticker y tipo al elegir uno — el resto del alta se completa igual que siempre. Tocando la ficha de un activo cargado se despliega su gráfico de precio histórico, con selector de ventana (1M/3M/6M/1A/Todo).</p>
 </section>
 
 <section>
