@@ -179,7 +179,7 @@
 	<div class="tabla-scroll">
 	<table class="tabla-cartera">
 		<thead><tr><th>Activo</th>
-			<th class="mon">Moneda</th>
+			<th class="mon">Mon.</th>
 			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
@@ -293,16 +293,23 @@
 	   importar cuántos dígitos tenga cada uno. table-layout:fixed + width fijo
 	   en las .num. La tabla tiene min-width total: si no entra, scrollea
 	   horizontal dentro de .tabla-scroll en vez de aplastar/superponer columnas.
-	   "Activo" queda angosta (90px, con ellipsis en .activo-cell) y sticky a la
-	   izquierda: al scrollear horizontal por Moneda/PPC/PPV/etc. el nombre del
+	   "Activo" queda angosta (con ellipsis en .activo-cell) y sticky a la
+	   izquierda: al scrollear horizontal por Mon./PPC/PPV/etc. el nombre del
 	   activo se mantiene visible. background sólido (var(--bg), mismo patrón que
 	   .grafico-fijo en config-tickers) para que las columnas que scrollean no se
-	   vean superpuestas por detrás; z-index por encima del resto de las celdas. */
-	table.tabla-cartera { table-layout: fixed; min-width: 475px; }
-	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 80px; }
-	table.tabla-cartera th.mon, table.tabla-cartera td.mon { width: 55px; text-align: center; }
+	   vean superpuestas por detrás; z-index por encima del resto de las celdas.
+	   Fuente/padding reducidos SOLO acá (no en .mix) y min-width recalculado al
+	   piso de las 6 columnas para que entren sin scroll en mobile (~320px de
+	   contenido, ya sin las unidades ARS/USD repetidas en cada celda numérica).
+	   Es una estimación visual, no medida en dispositivo real: si algún valor
+	   largo (ej. montos ARS de 6+ cifras) se corta, avisame y agrando la columna
+	   puntual en vez de la tabla entera. */
+	table.tabla-cartera { table-layout: fixed; min-width: 320px; font-size: 0.76rem; }
+	table.tabla-cartera th, table.tabla-cartera td { padding: 4px 3px; }
+	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 52px; }
+	table.tabla-cartera th.mon, table.tabla-cartera td.mon { width: 26px; text-align: center; }
 	table.tabla-cartera th:first-child, table.tabla-cartera td:first-child {
-		width: 90px;
+		width: 50px;
 		position: sticky;
 		left: 0;
 		z-index: 1;
