@@ -70,7 +70,6 @@
 			})
 			.filter((f) => Math.abs(f.montoARS) > 1e-6);
 		return [...filasActivos, ...filasLiq]
-			.map((f) => ({ ...f, pct: totalUSD ? f.montoUSD / totalUSD : 0 }))
 			.sort((a, b) => b.montoUSD - a.montoUSD);
 	});
 
@@ -163,12 +162,11 @@
 
 	<div class="tabla-scroll">
 	<table>
-		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Unidades</th><th class="num">Precio</th><th class="num">Monto ({vista})</th><th class="num">% total</th></tr></thead>
+		<thead><tr><th>Activo</th><th class="num">Unidades</th><th class="num">Precio</th><th class="num">Monto ({vista})</th></tr></thead>
 		<tbody>
 			{#each filas as f (f.esCaja ? 'caja-' + f.nombre : f.id)}
 				<tr>
-					<td>{f.tipo}</td>
-					<td>{f.nombre}</td>
+					<td><div class="activo-cell"><span class="tipo-mini">{f.tipo}</span><span>{f.nombre}</span></div></td>
 					<td class="num">{f.esCaja ? '—' : unidades(f.unidades)}</td>
 					<td class="num precioedit">
 						{#if f.esCaja}
@@ -183,10 +181,9 @@
 					<td class="num">
 						{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}
 					</td>
-					<td class="num">{(f.pct * 100).toFixed(1)}%</td>
 				</tr>
 			{/each}
-			{#if filas.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if filas.length === 0}<tr><td colspan="5" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 	</div>
@@ -211,6 +208,10 @@
 	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
 	th.num { text-align: center; }
+	/* Tipo arriba (chico, mudo) + nombre abajo, mismo patrón que .activo-cell de
+	   Tenencia Actual (inversiones/+page.svelte), para que ambas tablas lean igual. */
+	.activo-cell { display: flex; flex-direction: column; gap: 1px; }
+	.tipo-mini { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
 	.precioedit input { width: 90px; padding: 2px 4px; }
 	.msg { font-weight: 600; margin: 6px 0; }
