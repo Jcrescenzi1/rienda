@@ -188,7 +188,7 @@
 					<td class="mon">{h.moneda}</td>
 					<td class="num hl">{num(h.ppc)}</td><td class="num hl {h.ppv >= h.ppc ? 'pos' : 'neg'}">{num(h.ppv)}</td>
 					<td class="num">{num(h.precioActual)}</td>
-					<td class="num hl {h.rendPct != null && h.rendPct >= 0 ? 'pos' : 'neg'}">{h.rendPct != null ? (h.rendPct * 100).toFixed(1) + '%' : '—'}</td>
+					<td class="num rend hl {h.rendPct != null && h.rendPct >= 0 ? 'pos' : 'neg'}">{h.rendPct != null ? (h.rendPct * 100).toFixed(1) + '%' : '—'}</td>
 				</tr>
 			{/each}
 			{#if cartera.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
@@ -308,6 +308,7 @@
 	table.tabla-cartera th, table.tabla-cartera td { padding: 4px 3px; }
 	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 52px; }
 	table.tabla-cartera th.mon, table.tabla-cartera td.mon { width: 26px; text-align: center; }
+	table.tabla-cartera td.rend { text-align: center; }
 	table.tabla-cartera th:first-child, table.tabla-cartera td:first-child {
 		width: 50px;
 		position: sticky;
