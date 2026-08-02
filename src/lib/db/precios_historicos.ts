@@ -1,0 +1,180 @@
+// src/lib/db/precios_historicos.ts
+// Precio de cierre por activo por fecha (tabla precio_historico). Reemplaza el
+// modelo de "precio_actual" que se pisa: acá la historia queda, así que
+// corregir un movimiento viejo puede recalcular la historia hacia atrás.
+//
+// Dos responsabilidades separadas:
+//   1) Completar la tabla: backfill de histórico data912 (backfillHistoricoActivo,
+//      disparado al alta/edición en Configurar tickers) y el registro automático
+//      del precio de una transacción propia (registrarPrecioTransaccion). El
+//      logueo del panel en vivo y el refresco periódico (cada 20 min, con
+//      recalc condicional) viven en precios.ts (Bloque 2: actualizarPrecios /
+//      actualizarPreciosYFoto), que arma sus upserts con sqlUpsertPrecioHistorico
+//      para respetar la misma regla de prioridad.
+//   2) Leer un precio para una fecha con la cadena de respaldo (resolverPrecioEnFecha),
+//      pensada para la valuación a fecha del Bloque 4.
+//
+// Prioridad al ESCRIBIR (de más a menos confiable): data912 > panel_vivo >
+// transaccion. 'manual' es la corrección del usuario en Tenencia en montos y
+// siempre gana. Por eso el upsert de un origen automático NUNCA pisa una fila
+// 'manual' ya guardada (WHERE origen != 'manual'), y 'transaccion' nunca pisa
+// nada (INSERT OR IGNORE): es el último recurso automático, solo llena huecos.
+
+import { query, queryBatch } from './client';
+import { BASE, ajustarEscala } from './data912';
+
+// Tipo de activo -> slug del endpoint histórico de data912. ON y FCI no están:
+// ON no tiene endpoint histórico propio (se loguea desde el panel en vivo, ver
+// Bloque 2); FCI no tiene ninguna de las dos cosas (precio manual).
+export const ENDPOINT_HISTORICO: Record<string, string> = {
+	Accion: 'stocks',
+	CEDEAR: 'cedears',
+	// Los índices que se cargan en Rienda son CEDEARs en la práctica; el tipo
+	// 'Indice' se deja intacto (Julián lo usa para agrupar por exposición al
+	// riesgo), solo se lo apunta al mismo endpoint que CEDEAR.
+	Indice: 'cedears',
+	Bono: 'bonds'
+};
+
+export function tieneHistoricoData912(tipo: string): boolean {
+	return tipo in ENDPOINT_HISTORICO;
+}
+
+// Baja la serie completa de un símbolo desde el histórico de data912. Devuelve
+// [] (no lanza) si el símbolo no tiene serie (típico: VIST, GLD, NU y otros
+// activos que cotizan pero no están en el histórico) o si falla la conexión.
+export async function descargarHistoricoData912(
+	simbolo: string,
+	tipo: string
+): Promise<{ fecha: string; precio: number }[]> {
+	const endpoint = ENDPOINT_HISTORICO[tipo];
+	if (!endpoint) return [];
+	let data: any;
+	try {
+		const r = await fetch(`${BASE}/historical/${endpoint}/${encodeURIComponent(simbolo)}`);
+		if (!r.ok) return [];
+		data = await r.json();
+	} catch {
+		return [];
+	}
+	if (!Array.isArray(data)) return [];
+	const out: { fecha: string; precio: number }[] = [];
+	for (const fila of data) {
+		const fecha = String(fila?.date ?? '').slice(0, 10);
+		const c = Number(fila?.c);
+		if (!fecha || !Number.isFinite(c) || c <= 0) continue;
+		out.push({ fecha, precio: ajustarEscala(c, tipo) });
+	}
+	return out;
+}
+
+// Upsert de una fila. origen decide la regla de conflicto:
+//  - 'manual'                        -> siempre pisa (corrección explícita del usuario).
+//  - 'data912' | 'panel_vivo'        -> pisa cualquier cosa MENOS una fila 'manual'.
+//  - 'transaccion'                   -> nunca pisa nada ya guardado (solo llena huecos).
+// Exportada: el refresco de precios (Bloque 2) arma sus propios lotes con esta
+// misma regla para no reimplementarla ni pagar N viajes por activo.
+export function sqlUpsertPrecioHistorico(origen: string): string {
+	if (origen === 'manual') {
+		return `INSERT INTO precio_historico (perfil_id,activo_id,fecha,precio,origen) VALUES (1,?,?,?,?)
+			ON CONFLICT(perfil_id,activo_id,fecha) DO UPDATE SET precio=excluded.precio, origen=excluded.origen`;
+	}
+	if (origen === 'transaccion') {
+		return `INSERT OR IGNORE INTO precio_historico (perfil_id,activo_id,fecha,precio,origen) VALUES (1,?,?,?,?)`;
+	}
+	// data912 / panel_vivo
+	return `INSERT INTO precio_historico (perfil_id,activo_id,fecha,precio,origen) VALUES (1,?,?,?,?)
+		ON CONFLICT(perfil_id,activo_id,fecha) DO UPDATE SET precio=excluded.precio, origen=excluded.origen
+		WHERE precio_historico.origen != 'manual'`;
+}
+
+export async function upsertPrecioHistorico(
+	activoId: number,
+	fecha: string,
+	precio: number,
+	origen: 'data912' | 'panel_vivo' | 'transaccion' | 'manual'
+): Promise<void> {
+	if (!Number.isFinite(precio) || precio <= 0) return;
+	await query(sqlUpsertPrecioHistorico(origen), [activoId, fecha, precio, origen]);
+}
+
+// Se llama al cargar una Compra/Venta en carga-inversiones: registra el precio
+// de la propia operación como precio del día, SOLO si no había nada mejor ya
+// guardado para esa fecha (INSERT OR IGNORE). Best-effort: nunca bloquea el
+// guardado de la transacción si esto falla.
+export async function registrarPrecioTransaccion(activoId: number, fecha: string, precio: number): Promise<void> {
+	try {
+		await upsertPrecioHistorico(activoId, fecha, precio, 'transaccion');
+	} catch {
+		/* no bloquear la carga de la operación por esto */
+	}
+}
+
+// Backfill completo del histórico data912 de un activo (se dispara al darlo de
+// alta con símbolo, o desde un refresco manual). Trae toda la serie disponible
+// y la upsertea en lote. Devuelve cuántos puntos se guardaron, o null si el
+// activo no tiene endpoint histórico (ON, FCI) o no hay símbolo configurado.
+export async function backfillHistoricoActivo(activoId: number): Promise<number | null> {
+	const rows = (await query(
+		'SELECT tipo, simbolo_cotizacion FROM activo WHERE id=? AND perfil_id=1',
+		[activoId]
+	)) as any[];
+	const a = rows[0];
+	if (!a || !a.simbolo_cotizacion || !tieneHistoricoData912(a.tipo)) return null;
+
+	const serie = await descargarHistoricoData912(a.simbolo_cotizacion, a.tipo);
+	if (serie.length === 0) return 0;
+
+	const stmts = serie.map((p) => ({
+		sql: sqlUpsertPrecioHistorico('data912'),
+		bind: [activoId, p.fecha, p.precio, 'data912']
+	}));
+	await queryBatch(stmts);
+	return serie.length;
+}
+
+export type PrecioResuelto = {
+	precio: number;
+	origen: string;
+	fechaFuente: string; // fecha real de la que sale el valor (puede ser anterior a `fecha` si es arrastre)
+	arrastrado: boolean;
+};
+
+// Cadena de respaldo para obtener el precio de un activo en una fecha, sin
+// preguntarle nada al usuario:
+//   1) Fila ya guardada en precio_historico para esa fecha exacta (viene de
+//      data912, panel en vivo o corrección manual — lo que haya, con la
+//      prioridad ya resuelta al escribir).
+//   2) Precio de la propia transacción del usuario en esa fecha exacta (red
+//      para operaciones cargadas antes de que existiera este registro
+//      automático; las nuevas ya quedan cubiertas por (1) vía registrarPrecioTransaccion).
+//   3) Arrastre: el último precio conocido (cualquier origen) anterior a esa fecha.
+// Devuelve null si el activo no tiene ningún precio conocido en o antes de esa fecha.
+//
+// LÍMITE CONOCIDO (documentado, no implementado acá): cuando una ON amortiza
+// capital, el arrastre debería descontar la amortización por unidad para no
+// sobrevaluar lo que queda vivo. Calcularlo requiere saber la tenencia del
+// activo A ESA FECHA (FIFO cortado, no el FIFO a hoy que existe hoy en
+// cartera.ts) — esa pieza recién existe en el Bloque 4. Se retoma ahí.
+export async function resolverPrecioEnFecha(activoId: number, fecha: string): Promise<PrecioResuelto | null> {
+	const exacto = (await query(
+		'SELECT precio, origen FROM precio_historico WHERE perfil_id=1 AND activo_id=? AND fecha=?',
+		[activoId, fecha]
+	)) as any[];
+	if (exacto[0]) return { precio: exacto[0].precio, origen: exacto[0].origen, fechaFuente: fecha, arrastrado: false };
+
+	const tx = (await query(
+		"SELECT precio FROM transaccion WHERE perfil_id=1 AND activo_id=? AND fecha=? ORDER BY id DESC LIMIT 1",
+		[activoId, fecha]
+	)) as any[];
+	if (tx[0]) return { precio: tx[0].precio, origen: 'transaccion', fechaFuente: fecha, arrastrado: false };
+
+	const previo = (await query(
+		'SELECT precio, origen, fecha FROM precio_historico WHERE perfil_id=1 AND activo_id=? AND fecha<? ORDER BY fecha DESC LIMIT 1',
+		[activoId, fecha]
+	)) as any[];
+	if (previo[0]) {
+		return { precio: previo[0].precio, origen: previo[0].origen, fechaFuente: previo[0].fecha, arrastrado: true };
+	}
+	return null;
+}

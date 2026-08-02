@@ -16,6 +16,7 @@ const TABLAS = [
 	'tarjeta',
 	'cuenta_inversion',
 	'activo',
+	'precio_historico',
 	'gasto',
 	'ingreso',
 	'ingreso_fijo',

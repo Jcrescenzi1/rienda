@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, calc, pesos, unidades } from '$lib/format';
-	import { dolarActual } from '$lib/cartera';
+	import { dolarActual, invalidarFotosDesde } from '$lib/cartera';
+	import { registrarPrecioTransaccion } from '$lib/db/precios_historicos';
 	import Guia from '$lib/Guia.svelte';
 	import { Toast } from '$lib/toast.svelte';
 
@@ -153,6 +154,10 @@
 				const vdVal = necesitaVd && Number.isFinite(vd) ? vd : null;
 				await query('INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
 					[Number(fActivo), fFecha, fMoneda, renta, amort, vdVal]);
+				// Bloque 4: la renta/amortización mueve caja (calcularLiquidez) y puede
+				// afectar el arrastre de precio de ese activo — recalcula las fotos
+				// guardadas desde esta fecha en adelante (best-effort, no bloquea el guardado).
+				invalidarFotosDesde(fFecha).catch(() => {});
 				toast.exito('Renta y amortización guardada ✅');
 				resetForm();
 				await cargarBase(); await cargarActivos();
@@ -186,6 +191,13 @@
 				const precio = montoActivo / u;
 				await query('INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
 					[activoId, cuentaId, fFecha, fAccion, u, precio, Number.isFinite(vdN) ? vdN : null, fPago, montoPago]);
+				// Precio de cierre por fecha (Bloque 1): registra esta operación como
+				// precio del día SOLO si no había ya algo mejor (data912/panel en vivo/
+				// manual) guardado para esa fecha — ver registrarPrecioTransaccion.
+				await registrarPrecioTransaccion(activoId, fFecha, precio);
+				// Bloque 4: una Compra/Venta cambia tenencia (FIFO) y caja — recalcula
+				// las fotos guardadas desde esta fecha en adelante. Best-effort.
+				invalidarFotosDesde(fFecha).catch(() => {});
 				// Actualiza el precio de mercado solo si esta operacion es igual o mas
 				// nueva que la ultima actualizacion (una carga retroactiva no lo pisa).
 				const pa = (await query('SELECT precio_actualizado_en FROM activo WHERE id=? AND perfil_id=1', [activoId])) as any[];
@@ -197,6 +209,7 @@
 			} else if (fAccion === 'Ingreso' || fAccion === 'Retiro') {
 				const signo = fAccion === 'Ingreso' ? 1 : -1;
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto) VALUES (1,?,?,?,?)', [fFecha, fAccion, fMoneda, signo * monto]);
+				invalidarFotosDesde(fFecha).catch(() => {});
 				toast.exito(`${fAccion} de ${fMoneda} guardado ✅`);
 			} else if (fAccion === 'Convertir') {
 				const vd = vdN;
@@ -207,6 +220,7 @@
 				const grupo = 'conv-' + fFecha + '-' + Math.floor(Math.random() * 1e9);
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', fMoneda, -monto, grupo]);
 				await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo) VALUES (1,?,?,?,?,?)', [fFecha, 'Convertir', destinoMon, montoDestino, grupo]);
+				invalidarFotosDesde(fFecha).catch(() => {});
 				toast.exito(`Convertido ${fMoneda}→${destinoMon} ✅`);
 			}
 			resetForm();
@@ -222,6 +236,8 @@
 			if (!confirm('¿Eliminar esta operación?')) return;
 			await query('DELETE FROM transaccion WHERE id=? AND perfil_id=1', [m.id]);
 		}
+		// Bloque 4: borrar un movimiento viejo también invalida las fotos desde esa fecha.
+		invalidarFotosDesde(m.fecha).catch(() => {});
 		await cargarActivos();
 	}
 

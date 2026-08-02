@@ -1,99 +1,119 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { calcularFIFO, calcularLiquidez, dolarActual, aUSD } from '$lib/cartera';
-	import { pesos, unidades } from '$lib/format';
+	import { query } from '$lib/db/client';
+	import { calcularTenencia, invalidarFotosDesde } from '$lib/cartera';
+	import { upsertPrecioHistorico } from '$lib/db/precios_historicos';
+	import { pesos, unidades, parseNum, formatNum, montoAGuardar, soloNum, hoyISO } from '$lib/format';
+	import { Toast } from '$lib/toast.svelte';
 	import Guia from '$lib/Guia.svelte';
 	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 
-	// Foto pura de valuación actual: tipo, unidades, precio y monto de cada
-	// activo en tenencia + liquidez ARS/USD, sin recuperado por ventas ni renta
-	// ni ganancia — eso ya está en /inversiones. Convierte todo al MEP de HOY
-	// (dolarActual()), no al dólar de cada operación. "Valor invertido" es una
-	// excepción pedida aparte: el costo de compra de la posición ABIERTA actual
-	// (mismo criterio que el PPC/Rend.% de /inversiones — se reinicia si el
-	// activo llegó a tenencia cero en algún momento).
+	// Bloque 6: única pantalla del módulo con montos absolutos, y único lugar
+	// donde se edita algo (precio de mercado + caja ARS/USD). Todo lo demás
+	// (tenencia, PPC/PPV, estructura, rendimiento) vive en Tenencia Actual.
 	let cargando = $state(true);
-	let filas = $state<{ tipo: string; nombre: string; unidades: number; precio: number; moneda: string; montoARS: number; montoUSD: number }[]>([]);
+	let hold = $state<any[]>([]);
 	let dolar = $state(1);
 	let vista = $state<'ARS' | 'USD'>('USD');
-	let liqUSD = $state(0);
+	let totalUSD = $state(0);
 	let invertidoUSD = $state(0);
+	let resultadoAbiertoUSD = $state(0);
+	let liqSaldos = $state<Record<string, number>>({ ARS: 0, USD: 0 });
 
-	onMount(async () => {
-		const [{ lotes, aMap, txs }, liq, d] = await Promise.all([calcularFIFO(), calcularLiquidez(), dolarActual()]);
-		dolar = d;
+	const toast = new Toast();
 
-		const filasActivos = Object.entries(lotes)
-			.map(([aid, q]) => {
-				const u = q.reduce((s, l) => s + l.u, 0);
-				if (u < 1e-6) return null;
-				const a = aMap[Number(aid)];
-				const precio = a.precio_actual ?? 0;
-				const monto = u * precio; // en moneda nativa del activo
-				const montoARS = a.moneda === 'USD' ? monto * dolar : monto;
-				const montoUSD = a.moneda === 'USD' ? monto : monto / dolar;
-				return { tipo: a.tipo, nombre: a.nombre, unidades: u, precio, moneda: a.moneda, montoARS, montoUSD };
-			})
-			.filter((f): f is NonNullable<typeof f> => f !== null);
+	async function cargarTodo() {
+		const t = await calcularTenencia();
+		dolar = t.dolar;
+		hold = t.hold;
+		totalUSD = t.totalUSD;
+		invertidoUSD = t.invertidoUSD;
+		resultadoAbiertoUSD = t.resultadoAbiertoUSD;
+		liqSaldos = t.liqSaldos;
+		cargando = false;
+	}
+	onMount(cargarTodo);
 
+	// Filas de la tabla: activos en tenencia + líquido (ARS/USD), con el monto
+	// ya calculado en las dos monedas para no recalcular al togglear vista.
+	let filas = $derived.by(() => {
+		const filasActivos = hold.map((h) => ({
+			id: h.id, tipo: h.tipo, nombre: h.nombre, unidades: h.unidades, precio: h.precioActual, moneda: h.moneda,
+			montoARS: h.moneda === 'USD' ? h.mercado * dolar : h.mercado,
+			montoUSD: h.mercadoUSD,
+			esCaja: false as const, cajaMoneda: null as string | null
+		}));
 		const filasLiq = (['ARS', 'USD'] as const)
 			.map((mon) => {
-				const saldo = liq[mon] ?? 0;
+				const saldo = liqSaldos[mon] ?? 0;
 				return {
-					tipo: 'Caja', nombre: 'Líquido ' + mon, unidades: saldo, precio: 1, moneda: mon,
+					id: -1, tipo: 'Caja', nombre: 'Líquido ' + mon, unidades: saldo, precio: 1, moneda: mon,
 					montoARS: mon === 'USD' ? saldo * dolar : saldo,
-					montoUSD: mon === 'USD' ? saldo : saldo / dolar
+					montoUSD: mon === 'USD' ? saldo : saldo / dolar,
+					esCaja: true as const, cajaMoneda: mon as string | null
 				};
 			})
 			.filter((f) => Math.abs(f.montoARS) > 1e-6);
-
-		filas = [...filasActivos, ...filasLiq];
-		liqUSD = filasLiq.reduce((s, f) => s + f.montoUSD, 0);
-
-		// Costo de compra de la posición abierta actual (mismo criterio de reset
-		// de episodio que usa /inversiones para PPC): recorro las transacciones y
-		// reinicio el acumulado cada vez que la tenencia de un activo vuelve a cero.
-		const agg: Record<number, { invUSD: number }> = {};
-		const heldRun: Record<number, number> = {};
-		for (const t of txs) {
-			const a = aMap[t.activo_id];
-			if (!a) continue;
-			agg[t.activo_id] ??= { invUSD: 0 };
-			heldRun[t.activo_id] ??= 0;
-			const enUSD = aUSD(t.precio, a.moneda, t.valor_dolar) * t.unidades;
-			if (t.operacion === 'Compra') {
-				heldRun[t.activo_id] += t.unidades;
-				agg[t.activo_id].invUSD += enUSD;
-			} else {
-				heldRun[t.activo_id] -= t.unidades;
-				if (heldRun[t.activo_id] <= 1e-9) { heldRun[t.activo_id] = 0; agg[t.activo_id] = { invUSD: 0 }; }
-			}
-		}
-		invertidoUSD = Object.entries(lotes).reduce((s, [aid, q]) => {
-			const u = q.reduce((sq, l) => sq + l.u, 0);
-			if (u < 1e-6) return s;
-			const costoUSD = q.reduce((sq, l) => sq + l.u * l.pUSD, 0); // fallback si no hay agg
-			return s + (agg[Number(aid)]?.invUSD ?? costoUSD);
-		}, 0);
-
-		cargando = false;
+		return [...filasActivos, ...filasLiq]
+			.map((f) => ({ ...f, pct: totalUSD ? f.montoUSD / totalUSD : 0 }))
+			.sort((a, b) => b.montoUSD - a.montoUSD);
 	});
 
-	let totalUSD = $derived(filas.reduce((s, f) => s + f.montoUSD, 0));
-	let liqPct = $derived(totalUSD ? (liqUSD / totalUSD) * 100 : 0);
-	let filasOrdenadas = $derived(
-		filas
-			.map((f) => ({ ...f, pct: totalUSD ? f.montoUSD / totalUSD : 0 }))
-			.sort((a, b) => b.montoUSD - a.montoUSD)
-	);
 	const money = pesos;
 	const enVista = (usdVal: number) => (vista === 'ARS' ? money(usdVal * dolar, 'ARS') : money(usdVal, 'USD'));
+
+	// Edición de precio de mercado: único lugar del módulo donde se edita —
+	// necesario para FCI y activos sin cobertura de precio, y como escape para
+	// corregir un precio arrastrado (Bloque 1). Además de precio_actual (como
+	// antes), queda registrado en precio_historico con origen='manual' — gana
+	// sobre cualquier fuente automática (ver precios_historicos.ts) — e invalida
+	// la foto de hoy (Bloque 4). Manejo de errores: consola con el detalle
+	// técnico, mensaje sobrio en pantalla, confirmación en éxito (patrón Toast).
+	let editId = $state<number | null>(null);
+	let editPrecio = $state('');
+	function abrirEditPrecio(f: any) { editId = f.id; editPrecio = formatNum(f.precio, 2); }
+	async function guardarPrecio() {
+		const p = parseNum(editPrecio);
+		if (editId == null || !Number.isFinite(p) || p <= 0) { editId = null; return; }
+		const id = editId;
+		try {
+			await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, new Date().toISOString(), id]);
+			await upsertPrecioHistorico(id, hoyISO(), p, 'manual');
+			invalidarFotosDesde(hoyISO()).catch(() => {});
+			editId = null; editPrecio = '';
+			await cargarTodo();
+			toast.exito('Precio actualizado ✅');
+		} catch (e: any) { toast.errorTecnico(e); }
+	}
+
+	// Edición de Caja ARS/USD: escape para corregir el saldo (p. ej. mientras el
+	// money market no esté modelado como activo — Bloque 3). Ledger append-only:
+	// no pisa nada, inserta el ajuste como un mov_caja más.
+	let editCaja = $state<string | null>(null);
+	let editSaldo = $state('');
+	function abrirEditCaja(mon: string) { editCaja = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 0); }
+	async function guardarCaja() {
+		const original = liqSaldos[editCaja ?? ''] ?? 0;
+		const s = montoAGuardar(editSaldo, original);
+		if (editCaja == null || !Number.isFinite(s) || s < 0) { editCaja = null; return; }
+		const ajuste = s - (liqSaldos[editCaja] ?? 0);
+		if (Math.abs(ajuste) <= 1e-6) { editCaja = null; return; }
+		const mon = editCaja;
+		try {
+			await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,nota) VALUES (1,?,?,?,?,?)',
+				[hoyISO(), 'Ajuste', mon, ajuste, 'Ajuste de saldo']);
+			invalidarFotosDesde(hoyISO()).catch(() => {});
+			editCaja = null; editSaldo = '';
+			await cargarTodo();
+			toast.exito('Caja actualizada ✅');
+		} catch (e: any) { toast.errorTecnico(e); }
+	}
 </script>
 
 <div class="titulo-guia">
 	<h1>Tenencia en montos</h1>
-	<Guia clave="inversiones-montos" texto="Valuación actual de cada posición: unidades × precio de mercado, en pesos o dólares al tipo de cambio MEP de hoy. No incluye recuperado por ventas, renta ni ganancia/pérdida — eso está en Tenencia Actual." />
+	<Guia clave="inversiones-montos" texto="Valuación con montos, en pesos o dólares al MEP de hoy. Acá se edita: el precio de mercado de cada activo (✏) y la caja en ARS/USD (✏). Ganancia realizada del año, en Evolución de cartera." />
 </div>
 <a href="/inversiones" class="btn-volver">← Volver a Tenencia Actual</a>
 
@@ -122,28 +142,48 @@
 	<div class="resumen">
 		<div class="card destacado"><span>Valor cartera ({vista})</span><strong><CountUp value={totalUSD} format={enVista} /></strong></div>
 		<div class="card"><span>Valor invertido ({vista})</span><strong><CountUp value={invertidoUSD} format={enVista} /></strong></div>
-		<div class="card"><span>% de liquidez</span><strong><CountUp value={liqPct} format={(n) => n.toFixed(1) + '%'} /></strong></div>
+		<div class="card"><span>Ganancia no realizada ({vista})</span><strong class={resultadoAbiertoUSD >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertoUSD} format={enVista} /></strong></div>
 	</div>
 
 	<div class="moneda-fija">
 		<span class="moneda-badge">Dólar MEP (bolsa) {money(dolar, 'ARS')}</span>
 	</div>
 
+	{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
+
 	<div class="tabla-scroll">
 	<table>
 		<thead><tr><th>Tipo</th><th>Activo</th><th class="num">Unidades</th><th class="num">Precio</th><th class="num">Monto ({vista})</th><th class="num">% total</th></tr></thead>
 		<tbody>
-			{#each filasOrdenadas as f (f.tipo + f.nombre)}
+			{#each filas as f (f.esCaja ? 'caja-' + f.nombre : f.id)}
 				<tr>
 					<td>{f.tipo}</td>
 					<td>{f.nombre}</td>
-					<td class="num">{f.tipo === 'Caja' ? '—' : unidades(f.unidades)}</td>
-					<td class="num">{f.tipo === 'Caja' ? '—' : money(f.precio, f.moneda, 2)}</td>
-					<td class="num">{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}</td>
+					<td class="num">{f.esCaja ? '—' : unidades(f.unidades)}</td>
+					<td class="num precioedit">
+						{#if f.esCaja}
+							—
+						{:else if editId === f.id}
+							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
+							<button aria-label="Guardar" class="okp" onclick={guardarPrecio}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editId = null)}>✕</button>
+						{:else}
+							{money(f.precio, f.moneda, 2)}<button aria-label="Editar" class="lapiz" onclick={() => abrirEditPrecio(f)}>✏</button>
+						{/if}
+					</td>
+					<td class="num precioedit">
+						{#if f.esCaja && editCaja === f.cajaMoneda}
+							<input type="text" inputmode="decimal" use:soloNum bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarCaja()} />
+							<button aria-label="Guardar" class="okp" onclick={guardarCaja}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editCaja = null)}>✕</button>
+						{:else if f.esCaja}
+							{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}<button aria-label="Editar" class="lapiz" onclick={() => abrirEditCaja(f.cajaMoneda ?? '')}>✏</button>
+						{:else}
+							{vista === 'ARS' ? money(f.montoARS, 'ARS') : money(f.montoUSD, 'USD')}
+						{/if}
+					</td>
 					<td class="num">{(f.pct * 100).toFixed(1)}%</td>
 				</tr>
 			{/each}
-			{#if filasOrdenadas.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if filas.length === 0}<tr><td colspan="6" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 	</div>
@@ -168,4 +208,10 @@
 	td.num { text-align: right; white-space: nowrap; }
 	th.num { text-align: center; }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
+	.precioedit input { width: 90px; padding: 2px 4px; }
+	.msg { font-weight: 600; margin: 6px 0; }
+	.msg.err { display: flex; align-items: center; gap: 6px; color: var(--neg); }
+	.err-x { font-size: 1.3em; line-height: 1; }
+	.pos { color: var(--pos); }
+	.neg { color: var(--neg); }
 </style>

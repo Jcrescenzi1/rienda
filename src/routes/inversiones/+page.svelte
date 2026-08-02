@@ -1,30 +1,28 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { hoyISO, fmtFecha, parseNum, formatNum, montoAGuardar, soloNum, pesos, fechaHoraCorta } from '$lib/format';
-	import { aUSD, dolarActual, calcularFIFO, calcularLiquidez, calcularFoto, guardarSnapshot } from '$lib/cartera';
-	import { cargarDolarSerie, dolarDeFecha } from '$lib/moneda';
-	import { actualizarPrecios } from '$lib/db/precios';
+	import { fmtFecha, fechaISO, pesos, fechaHoraCorta } from '$lib/format';
+	import { calcularTenencia, calcularSerieTWR, rendimientoVentana } from '$lib/cartera';
+	import { actualizarPreciosYFoto } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
-	import CountUp from '$lib/CountUp.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
 
 	let cargando = $state(true);
 	let cartera = $state<any[]>([]);
-	let resultadoAbiertasTotal = $state(0);
-	let realizadoAnioActual = $state(0);
 	let buckets = $state<any[]>([]);
-	// Detalle del mix: cada activo (y el líquido) con su renta, tipo y % del total
+	let exposicion = $state<{ tot: number; filas: any[] }>({ tot: 0, filas: [] });
 	let detalleMix = $state<any[]>([]);
 	let dolar = $state(1);
 	let dolarFecha = $state<string | null>(null); // fecha de la cotización MEP usada
-	let totalUSD = $state(0);
-	let liqSaldos = $state<Record<string, number>>({ ARS: 0, USD: 0 });
 
-	let editId = $state<number | null>(null);
-	let editPrecio = $state('');
-	let editLiq = $state<string | null>(null);
-	let editSaldo = $state('');
+	// Rendimiento por ventana (Bloque 5): mismo TWR encadenado que Evolución de
+	// cartera (calcularSerieTWR/rendimientoVentana en cartera.ts), rebasado a
+	// mes/trimestre/año en vez de a toda la historia. null = todavía no hay al
+	// menos 2 fotos en esa ventana ("sin datos suficientes", no un cero). Sin
+	// ventana semanal: con fotos diarias, una semana sola es ruido.
+	let rendMes = $state<number | null>(null);
+	let rendTrimestre = $state<number | null>(null);
+	let rendAnio = $state<number | null>(null);
 
 	// Auto-actualización de precios
 	let actualizandoPrecios = $state(false);
@@ -32,166 +30,48 @@
 	let preciosMsgErr = $state(false);
 	let preciosActualizadosEn = $state<string | null>(null);
 
-	// Guardar Cartera (foto)
-	let showFoto = $state(false);
-	let fFlujo = $state(''); let fFlujoOriginal = $state(0); let fotoValorUSD = $state(0); let fotoValorARS = $state(0); let fotoDolar = $state(1);
-	let fotoFecha = $state(hoyISO());
-	let fotoMsg = $state('');
-	let fotoMsgErr = $state(false);
-
-	const anioActual = new Date().getFullYear().toString();
-
 	async function cargarTodo() {
-		dolar = await dolarActual();
+		const t = await calcularTenencia();
+		dolar = t.dolar;
+		cartera = t.hold;
+		buckets = t.buckets;
+		exposicion = t.exposicion;
+
 		// Fecha de esa cotización MEP (para mostrar a qué dólar y qué tan fresco se valúa).
 		const df = (await query("SELECT fecha FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
 		dolarFecha = df[0]?.fecha ?? null;
-		// Serie de dólar para convertir renta/amort con el MEP de SU fecha cuando el
-		// movimiento no trae valor_dolar (fallback al último si no hay cotización previa).
-		const serie = await cargarDolarSerie();
-		const tcDe = (vd: any, fecha: string) => (Number.isFinite(vd) && vd > 0 ? vd : (dolarDeFecha(serie, fecha) ?? dolar));
 
 		const mp = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
 		preciosActualizadosEn = mp[0]?.valor ?? null;
 
-		// FIFO compartido con Evolución (una sola implementación)
-		const { lotes, realizadoCerradoPorMes, episodioDesde, aMap, txs } = await calcularFIFO();
-
-		// Agregados por activo para el resultado de la tabla, acotados a la POSICIÓN
-		// ABIERTA ACTUAL: recorro las transacciones en orden y, cada vez que la tenencia
-		// vuelve a cero (cierre total), reinicio los acumuladores. Así un ciclo viejo
-		// ya cerrado no contamina el PPC/PPV de la posición que tenés hoy; las ventas
-		// parciales dentro de la posición abierta sí cuentan. No usa FIFO.
-		// Reusa las transacciones que ya leyó calcularFIFO (mismo ORDER BY
-		// activo_id, fecha, id) en vez de re-leer la tabla. Renombra a las columnas
-		// cortas que usa el agregado. episodioDesde ya viene calculado por calcularFIFO.
-		const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar, f: t.fecha }));
-		type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
-		const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
-		const agg: Record<number, Agg> = {};
-		const heldRun: Record<number, number> = {};
-		for (const t of txAgg) {
-			const a = aMap[t.aid];
-			if (!a) continue;
-			agg[t.aid] ??= nuevoAgg();
-			heldRun[t.aid] ??= 0;
-			const nat = t.u * t.p;
-			const enUSD = aUSD(t.p, a.moneda, t.vd) * t.u;
-			if (t.op === 'Compra') {
-				heldRun[t.aid] += t.u;
-				agg[t.aid].compU += t.u; agg[t.aid].inv += nat; agg[t.aid].invUSD += enUSD;
-			} else {
-				heldRun[t.aid] -= t.u;
-				agg[t.aid].rec += nat; agg[t.aid].recUSD += enUSD;
-				// Cierre total: la posición vuelve a cero -> arranca un episodio nuevo.
-				if (heldRun[t.aid] <= 1e-9) { heldRun[t.aid] = 0; agg[t.aid] = nuevoAgg(); }
-			}
-		}
-
-		// Posición abierta HOY (tenencia > 0 según el FIFO de calcularFIFO).
-		const posicionAbierta = (aid: number) => (lotes[aid]?.reduce((s, l) => s + l.u, 0) ?? 0) > 1e-6;
-
-		// Renta y amortización: si cae dentro del episodio VIVO de una posición que
-		// seguís teniendo, va al numerador del PPV/Result.Real (ya está adentro de
-		// "Resultado Posiciones Abiertas"). Si no —posición ya cerrada, o renta de un
-		// ciclo anterior—, el cupón (sin amort, que es devolución de capital) pasa a
-		// "ganancia realizada" para no perderlo ni duplicarlo.
-		const rentas = (await query(
-			'SELECT activo_id, fecha, moneda, monto_renta, monto_amort, valor_dolar FROM renta_activo WHERE perfil_id=1 ORDER BY activo_id, fecha'
-		)) as any[];
-		const rentaAgg: Record<number, { rec: number; recUSD: number }> = {};
-		const rentaCerradaPorMes: Record<string, number> = {};
-		for (const r of rentas) {
-			const a = aMap[r.activo_id];
-			if (!a) continue;
-			const vd = tcDe(r.valor_dolar, r.fecha); // MEP de la fecha si el mov no trae TC
-			const desde = episodioDesde[r.activo_id];
-			const esAbierta = posicionAbierta(r.activo_id) && !!desde && r.fecha >= desde;
-			if (esAbierta) {
-				const total = (r.monto_renta ?? 0) + (r.monto_amort ?? 0);
-				const rUSD = aUSD(total, r.moneda, vd);            // para gananciaUSD
-				const rNat = a.moneda === 'USD' ? rUSD : rUSD * vd; // en la moneda del activo, para el PPV
-				(rentaAgg[r.activo_id] ??= { rec: 0, recUSD: 0 });
-				rentaAgg[r.activo_id].rec += rNat;
-				rentaAgg[r.activo_id].recUSD += rUSD;
-			} else {
-				const mes = r.fecha.slice(0, 7);
-				rentaCerradaPorMes[mes] = (rentaCerradaPorMes[mes] ?? 0) + aUSD(r.monto_renta ?? 0, r.moneda, vd);
-			}
-		}
-
-		// Ganancia realizada del año: solo ciclos CERRADOS (ventas + cupón). Lo de
-		// posiciones que seguís teniendo ya está en "Resultado Posiciones Abiertas".
-		realizadoAnioActual = Object.entries(realizadoCerradoPorMes)
-			.filter(([mes]) => mes.startsWith(anioActual))
-			.reduce((s, [, v]) => s + v, 0)
-			+ Object.entries(rentaCerradaPorMes)
-				.filter(([mes]) => mes.startsWith(anioActual))
-				.reduce((s, [, v]) => s + v, 0);
-
-		const hold: any[] = [];
-		const buck: Record<string, number> = { Fija: 0, Mixta: 0, Variable: 0, Liquido: 0 };
-		let tUSD = 0;
-		for (const [aid, q] of Object.entries(lotes)) {
-			const u = q.reduce((s, l) => s + l.u, 0);
-			if (u < 1e-6) continue;
-			const a = aMap[Number(aid)];
-			const costoNat = q.reduce((s, l) => s + l.u * l.pNat, 0);  // costo de lo que queda (fallback)
-			const costoUSD = q.reduce((s, l) => s + l.u * l.pUSD, 0);  // costo USD de lo que queda (fallback)
-			// Agregado del activo (total comprado/vendido). Fallback al remanente si faltara.
-			const g = agg[Number(aid)] ?? { compU: u, inv: costoNat, invUSD: costoUSD, rec: 0, recUSD: 0 };
-			// Renta/amort de la posición abierta -> al numerador del PPV y a la ganancia.
-			const rp = rentaAgg[Number(aid)];
-			if (rp) { g.rec += rp.rec; g.recUSD += rp.recUSD; }
-			const ppc = g.compU ? g.inv / g.compU : 0;                 // promedio de compra sobre TODO lo comprado
-			const pa = a.precio_actual ?? ppc; const mercado = u * pa;
-			const mercadoUSD = a.moneda === 'USD' ? mercado : mercado / dolar;
-			// PPV ponderado: lo recuperado en ventas + la tenencia a precio actual, sobre el total comprado.
-			const ppv = g.compU ? (g.rec + mercado) / g.compU : pa;
-			const gananciaUSD = (g.recUSD + mercadoUSD) - g.invUSD;                      // ganancia real ≈USD (realizada + no realizada)
-			const rendPct = g.invUSD ? gananciaUSD / g.invUSD : null;                    // % sobre lo invertido en USD
-			buck[a.renta] = (buck[a.renta] ?? 0) + mercadoUSD; tUSD += mercadoUSD;
-			hold.push({ id: Number(aid), nombre: a.nombre, tipo: a.tipo, renta: a.renta, moneda: a.moneda,
-				exposicion: a.exposicion ?? (a.moneda === 'USD' || a.tipo === 'CEDEAR' || a.tipo === 'Indice' ? 'Dolar' : 'Peso'),
-				unidades: u, ppc, ppv, precioActual: pa, mercado,
-				gananciaUSD, rendPct, mercadoUSD });
-		}
-		resultadoAbiertasTotal = hold.reduce((s, h) => s + h.gananciaUSD, 0);
-
-		const bal = await calcularLiquidez();
-		liqSaldos = bal;
-		// La liquidez cuenta en el total y en la estructura de renta,
-		// pero no entra en la tabla de cartera: se muestra en las cards de arriba.
-		for (const mon of ['ARS', 'USD']) {
-			const saldo = bal[mon] ?? 0;
-			const valUSD = mon === 'USD' ? saldo : saldo / dolar;
-			buck['Liquido'] += valUSD; tUSD += valUSD;
-		}
-
-		for (const h of hold) h.peso = tUSD ? h.mercadoUSD / tUSD : 0;
-		hold.sort((x, y) => y.mercadoUSD - x.mercadoUSD); // la tabla sigue ordenada por mix
-		cartera = hold; totalUSD = tUSD;
-		buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
+		// Rendimiento por ventana: mismo criterio de "mes/trimestre/año" que se usa
+		// como fecha calendario (restar meses a hoy), no un conteo de fotos.
+		const snapRows = (await query('SELECT fecha, valor_usd, flujo_usd FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
+		const serie = calcularSerieTWR(snapRows);
+		const cutoffMeses = (n: number) => { const d = new Date(); d.setMonth(d.getMonth() - n); return fechaISO(d); };
+		rendMes = rendimientoVentana(serie, cutoffMeses(1));
+		rendTrimestre = rendimientoVentana(serie, cutoffMeses(3));
+		rendAnio = rendimientoVentana(serie, cutoffMeses(12));
 
 		// Detalle del mix: ranking de concentración (activos + líquido), ordenado por
 		// % del total de mayor a menor. El desglose por renta ya lo muestra el
 		// gráfico de barras de arriba; acá interesa ver de un vistazo cuáles son las
 		// apuestas más grandes cruzando categorías.
-		const liqRows = ['ARS', 'USD']
+		const liqRows = (['ARS', 'USD'] as const)
 			.map((mon) => {
-				const saldo = bal[mon] ?? 0;
+				const saldo = t.liqSaldos[mon] ?? 0;
 				const valUSD = mon === 'USD' ? saldo : saldo / dolar;
 				return { renta: 'Liquido', tipo: 'Caja', nombre: 'Líquido ' + mon, mercadoUSD: valUSD, exposicion: mon === 'USD' ? 'Dolar' : 'Peso' };
 			})
 			.filter((r) => r.mercadoUSD > 0);
 		const filasMix = [
-			...hold.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD, exposicion: h.exposicion })),
+			...cartera.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD, exposicion: h.exposicion })),
 			...liqRows
 		];
 		filasMix.sort((a, b) => b.mercadoUSD - a.mercadoUSD);
 		const UMBRAL_CONCENTRACION = 0.2; // 20% del total
 		detalleMix = filasMix.map((r) => {
-			const pct = tUSD ? r.mercadoUSD / tUSD : 0;
+			const pct = t.totalUSD ? r.mercadoUSD / t.totalUSD : 0;
 			return { ...r, pct, concentrado: r.tipo !== 'Caja' && pct >= UMBRAL_CONCENTRACION };
 		});
 
@@ -200,38 +80,10 @@
 
 	onMount(cargarTodo);
 
-	// Exposición al TIPO DE CAMBIO (no a la moneda de cotización): a qué se mueve el
-	// valor de cada activo. Tres cubos: Dólar / CER (inflación) / Peso. Lo define
-	// activo.exposicion (editable en Configurar tickers). El cash: USD -> Dólar,
-	// ARS -> Peso. Sirve para mapear tu posicionamiento vs. el contexto macro.
-	let exposicion = $derived.by(() => {
-		const b: Record<string, number> = { Dolar: 0, CER: 0, Peso: 0 };
-		for (const h of cartera) b[h.exposicion] = (b[h.exposicion] ?? 0) + h.mercadoUSD;
-		b.Dolar += liqSaldos.USD ?? 0;
-		b.Peso += (liqSaldos.ARS ?? 0) / dolar;
-		const tot = b.Dolar + b.CER + b.Peso;
-		return {
-			tot,
-			filas: [
-				{ clave: 'Dolar', label: 'Dólar', v: b.Dolar, pct: tot ? b.Dolar / tot : 0, color: 'var(--accent)' },
-				{ clave: 'CER', label: 'CER / Inflación', v: b.CER, pct: tot ? b.CER / tot : 0, color: '#4ade80' },
-				{ clave: 'Peso', label: 'Peso', v: b.Peso, pct: tot ? b.Peso / tot : 0, color: '#e8975b' }
-			]
-		};
-	});
-
-	function abrirEdit(h: any) { editId = h.id; editPrecio = formatNum(h.precioActual, 2); }
-	async function guardarPrecio() {
-		const p = parseNum(editPrecio);
-		if (editId == null || !Number.isFinite(p) || p <= 0) { editId = null; return; }
-		await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, new Date().toISOString(), editId]);
-		editId = null; editPrecio = ''; await cargarTodo();
-	}
-
 	// Actualiza precios desde data912 (botón manual). El auto al abrir vive en el layout.
 	async function onActualizarPrecios() {
 		actualizandoPrecios = true; preciosMsg = ''; preciosMsgErr = false;
-		try { preciosMsg = await actualizarPrecios(); await cargarTodo(); }
+		try { preciosMsg = await actualizarPreciosYFoto(); await cargarTodo(); }
 		catch (e: any) { console.error(e); preciosMsgErr = true; preciosMsg = 'Ocurrió un error. Contactá al administrador.'; }
 		actualizandoPrecios = false;
 	}
@@ -239,41 +91,8 @@
 	// Alias al helper único de format.ts (ver Brief H / A2). Mismo formato de antes,
 	// ya no reimplementado acá.
 	const fmtFechaHora = fechaHoraCorta;
-	function abrirEditLiq(mon: string) { editLiq = mon; editSaldo = formatNum(liqSaldos[mon] ?? 0, 0); }
-	async function guardarLiq() {
-		const original = liqSaldos[editLiq ?? ''] ?? 0;
-		const s = montoAGuardar(editSaldo, original);
-		if (editLiq == null || !Number.isFinite(s) || s < 0) { editLiq = null; return; }
-		const ajuste = s - (liqSaldos[editLiq] ?? 0);
-		if (Math.abs(ajuste) > 1e-6)
-			await query('INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,nota) VALUES (1,?,?,?,?,?)',
-				[hoyISO(), 'Ajuste', editLiq, ajuste, 'Ajuste de saldo (rendimiento fondo)']);
-		editLiq = null; editSaldo = ''; await cargarTodo();
-	}
-
-	// Guardar Cartera (snapshot) — cálculo compartido con Evolución
-	async function prepararFoto() {
-		fotoMsg = ''; fotoMsgErr = false;
-		const f = await calcularFoto();
-		fotoDolar = f.dolar;
-		fotoValorUSD = f.valorUSD;
-		fotoValorARS = f.valorARS;
-		fFlujoOriginal = f.flujo;
-		fFlujo = formatNum(f.flujo, 0);
-		showFoto = true;
-	}
-	async function guardarFoto() {
-		try {
-			const flujo = montoAGuardar(fFlujo, fFlujoOriginal);
-			await guardarSnapshot(fotoFecha, fotoValorUSD, Number.isFinite(flujo) ? flujo : 0, fotoDolar, fotoValorARS);
-			showFoto = false; fotoMsg = '📸 Cartera guardada en Evolución ✅';
-			setTimeout(() => (fotoMsg = ''), 3000);
-		} catch (e: any) { console.error(e); fotoMsgErr = true; fotoMsg = 'Ocurrió un error. Contactá al administrador.'; }
-	}
-
 	// Alias locales al helper único de format.ts (ver Brief H / A1).
 	const money = pesos;
-	const usd = (n: number, dec = 0) => pesos(n, 'USD', dec);
 	const colorRenta: Record<string, string> = { Fija: '#2e7d32', Mixta: '#1a73e8', Variable: '#e8710a', Liquido: '#888' };
 	// Mismos colores que las barras de "Exposición al tipo de cambio" de arriba.
 	const colorExposicion: Record<string, string> = { Dolar: 'var(--accent)', CER: '#4ade80', Peso: '#e8975b' };
@@ -286,11 +105,17 @@
 		const L = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
 		return L > 0.6 ? 'rgba(0,0,0,0.82)' : '#fff';
 	}
+	// Rendimiento por ventana: porcentual, un decimal, sin semáforo de color
+	// (Bloque 5 — Julián lo va a evaluar después). "sin datos suficientes" en
+	// vez de un cero cuando la ventana no tiene al menos 2 fotos.
+	function fmtRend(n: number | null): string {
+		return n == null ? 'sin datos suficientes' : (n >= 0 ? '+' : '') + (n * 100).toFixed(1) + '%';
+	}
 </script>
 
 <div class="titulo-guia">
 	<h1>Tenencia Actual</h1>
-	<Guia clave="inversiones" texto="Tu cartera a precio de mercado: tenencia, PPC vs PPV, liquidez en ARS/USD y estructura de renta. Actualizá precios con el lápiz ✏. Las operaciones se cargan desde '➕ Cargar movimiento'; '📸 Guardar Tenencia' saca la foto que alimenta Evolución." />
+	<Guia clave="inversiones" texto="Tu cartera sin montos: PPC vs PPV, precio de mercado, rendimiento por ventana y estructura de renta/exposición. Las operaciones se cargan desde '➕ Cargar movimiento'. Los precios se actualizan solos (o con '⟳ Actualizar precios'); cada actualización deja hecha la foto que alimenta Evolución. Los montos y la edición viven en Tenencia en montos." />
 </div>
 
 {#if cargando}
@@ -313,74 +138,37 @@
 {:else}
 	<div class="btn-row">
 		<a href="/carga-inversiones" class="btn btn-primary">Movimientos</a>
-		<a href="/config-tickers" class="btn btn-secondary">🎯 Tickers</a>
-		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
+		<a href="/config-tickers" class="btn btn-secondary">🎯 Mercado</a>
 	</div>
+
 	<div class="resumen">
-		<div class="card"><span>Cartera total (≈USD)</span><strong><CountUp value={totalUSD} format={(n) => usd(n)} /></strong></div>
-		<div class="card"><span>Ganancia realizada {anioActual} (USD)</span><strong class={realizadoAnioActual >= 0 ? 'pos' : 'neg'}><CountUp value={realizadoAnioActual} format={(n) => usd(n, 2)} /></strong></div>
-		<div class="card"><span>Resultado de Tenencia Actual (USD)</span><strong class={resultadoAbiertasTotal >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertasTotal} format={(n) => usd(n, 2)} /></strong></div>
+		<div class="card"><span>Rendimiento del mes</span><strong>{fmtRend(rendMes)}</strong></div>
+		<div class="card"><span>Rendimiento del trimestre</span><strong>{fmtRend(rendTrimestre)}</strong></div>
+		<div class="card"><span>Rendimiento del año</span><strong>{fmtRend(rendAnio)}</strong></div>
 	</div>
 
 	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
 
-	<div class="liquidez">
-		{#each ['ARS', 'USD'] as mon}
-			<div class="liqcard">
-				<span>Líquido {mon}</span>
-				{#if editLiq === mon}
-					<div class="liqedit">
-						<input type="text" inputmode="decimal" use:soloNum bind:value={editSaldo} onkeydown={(e) => e.key === 'Enter' && guardarLiq()} />
-						<button aria-label="Guardar" class="okp" onclick={guardarLiq}>✓</button>
-						<button aria-label="Cancelar" class="cancp" onclick={() => (editLiq = null)}>✕</button>
-					</div>
-				{:else}
-					<div class="liqval">
-						<strong>{money(liqSaldos[mon] ?? 0, mon)}</strong>
-						<button aria-label="Editar" class="lapiz" onclick={() => abrirEditLiq(mon)} title="Editar saldo">✏</button>
-					</div>
-				{/if}
-			</div>
-		{/each}
-	</div>
-
 	<div class="preciosbar">
 		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
-		<button class="btn btn-success" onclick={prepararFoto}>📸 Guardar Tenencia</button>
+		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
 	</div>
-	{#if fotoMsg}<p class="msg" class:err={fotoMsgErr}>{#if fotoMsgErr}<span class="err-x">✗</span> {/if}{fotoMsg}</p>{/if}
-
-	{#if showFoto}
-		<div class="form">
-			<h3>Guardar foto de cartera — {fotoFecha}</h3>
-			<label>Fecha<input type="date" bind:value={fotoFecha} /></label>
-			<p class="hint">Valor actual: <strong>{usd(fotoValorUSD)}</strong> ({money(fotoValorARS, 'ARS')} · dólar {money(fotoDolar, 'ARS')})</p>
-			<label>Flujo neto desde la última foto (USD)<input type="text" inputmode="decimal" use:soloNum bind:value={fFlujo} /></label>
-			<div class="botones"><button class="btn btn-success" onclick={guardarFoto}>Guardar</button><button class="btn btn-secondary" onclick={() => (showFoto = false)}>Cancelar</button></div>
-		</div>
-	{/if}
 
 	<div class="tabla-scroll">
-	<table>
-		<thead><tr><th>Tipo</th><th>Activo</th>
-			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th><th class="num hl">Result. Real</th></tr></thead>
+	<table class="tabla-cartera">
+		<thead><tr><th>Activo</th>
+			<th class="num hl">PPC</th><th class="num hl">PPV</th><th class="num">Precio mercado</th><th class="num hl">Rend. %</th></tr></thead>
 		<tbody>
 			{#each cartera as h (h.id)}
 				<tr>
-					<td>{h.tipo}</td><td>{h.nombre}</td>
+					<td><div class="activo-cell"><span class="tipo-mini">{h.tipo}</span><span>{h.nombre}</span></div></td>
 					<td class="num hl">{money(h.ppc, h.moneda, 2)}</td><td class="num hl {h.ppv >= h.ppc ? 'pos' : 'neg'}">{money(h.ppv, h.moneda, 2)}</td>
-					<td class="num precioedit">
-						{#if editId === h.id}
-							<input type="text" inputmode="decimal" use:soloNum bind:value={editPrecio} onkeydown={(e) => e.key === 'Enter' && guardarPrecio()} />
-							<button aria-label="Guardar" class="okp" onclick={guardarPrecio}>✓</button><button aria-label="Cancelar" class="cancp" onclick={() => (editId = null)}>✕</button>
-						{:else}{money(h.precioActual, h.moneda, 2)}<button aria-label="Editar" class="lapiz" onclick={() => abrirEdit(h)}>✏</button>{/if}
-					</td>
+					<td class="num">{money(h.precioActual, h.moneda, 2)}</td>
 					<td class="num hl {h.rendPct != null && h.rendPct >= 0 ? 'pos' : 'neg'}">{h.rendPct != null ? (h.rendPct * 100).toFixed(1) + '%' : '—'}</td>
-					<td class="num hl {h.gananciaUSD >= 0 ? 'pos' : 'neg'}">{usd(h.gananciaUSD)}</td>
 				</tr>
 			{/each}
-			{#if cartera.length === 0}<tr><td colspan="7" class="vacio">No tenés activos en cartera.</td></tr>{/if}
+			{#if cartera.length === 0}<tr><td colspan="5" class="vacio">No tenés activos en cartera.</td></tr>{/if}
 		</tbody>
 	</table>
 	</div>
@@ -391,9 +179,7 @@
 			<strong>PPV</strong> (Precio Promedio de Venta): precio promedio de salida — recuperado en ventas, rentas y amortizaciones + tu tenencia a precio actual.<br />
 			• <strong>Verde</strong> si está por encima del PPC (ganás en la moneda del activo).<br />
 			• <strong>Rojo</strong> si está por debajo.<br />
-			<strong>Rend. %</strong> = Result. Real ÷ invertido (USD) del episodio abierto.<br />
-			<strong>Result. Real</strong> = resultado de la tenencia real, evaluado en USD (ventas parciales + tenencia).<br />
-			• La brecha entre el PPV verde y un Resultado rojo es ganancia nominal con pérdida real.
+			<strong>Rend. %</strong> = ganancia (realizada + no realizada) de la posición abierta, sobre lo invertido en USD.
 		</p>
 	</details>
 
@@ -434,7 +220,7 @@
 	{#if exposicion.tot > 0}
 		<details class="nota-colapsable">
 			<summary>Descripción de la visual: Exposición y estructura de renta</summary>
-			<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>.</p>
+			<p class="nota">Exposición: a qué se mueve tu cartera, no en qué moneda cotiza — <strong>Dólar</strong> sigue al tipo de cambio (USD, CEDEARs, dollar-linked), <strong>CER</strong> sigue la inflación, <strong>Peso</strong> no cubre ante una devaluación. Incluye liquidez; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Configurar tickers</a>. Estructura de renta agrupa caja y fondos money market bajo "Líquido".</p>
 		</details>
 	{/if}
 
@@ -465,7 +251,6 @@
 <style>
 :global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
-	h3 { margin: 0 0 4px; font-size: 1rem; }
 	h2 { border-left: 3px solid var(--accent); padding-left: 12px; }
 	.graf h2 { border-left: none; padding-left: 0; }
 	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
@@ -475,32 +260,22 @@
 	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
 	.moneda-lbl { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
 	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
-	label { display: flex; flex-direction: column; font-size: 0.82rem; color: var(--text-dim); gap: 3px; }
-	input { padding: 6px; font-size: 0.95rem; }
-	.botones { display: flex; gap: 8px; }
-	.hint { font-size: 0.82rem; color: var(--accent); margin: 0; }
-	.msg { font-weight: 600; margin: 6px 0; }
-	.msg.err, .preciostamp span.err { color: var(--neg); }
-	.msg.err { display: flex; align-items: center; gap: 6px; }
+	.preciostamp span.err { color: var(--neg); }
 	.err-x { font-size: 1.3em; line-height: 1; }
-	/* .resumen/.card: base global en +layout.svelte. La cartera total es el
-	   numero hero de esta pantalla — override local, no es parte del global. */
-	.resumen .card:first-child { border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
-	.resumen .card:first-child strong { font-weight: 300; font-size: clamp(0.95rem, 4.2vw, 1.5rem); }
-
-	/* Franja de liquidez */
-	.liquidez { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin: 0 0 12px; }
-	.liqcard { border: 1px solid transparent; background: rgba(74, 222, 128, 0.06); border-radius: 8px; padding: 8px 11px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-	.liqcard span { font-family: var(--font-display); font-size: clamp(0.56rem, 2.4vw, 0.66rem); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim); }
-	.liqval { display: flex; align-items: center; gap: 6px; }
-	.liqval strong { font-family: var(--font-num); font-size: clamp(0.82rem, 3.4vw, 1.05rem); font-weight: 400; white-space: nowrap; }
-	.liqedit { display: flex; align-items: center; gap: 4px; }
-	.liqedit input { width: 110px; padding: 3px 5px; font-size: 0.95rem; }
+	/* .resumen/.card: base global en +layout.svelte. */
 
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { padding: 5px 7px; text-align: left; }
 	td.num { text-align: right; white-space: nowrap; }
 	th.num { text-align: center; }
+	/* Cartera actual: las 4 columnas numéricas (PPC/PPV/Precio mercado/Rend. %)
+	   con el mismo ancho, para que los valores queden alineados en vertical sin
+	   importar cuántos dígitos tenga cada uno. table-layout:fixed + width fijo
+	   en las .num; "Activo" (sin width) se queda con el resto. */
+	table.tabla-cartera { table-layout: fixed; }
+	table.tabla-cartera th.num, table.tabla-cartera td.num { width: 92px; }
+	.activo-cell { display: flex; flex-direction: column; gap: 1px; }
+	.tipo-mini { font-size: 0.68rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
 
 	/* Detalle del mix — ranking de concentración */
 	table.mix { max-width: 640px; margin-top: 6px; }
@@ -508,8 +283,6 @@
 	table.mix tr.concentrado td { color: var(--warn); font-weight: 600; background: rgba(251, 191, 36, 0.08); }
 	th.hl, td.hl { background: rgba(91, 157, 255, 0.06); }
 	.vacio { text-align: center; color: var(--text-dim); font-style: italic; }
-	.precioedit input { width: 90px; padding: 2px 4px; }
-
 
 	/* Textos descriptivos de cada visual, colapsados por defecto */
 	.nota-colapsable { margin: 6px 0 12px; }

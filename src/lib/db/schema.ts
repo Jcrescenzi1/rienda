@@ -154,6 +154,24 @@ CREATE TABLE IF NOT EXISTS activo (
   UNIQUE (perfil_id, ticker)
 );
 
+-- Precio de cierre de un activo en una fecha (una fila por activo por día).
+-- Reemplaza el modelo de "precio_actual" que se pisa: con esto la historia no
+-- se pierde y corregir un movimiento viejo puede recalcular hacia atrás.
+-- origen: de dónde salió el dato, en orden de prioridad al completarlo
+-- ('data912' = histórico de mercado, 'panel_vivo' = logueado del panel en vivo
+-- ese día, 'transaccion' = precio de la propia operación del usuario, 'manual'
+-- = corrección a mano en Tenencia en montos). Upsert por (perfil,activo,fecha):
+-- si se vuelve a escribir el mismo día, gana el último valor grabado.
+CREATE TABLE IF NOT EXISTS precio_historico (
+  id          INTEGER PRIMARY KEY,
+  perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
+  activo_id   INTEGER NOT NULL REFERENCES activo(id),
+  fecha       TEXT NOT NULL,
+  precio      REAL NOT NULL CHECK (precio > 0),
+  origen      TEXT NOT NULL CHECK (origen IN ('data912','panel_vivo','transaccion','manual')),
+  UNIQUE (perfil_id, activo_id, fecha)
+);
+
 CREATE TABLE IF NOT EXISTS transaccion (
   id                   INTEGER PRIMARY KEY,
   perfil_id            INTEGER NOT NULL REFERENCES perfil(id),
@@ -275,6 +293,7 @@ CREATE INDEX IF NOT EXISTS idx_gasto_fecha       ON gasto(perfil_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_gasto_detalle     ON gasto(perfil_id, detalle);
 CREATE INDEX IF NOT EXISTS idx_tx_activo         ON transaccion(perfil_id, activo_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_renta_activo      ON renta_activo(perfil_id, activo_id);
+CREATE INDEX IF NOT EXISTS idx_preciohist_activo ON precio_historico(perfil_id, activo_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_ingreso_periodo   ON ingreso(perfil_id, periodo);
 CREATE INDEX IF NOT EXISTS idx_screg_periodo     ON suscripcion_registro(periodo);
 -- Por gasto_id / ingreso_id: soportan los EXISTS por fila de la Home (recurrente

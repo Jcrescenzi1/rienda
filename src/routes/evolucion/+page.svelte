@@ -117,6 +117,7 @@
 		const vVal = vsnaps.map((s) => s.valor_usd);
 		let minL = Math.min(...vVal), maxL = Math.max(...vVal);
 		const padL = (maxL - minL) * 0.1 || 1; minL -= padL; maxL += padL;
+		minL = Math.max(0, minL); // el valor de cartera nunca es negativo: el eje no baja de 0
 		const pyL = (y: number) => H - P.b - ((y - minL) / (maxL - minL || 1)) * (H - P.t - P.b);
 
 		const vTwr = vsnaps.map((s) => s.cidx);
@@ -166,7 +167,7 @@
 
 <div class="titulo-guia">
 	<h1>Evolución de cartera</h1>
-	<Guia clave="evolucion" texto="La historia de tu cartera, foto a foto. El TWR mide el rendimiento de tu estrategia sin que aportes o retiros lo distorsionen. Sacá una foto por mes desde Tenencia para que la curva diga algo." />
+	<Guia clave="evolucion" texto="La historia de tu cartera, foto a foto. El TWR mide el rendimiento de tu estrategia sin que aportes o retiros lo distorsionen. Las fotos se sacan solas cada vez que se actualizan los precios (automático, o con '⟳ Actualizar precios' desde Tenencia) — no hace falta ninguna acción manual." />
 </div>
 
 <h2>Valor y rendimiento (TWR)</h2>

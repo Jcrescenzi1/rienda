@@ -58,20 +58,24 @@
 		} catch { /* sin conexión o API caída: no molestar */ }
 	}
 
-	// Actualiza precios de activos desde data912 al abrir, solo en horario de mercado
-	// (días hábiles, ~11–18 ART) y si pasó más de 1h del último refresh. Silencioso.
+	// Actualiza precios de activos desde data912 al abrir (y deja hecha la foto
+	// automática del día — Bloque 2), en días hábiles y si pasó más de 20 min del
+	// último refresh. Ventana horaria: hasta las 18 ART (cierre); no hay piso a la
+	// mañana temprano (pre-apertura) porque ahí el panel en vivo todavía devuelve
+	// el cierre de la sesión anterior, que sigue siendo un dato válido para
+	// guardar (fechaCierreActual, en precios.ts, lo fecha al día hábil anterior).
+	// Silencioso: sin internet, API caída o sin símbolos configurados no molesta.
 	async function autoPrecios() {
 		try {
 			const ahora = new Date();
 			const dia = ahora.getDay();
 			if (dia === 0 || dia === 6) return;        // fin de semana
-			const hora = ahora.getHours();
-			if (hora < 11 || hora >= 18) return;       // fuera de horario de mercado
+			if (ahora.getHours() >= 18) return;        // ya cerró: nada nuevo hasta mañana
 			const r = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
 			const ult = r[0]?.valor;
-			if (ult && Date.now() - new Date(ult).getTime() < 60 * 60 * 1000) return; // refrescado hace <1h
-			const { actualizarPrecios } = await import('$lib/db/precios');
-			await actualizarPrecios();
+			if (ult && Date.now() - new Date(ult).getTime() < 20 * 60 * 1000) return; // refrescado hace <20min
+			const { actualizarPreciosYFoto } = await import('$lib/db/precios');
+			await actualizarPreciosYFoto();
 		} catch { /* sin conexión, API caída o sin símbolos configurados: no molestar */ }
 	}
 

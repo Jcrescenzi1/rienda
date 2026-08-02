@@ -9,16 +9,16 @@ import { hoyISO, diasEntre, mesActual } from './format';
 import { proximaOcurrencia, addDias, periodoActivoCC, periodoRegla, cargarModo } from './periodo';
 
 export type LineaRegla = {
-	tipo: 'mep' | 'copia' | 'foto';
+	tipo: 'mep' | 'copia';
 	texto: string;
-	href?: string; // navegación (copia, foto)
+	href?: string; // navegación (copia)
 	accion?: 'cotiz'; // acción inline (MEP: actualizar tipo de cambio)
 };
 export type ItemRecurrente = { id: number; nombre: string; dias: number };
 export type Notificaciones = {
 	pagos: ItemRecurrente[]; // gastos fijos próximos (ventana [hoy, hoy+3], no registrados)
 	cobros: ItemRecurrente[]; // ingresos fijos próximos
-	reglas: LineaRegla[]; // MEP / copia / foto (vejez) — persistentes hasta resolverse
+	reglas: LineaRegla[]; // MEP / copia (vejez) — persistentes hasta resolverse
 	// Conteo del badge de la campana: reglas rotas (persistentes) + recurrentes en
 	// ventana AÚN NO vistos (por evento). Al entrar al centro se marcan vistos y bajan.
 	badge: number;
@@ -67,20 +67,11 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 		reglas.push({ tipo: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
 	}
 
-	// Regla 3 — Foto de cartera: solo si el usuario tiene historial de inversiones.
-	const tx = (await query('SELECT COUNT(*) AS n FROM transaccion WHERE perfil_id=1')) as any[];
-	if ((tx[0]?.n ?? 0) > 0) {
-		const snap = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha DESC LIMIT 1')) as any[];
-		const snapFecha = snap[0]?.fecha ?? null;
-		if (snapFecha) {
-			const d = diasEntre(snapFecha, hoy);
-			if (d > 7) reglas.push({ tipo: 'foto', texto: `Hace ${d} días que no sacás una foto de tu cartera.`, href: '/evolucion' });
-		} else if (!enPrimeraSemana) {
-			reglas.push({ tipo: 'foto', texto: 'Todavía no sacaste ninguna foto de tu cartera.', href: '/evolucion' });
-		}
-	}
+	// (Ex-Regla 3 — "sin foto hace N días": eliminada. Desde el Bloque 2 la foto de
+	// cartera es automática en cada refresco de precios (auto cada 20 min o botón
+	// "Actualizar precios"), ya no es una acción manual que pueda quedar atrasada.)
 
-	// Regla 4 — Recurrentes próximos [hoy, hoy+3] no registrados en el período activo.
+	// Regla 3 — Recurrentes próximos [hoy, hoy+3] no registrados en el período activo.
 	// NOTA: usa dia_esperado crudo (comportamiento actual). Cuando exista el Brief 1
 	// (paga_con_sueldo), este dia_esperado se reemplaza por diaEfectivo().
 	const hasta = addDias(hoy, 3);

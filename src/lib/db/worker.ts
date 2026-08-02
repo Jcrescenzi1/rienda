@@ -10,7 +10,8 @@ const TABLAS_FINANZAS = new Set([
 	'tarjeta', 'suscripcion', 'suscripcion_registro', 'presupuesto', 'reserva_credito'
 ]);
 const TABLAS_INVERSIONES = new Set([
-	'activo', 'transaccion', 'renta_activo', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja'
+	'activo', 'transaccion', 'renta_activo', 'cuenta_inversion', 'snapshot', 'liquidez', 'mov_caja',
+	'precio_historico'
 ]);
 // Neutras (no cuentan como edición del usuario): cotizacion_dolar, inflacion,
 // perfil, meta. No actualizan ninguna fecha.
@@ -306,6 +307,53 @@ async function init() {
 				  AND r2.periodo = (SELECT i.periodo FROM ingreso i WHERE i.id = ingreso_fijo_registro.ingreso_id))
 		`);
 	} catch { /* la limpieza no debe bloquear el arranque */ }
+
+	// Corte de la rearquitectura de inversiones (Bloques 3 y 4), UNA sola vez:
+	// (a) liquidez deja de tener ancla manual — el saldo de cada fila de
+	//     `liquidez` se migra a un movimiento de apertura en mov_caja (Bloque 3).
+	// (b) se fija la fecha de corte del modelo de valuación derivado (Bloque 4):
+	//     de ahí en adelante, las fotos (snapshot) se recalculan solas cuando se
+	//     edita/borra un movimiento viejo; antes de esa fecha, `snapshot` queda
+	//     como reserva fija — no se toca, no se recalcula.
+	// Las dos cosas se fechan a HOY (el día en que este código corre por primera
+	// vez en esta base) y comparten el mismo guard: sin él, cada arranque
+	// volvería a insertar el movimiento de apertura y duplicaría el saldo.
+	const migLiq = db.exec({
+		sql: "SELECT valor FROM meta WHERE clave='liquidez_migrada_v1'",
+		rowMode: 'object', returnValue: 'resultRows'
+	});
+	if (migLiq.length === 0) {
+		const d = new Date();
+		const hoy = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+		const anclas = db.exec({
+			sql: 'SELECT perfil_id, moneda, saldo FROM liquidez WHERE saldo <> 0',
+			rowMode: 'object', returnValue: 'resultRows'
+		});
+		if (anclas.length > 0) {
+			// Esto preserva el total exacto de antes: es la misma suma reordenada,
+			// no una estimación — calcularLiquidez() sumaba ancla+movimientos sin
+			// filtrar por fecha, así que mover el ancla a un movimiento más no
+			// cambia el resultado.
+			db.exec('BEGIN');
+			try {
+				for (const a of anclas) {
+					db.exec({
+						sql: 'INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,nota) VALUES (?,?,?,?,?,?)',
+						bind: [a.perfil_id, hoy, 'Apertura', a.moneda, a.saldo, 'Migración: saldo inicial (ex-ancla de liquidez)']
+					});
+				}
+				db.exec('COMMIT');
+			} catch (err) {
+				try { db.exec('ROLLBACK'); } catch { /* ya revertida */ }
+				throw err;
+			}
+		}
+		db.exec("INSERT INTO meta (clave, valor) VALUES ('liquidez_migrada_v1', '1')");
+		db.exec({
+			sql: "INSERT INTO meta (clave, valor) VALUES ('fecha_corte_rearquitectura', ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+			bind: [hoy]
+		});
+	}
 
 	// Integridad referencial: la base rechaza datos huérfanos (un gasto apuntando
 	// a una categoría inexistente, etc.). Se activa DESPUÉS de las migraciones.
