@@ -20,6 +20,16 @@ import { calcularFoto, guardarSnapshot } from '../cartera';
 
 const PANELES = ['arg_bonds', 'arg_corp', 'arg_cedears', 'arg_stocks', 'arg_notes'];
 
+// Aviso de sincronización de la última corrida de actualizarPrecios(), solo
+// para esta sesión (se pisa en cada corrida, no persiste). Aparte del tipo de
+// retorno de actualizarPrecios/actualizarPreciosYFoto a propósito: esas
+// funciones las consumen 4 pantallas (config-tickers, inversiones/montos,
+// inversiones, +layout) y cambiar su forma las rompería a todas. Acá solo
+// entran los activos en tenencia actual sin coincidencia (mismo criterio que
+// el mensaje de "sin coincidencia" del toast) — el catálogo sincronizado tiene
+// cientos de símbolos irrelevantes que no aportan como aviso accionable.
+export let ultimoSinMatchTodos: { id: number; tipo: string; simbolo: string }[] = [];
+
 // Reexportada por compatibilidad: config-tickers y otros ya podrían importar
 // ajustarEscala desde acá. La fuente real ahora es data912.ts.
 export { ajustarEscala };
@@ -113,11 +123,11 @@ export async function actualizarPrecios(): Promise<string> {
 	const fechaCierre = fechaCierreActual();
 
 	const matches: { id: number; tipo: string; precio: number }[] = [];
-	const sinMatch: { id: number; simbolo: string }[] = [];
+	const sinMatch: { id: number; tipo: string; simbolo: string }[] = [];
 	for (const a of activos) {
 		const sym = String(a.simbolo_cotizacion).trim().toUpperCase();
 		const px = mapa[sym];
-		if (px == null) { sinMatch.push({ id: a.id, simbolo: a.simbolo_cotizacion }); continue; }
+		if (px == null) { sinMatch.push({ id: a.id, tipo: a.tipo, simbolo: a.simbolo_cotizacion }); continue; }
 		matches.push({ id: a.id, tipo: a.tipo, precio: ajustarEscala(px, a.tipo) });
 	}
 
@@ -131,6 +141,7 @@ export async function actualizarPrecios(): Promise<string> {
 	)) as any[];
 	const enTenencia = new Set<number>(tenenciaRows.map((r) => r.activo_id));
 	const sinMatchTenencia = sinMatch.filter((m) => enTenencia.has(m.id));
+	ultimoSinMatchTodos = sinMatchTenencia;
 
 	// Activos que el usuario efectivamente opera (tienen alguna compra/venta o
 	// alguna renta cobrada). SOLO estos loguean su cierre diario en

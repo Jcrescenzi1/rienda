@@ -8,7 +8,7 @@
 	// Configuración. Arranca con el primero, salvo que la URL traiga hash
 	// (linkeado desde NotaVisual, ej. /como-funciona#tenencia), en cuyo caso
 	// arranca abierto ahí.
-	let abierta = $state<string>('periodos');
+	let abierta = $state<string>('');
 	function toggle(s: string) { abierta = abierta === s ? '' : s; }
 
 	onMount(() => {
@@ -22,7 +22,16 @@
 </div>
 <a href="/" class="btn-volver">← Volver</a>
 
-<p class="intro">Rienda te deja arrancar con lo mínimo (cargar gastos e ingresos) y sumar profundidad cuando quieras. Acá está el detalle de lo avanzado, por si te interesa. Nada de esto es obligatorio.</p>
+<div class="intro">
+	<p><strong>Vas a poder usar Rienda con el nivel de profundidad que prefieras.</strong> Podés comenzar cargando gastos e ingresos y luego tenés la posibilidad de profundizar con:</p>
+	<ul>
+		<li>Separar gastos en débito y crédito (calculando pago de cuotas)</li>
+		<li>Establecer meta de ahorro y hacerle seguimiento</li>
+		<li>Armar tu presupuesto mensual</li>
+		<li>Realizar análisis de evolución y tendencia (nominal y real)</li>
+		<li>Seguimiento de tus inversiones y activos preferidos</li>
+	</ul>
+</div>
 
 <h2 class="modulo">Finanzas</h2>
 
@@ -71,6 +80,43 @@
 	{/if}
 </section>
 
+<section class="acc">
+	<button class="acc-h" onclick={() => toggle('poder')}>
+		<span class="flecha">{abierta === 'poder' ? '▾' : '▸'}</span> Poder adquisitivo
+	</button>
+	{#if abierta === 'poder'}
+		<div class="acc-body">
+			<p>Compara tu ingreso principal regular contra la inflación (base 100) y contra el dólar. Sirve para ver si tu sueldo le gana a los precios, y si una caída en dólares vino de tu ingreso o del tipo de cambio.</p>
+		</div>
+	{/if}
+</section>
+
+<section class="acc">
+	<button class="acc-h" onclick={() => toggle('meta-ahorro')}>
+		<span class="flecha">{abierta === 'meta-ahorro' ? '▾' : '▸'}</span> Meta de ahorro
+	</button>
+	{#if abierta === 'meta-ahorro'}
+		<div class="acc-body">
+			<p>Ves qué % de tu ingreso regular estás ahorrando, contra un objetivo que vos definís.</p>
+			<p>Se usa desde <strong>Evolución de Gastos → "Capacidad de ahorro"</strong>: ahí editás el objetivo (%), por separado para ARS y USD. Ese mismo objetivo alimenta el semáforo de la fila <strong>"Ahorro"</strong> en Cuenta Corriente (home) — no se configura dos veces.</p>
+			<p>El <strong>ahorro neto</strong> es gastos en categorías marcadas como ahorro, menos ingresos de categoría "Desahorro" (retiros), neteado dentro de cada moneda — nunca se mezcla ARS con USD. Objetivo por defecto: <strong>10%</strong>. El semáforo tiene polaridad invertida respecto a una categoría de gasto: verde si alcanzás o superás el objetivo, no si te quedás corto.</p>
+		</div>
+	{/if}
+</section>
+
+<section class="acc">
+	<button class="acc-h" onclick={() => toggle('presupuesto')}>
+		<span class="flecha">{abierta === 'presupuesto' ? '▾' : '▸'}</span> Presupuesto mensual
+	</button>
+	{#if abierta === 'presupuesto'}
+		<div class="acc-body">
+			<p>Le ponés un tope de gasto a cada subcategoría y ves de un vistazo cómo venís parado.</p>
+			<p>Se usa desde <strong>Cuenta Corriente</strong> (la pantalla principal): tocás el casillero de Presupuesto de cualquier subcategoría para asignarle un monto. Las flechas de arriba cambian de período.</p>
+			<p>Con presupuesto asignado, el semáforo compara gasto real contra ese monto. Sin presupuesto asignado, compara contra tu ingreso disponible/total. La fila de <strong>Ahorro</strong> es la excepción: su "presupuesto" no se carga a mano — sale solo del objetivo % que definiste en Meta de ahorro, multiplicado por tu ingreso regular del período.</p>
+		</div>
+	{/if}
+</section>
+
 <h2 class="modulo">Inversiones</h2>
 
 <section class="acc">
@@ -108,17 +154,6 @@
 <h2 class="modulo">General</h2>
 
 <section class="acc">
-	<button class="acc-h" onclick={() => toggle('poder')}>
-		<span class="flecha">{abierta === 'poder' ? '▾' : '▸'}</span> Poder adquisitivo
-	</button>
-	{#if abierta === 'poder'}
-		<div class="acc-body">
-			<p>Compara tu ingreso principal regular contra la inflación (base 100) y contra el dólar. Sirve para ver si tu sueldo le gana a los precios, y si una caída en dólares vino de tu ingreso o del tipo de cambio.</p>
-		</div>
-	{/if}
-</section>
-
-<section class="acc">
 	<button class="acc-h" onclick={() => toggle('backups')}>
 		<span class="flecha">{abierta === 'backups' ? '▾' : '▸'}</span> Tus datos y backups
 	</button>
@@ -133,7 +168,10 @@
 
 <style>
 	:global(body) { max-width: 820px; margin: 0 auto; padding: 16px; }
-	.intro { color: var(--text-dim); font-size: 0.92rem; line-height: 1.5; margin: 8px 0 4px; }
+	.intro { background: rgba(91, 157, 255, 0.08); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin: 8px 0 4px; }
+	.intro p { margin: 0 0 6px; }
+	.intro ul { margin: 4px 0 0; }
+	.intro li:last-child { margin-bottom: 0; }
 	.modulo { font-size: 1.1rem; margin: 22px 0 4px; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.modulo:first-of-type { margin-top: 18px; }
 	p { font-size: 0.9rem; line-height: 1.55; margin: 6px 0; }

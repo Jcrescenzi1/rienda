@@ -590,7 +590,7 @@
 	   angosta de mobile (max-width:820px del body). El tope de ancho evita eso:
 	   apaisado real de celular ronda los ~900px, un monitor los supera. */
 	@media (orientation: landscape) and (max-width: 900px) {
-		.gp-chart { width: auto; height: 90dvh; max-width: 100%; max-height: none; }
+		.gp-chart { width: auto; height: 100dvh; max-width: 100%; max-height: none; align-self: center; }
 	}
 	.gp-grid { stroke: var(--border); stroke-width: 1; }
 	.gp-ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

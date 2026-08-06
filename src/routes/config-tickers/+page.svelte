@@ -5,6 +5,7 @@
 		actualizarPreciosYFoto,
 		sincronizarCatalogoData912,
 		especieDeTicker,
+		ultimoSinMatchTodos,
 		type Especie
 	} from '$lib/db/precios';
 	import { backfillHistoricoActivo, tieneHistoricoData912 } from '$lib/db/precios_historicos';
@@ -31,6 +32,10 @@
 	let cargando = $state(true);
 	let actualizando = $state(false);
 	let sincronizando = $state(false);
+	// Aviso de "sin cotización" agrupado por tipo, solo de esta sesión: se llena
+	// tras correr "Actualizar precios ahora" y se pierde al recargar la página
+	// (no se persiste a propósito).
+	let sinMatchAviso = $state<{ tipo: string; n: number }[]>([]);
 	const toast = new Toast();
 
 	// Filtro de la lista (combinable): tipo + especie + texto contra ticker/nombre.
@@ -209,7 +214,15 @@
 
 	async function actualizarAhora() {
 		actualizando = true;
-		try { toast.exito(await actualizarPreciosYFoto()); await cargar(); }
+		try {
+			toast.exito(await actualizarPreciosYFoto());
+			await cargar();
+			const porTipo = new Map<string, number>();
+			for (const m of ultimoSinMatchTodos) porTipo.set(m.tipo, (porTipo.get(m.tipo) ?? 0) + 1);
+			sinMatchAviso = [...porTipo.entries()]
+				.sort((a, b) => a[0].localeCompare(b[0], 'es'))
+				.map(([tipo, n]) => ({ tipo, n }));
+		}
 		catch (e: any) { toast.errorTecnico(e); }
 		actualizando = false;
 	}
@@ -284,6 +297,10 @@
 	<button class="btn btn-secondary" onclick={sincronizarCatalogo} disabled={sincronizando}>{sincronizando ? 'Sincronizando…' : '⬇ Sincronizar catálogo'}</button>
 </div>
 
+{#if sinMatchAviso.length}
+	<p class="aviso-sync">⚠ Sin cotización — {sinMatchAviso.map((s) => `${s.tipo}: ${s.n}`).join(' · ')}</p>
+{/if}
+
 {#if cargando}
 	<p>Cargando…</p>
 {:else if activos.length === 0}
@@ -357,6 +374,7 @@
 	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }
 	.msg .err-x { font-size: 1.3em; line-height: 1; }
 	.editando { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 6px 10px; border-radius: 6px; margin: 0; }
+	.aviso-sync { font-size: 0.85rem; color: var(--warn); background: rgba(251, 191, 36, 0.1); padding: 8px 12px; border-radius: 8px; margin: 12px 0; }
 
 	/* Gráfico fijo. El fondo opaco es necesario: sin él, las fichas del listado se
 	   ven por debajo del gráfico al hacer scroll. */
