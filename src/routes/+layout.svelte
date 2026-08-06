@@ -46,14 +46,18 @@
 		if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
 	}
 
-	// Actualiza dólar/inflación solo si la última cotización tiene más de 3 días.
-	// Silencioso: sin internet o con la API caída, sigue con lo guardado.
+	// Actualiza dólar/inflación si la última cotización guardada no es de ayer o
+	// de hoy (es decir, tiene más de 1 día). No distingue feriados/fin de semana
+	// a propósito: si no hay cotización nueva la fuente sigue devolviendo el
+	// último cierre disponible, así que no hace falta lógica de días hábiles acá
+	// — de última, se reintenta sin romper nada. Silencioso: sin internet o con
+	// la API caída, sigue con lo guardado.
 	async function autoCotizaciones() {
 		try {
 			const r = (await query("SELECT MAX(fecha) AS f FROM cotizacion_dolar WHERE perfil_id=1")) as any[];
 			const ult = r[0]?.f;
-			const hace3dias = fechaISO(new Date(Date.now() - 3 * 86400000));
-			if (ult && ult >= hace3dias) return; // está fresca
+			const ayer = fechaISO(new Date(Date.now() - 86400000));
+			if (ult && ult >= ayer) return; // es de ayer o de hoy: está fresca
 			await actualizarCotizaciones();
 		} catch { /* sin conexión o API caída: no molestar */ }
 	}

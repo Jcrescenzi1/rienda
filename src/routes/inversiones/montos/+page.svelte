@@ -21,6 +21,10 @@
 	let invertidoUSD = $state(0);
 	let resultadoAbiertoUSD = $state(0);
 	let liqSaldos = $state<Record<string, number>>({ ARS: 0, USD: 0 });
+	// % de Invertido sobre el Valor Cartera: como Invertido = valor de mercado de
+	// la tenencia (invertidoUSD + liquidez = totalUSD, exacto), el complemento
+	// (100% - esto) es cuánto de la cartera es líquido, en una sola foto.
+	const pctInvertido = $derived(totalUSD ? invertidoUSD / totalUSD : 0);
 
 	const toast = new Toast();
 
@@ -145,8 +149,12 @@
 
 	<div class="resumen">
 		<div class="card destacado"><span>Valor cartera ({vista})</span><strong><CountUp value={totalUSD} format={enVista} /></strong></div>
-		<div class="card"><span>Valor invertido ({vista})</span><strong><CountUp value={invertidoUSD} format={enVista} /></strong></div>
-		<div class="card"><span>Ganancia no realizada ({vista})</span><strong class={resultadoAbiertoUSD >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertoUSD} format={enVista} /></strong></div>
+		<div class="card">
+			<span>Valor invertido ({vista})</span>
+			<strong><CountUp value={invertidoUSD} format={enVista} /></strong>
+			<span class="dato-sec">{(pctInvertido * 100).toFixed(1)}% de la cartera</span>
+		</div>
+		<div class="card"><span>Resultado de tenencia ({vista})</span><strong class={resultadoAbiertoUSD >= 0 ? 'pos' : 'neg'}><CountUp value={resultadoAbiertoUSD} format={enVista} /></strong></div>
 	</div>
 
 	<div class="moneda-fija">
@@ -191,6 +199,7 @@
 
 <style>
 :global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
+	.dato-sec { font-size: 0.7rem; color: var(--text-dim); font-weight: 400; text-transform: none; letter-spacing: normal; }
 	.sk-vistas { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; }
 	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 	/* Cápsula única (mismo look que .toggle-moneda de ToggleMoneda.svelte / .toggle-modo

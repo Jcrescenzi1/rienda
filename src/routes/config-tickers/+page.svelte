@@ -49,6 +49,12 @@
 	let fExposicion = $state<'Dolar' | 'CER' | 'Peso'>('Peso');
 	// Marca si el usuario tocó la exposición a mano; si no, se sugiere por regla.
 	let fExpoTocada = $state(false);
+	// Símbolo de cotización del activo en edición (null en alta). Si ya está
+	// resuelto, el ticker queda readonly: cambiarlo desincronizaría el activo del
+	// símbolo que usa el auto-refresh de precios (ver guardar(): simbolo se
+	// deriva del ticker en cada guardado).
+	let fSimboloCotizacion = $state<string | null>(null);
+	const tickerReadonly = $derived(editId !== null && fSimboloCotizacion != null);
 
 	// Activo dibujado en el gráfico fijo de arriba.
 	let graficoId = $state<string>('');
@@ -58,7 +64,7 @@
 		// de referencia y el único lugar de alta/edición manual. Orden: por tipo y,
 		// dentro, por ticker.
 		activos = (await query(
-			"SELECT id, ticker, nombre, tipo, renta, moneda, precio_actual, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY tipo COLLATE NOCASE, ticker COLLATE NOCASE"
+			"SELECT id, ticker, nombre, tipo, renta, moneda, precio_actual, simbolo_cotizacion, COALESCE(exposicion, CASE WHEN moneda='USD' OR tipo IN ('CEDEAR','Indice') THEN 'Dolar' ELSE 'Peso' END) AS exposicion FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY tipo COLLATE NOCASE, ticker COLLATE NOCASE"
 		)) as any[];
 		cargando = false;
 		if (!graficoId) await elegirDefaultGrafico();
@@ -127,7 +133,7 @@
 	function resetForm() {
 		editId = null;
 		fTicker = ''; fNombre = ''; fTipo = 'Accion'; fRenta = 'Variable';
-		fMoneda = 'ARS'; fExposicion = 'Peso'; fExpoTocada = false;
+		fMoneda = 'ARS'; fExposicion = 'Peso'; fExpoTocada = false; fSimboloCotizacion = null;
 	}
 
 	function editar(a: any) {
@@ -139,6 +145,7 @@
 		fMoneda = a.moneda;
 		fExposicion = a.exposicion;
 		fExpoTocada = true; // en edición respetamos lo guardado
+		fSimboloCotizacion = a.simbolo_cotizacion;
 		formAbierto = true;
 		toast.limpiar();
 		window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -238,11 +245,20 @@
 
 <a href="/inversiones" class="btn-volver">← Volver a Inversiones</a>
 
+<!-- Gráfico fijo: acompaña el scroll del listado, así tocar una ficha de abajo
+     cambia lo que se ve arriba sin tener que volver al tope de la pantalla. -->
+<section class="grafico-fijo">
+	<GraficoPrecio {activos} bind:value={graficoId} especieDe={(a) => especieDeTicker(a.ticker, a.moneda)} />
+</section>
+
 <details class="form-panel" bind:open={formAbierto}>
 	<summary>{editId ? '✏ Editar activo' : '➕ Nuevo activo'}</summary>
 	<div class="form">
 		{#if editId}<p class="editando">✏ Editando {fTicker} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
-		<label>Ticker<input bind:value={fTicker} placeholder="Ej: GD35, AL30, AAPL" class="up" /></label>
+		<label>Ticker
+			<input bind:value={fTicker} placeholder="Ej: GD35, AL30, AAPL" class="up" class:readonly={tickerReadonly} readonly={tickerReadonly} />
+			{#if tickerReadonly}<span class="hint">Bloqueado: ya tiene símbolo de cotización resuelto ({fSimboloCotizacion}).</span>{/if}
+		</label>
 		<label>Nombre<input bind:value={fNombre} placeholder="Nombre del activo" /></label>
 		<label>Tipo
 			<select bind:value={fTipo}>{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}</select>
@@ -261,16 +277,7 @@
 	</div>
 </details>
 
-<!-- Gráfico fijo: acompaña el scroll del listado, así tocar una ficha de abajo
-     cambia lo que se ve arriba sin tener que volver al tope de la pantalla. -->
-<section class="grafico-fijo">
-	<GraficoPrecio {activos} bind:value={graficoId} especieDe={(a) => especieDeTicker(a.ticker, a.moneda)} />
-</section>
-
-<ul class="nota">
-	<li>El ticker (código) de un instrumento cambia según nombre y moneda de cotización. Validar asegura la carga intra-app de las cotizaciones.</li>
-	<li>Los FCI no se actualizan por aplicación, sus valores deben ajustarse a mano desde la tabla "Cartera Actual".</li>
-</ul>
+<p class="nota">Los FCI no se actualizan por aplicación, sus valores deben ajustarse a mano desde la tabla "Cartera Actual".</p>
 
 <div class="acciones">
 	<button class="btn btn-primary" onclick={actualizarAhora} disabled={actualizando}>{actualizando ? 'Actualizando…' : '⟳ Actualizar precios ahora'}</button>
@@ -336,6 +343,8 @@
 	label { display: flex; flex-direction: column; font-size: 0.85rem; color: var(--text-dim); gap: 3px; }
 	input, select { padding: 7px; font-size: 1rem; }
 	.up { text-transform: uppercase; }
+	input.readonly { opacity: 0.6; cursor: not-allowed; background: var(--surface-2); }
+	.hint { font-size: 0.78rem; color: var(--text-dim); font-weight: 400; }
 
 	/* Filtro de la lista (mismo patrón que Gastos) */
 	.filtros { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0 12px; }
@@ -343,8 +352,6 @@
 	.filtros input, .filtros select { width: 100%; min-width: 0; box-sizing: border-box; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin: 12px 0; line-height: 1.5; }
 	.nota strong { color: var(--text); }
-	ul.nota { padding-left: 18px; }
-	ul.nota li { margin: 4px 0; }
 	.acciones { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
 	.msg { font-weight: 600; color: var(--text); }
 	.msg.err { color: var(--neg); display: flex; align-items: center; gap: 6px; }

@@ -113,13 +113,24 @@ export async function actualizarPrecios(): Promise<string> {
 	const fechaCierre = fechaCierreActual();
 
 	const matches: { id: number; tipo: string; precio: number }[] = [];
-	const sinMatch: string[] = [];
+	const sinMatch: { id: number; simbolo: string }[] = [];
 	for (const a of activos) {
 		const sym = String(a.simbolo_cotizacion).trim().toUpperCase();
 		const px = mapa[sym];
-		if (px == null) { sinMatch.push(a.simbolo_cotizacion); continue; }
+		if (px == null) { sinMatch.push({ id: a.id, simbolo: a.simbolo_cotizacion }); continue; }
 		matches.push({ id: a.id, tipo: a.tipo, precio: ajustarEscala(px, a.tipo) });
 	}
+
+	// Tenencia actual: activos con posición neta abierta (Compras - Ventas > 0).
+	// Con el catálogo sincronizado, "sin coincidencia" puede listar cientos de
+	// símbolos delistados o irrelevantes; acá se acota a lo que el usuario
+	// realmente tiene en cartera hoy.
+	const tenenciaRows = (await query(
+		"SELECT activo_id FROM transaccion WHERE perfil_id=1 GROUP BY activo_id" +
+			" HAVING SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END) > 1e-6"
+	)) as any[];
+	const enTenencia = new Set<number>(tenenciaRows.map((r) => r.activo_id));
+	const sinMatchTenencia = sinMatch.filter((m) => enTenencia.has(m.id));
 
 	// Activos que el usuario efectivamente opera (tienen alguna compra/venta o
 	// alguna renta cobrada). SOLO estos loguean su cierre diario en
@@ -172,13 +183,15 @@ export async function actualizarPrecios(): Promise<string> {
 	await setMeta('precios_actualizados_en', sello);
 
 	let msg = `Precios actualizados ✅ ${matches.length}/${activos.length} activos`;
-	// Con el catálogo sincronizado, "sin coincidencia" puede ser una lista larga
-	// (símbolos delistados, tickers cargados a mano que no existen en los paneles).
-	// Se muestran los primeros y se cuenta el resto, para que el mensaje siga siendo legible.
-	if (sinMatch.length) {
+	// "sin coincidencia" se acota a lo que está en tenencia actual: con el
+	// catálogo sincronizado, mostrar el catálogo entero puede ser una lista larga
+	// e irrelevante (símbolos delistados, tickers cargados a mano que no existen
+	// en los paneles pero que tampoco se operan). Se muestran los primeros y se
+	// cuenta el resto, para que el mensaje siga siendo legible.
+	if (sinMatchTenencia.length) {
 		const MUESTRA = 8;
-		msg += ` · sin coincidencia: ${sinMatch.slice(0, MUESTRA).join(', ')}`;
-		if (sinMatch.length > MUESTRA) msg += ` y ${sinMatch.length - MUESTRA} más`;
+		msg += ` · sin coincidencia: ${sinMatchTenencia.slice(0, MUESTRA).map((m) => m.simbolo).join(', ')}`;
+		if (sinMatchTenencia.length > MUESTRA) msg += ` y ${sinMatchTenencia.length - MUESTRA} más`;
 	}
 	if (panelesOk < PANELES.length) msg += ` · (${panelesOk}/${PANELES.length} paneles ok)`;
 	return msg;

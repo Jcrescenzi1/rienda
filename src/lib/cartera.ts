@@ -286,7 +286,7 @@ export type Holding = {
 	precioActual: number;
 	mercado: number; // unidades × precioActual, moneda del activo
 	mercadoUSD: number;
-	invUSD: number; // costo invertido en USD de la posición abierta (episodio actual)
+	invUSD: number; // costo TOTAL comprado en USD del episodio (no se reduce en ventas parciales — lo usa gananciaUSD/rendPct)
 	gananciaUSD: number; // realizada+no realizada de la posición abierta, en USD
 	rendPct: number | null; // gananciaUSD / invUSD
 	peso: number; // % del total de la cartera (incluye líquido)
@@ -296,8 +296,8 @@ export type Tenencia = {
 	dolar: number;
 	hold: Holding[];
 	totalUSD: number; // cartera + líquido
-	invertidoUSD: number; // suma de invUSD de las posiciones abiertas
-	resultadoAbiertoUSD: number; // suma de gananciaUSD de las posiciones abiertas
+	invertidoUSD: number; // valor de MERCADO de la tenencia (no costo) — invertidoUSD + liqSaldos(en USD) = totalUSD, exacto
+	resultadoAbiertoUSD: number; // suma de gananciaUSD de las posiciones abiertas (YA incluye renta/amortización cobrada, vía recUSD)
 	liqSaldos: Record<string, number>;
 	buckets: { renta: string; v: number; pct: number }[]; // Estructura de renta (incluye Líquido)
 	exposicion: { tot: number; filas: { clave: string; label: string; v: number; pct: number; color: string }[] };
@@ -318,6 +318,11 @@ export async function calcularTenencia(): Promise<Tenencia> {
 	const { lotes, episodioDesde, aMap, txs } = await calcularFIFO();
 
 	const txAgg = txs.map((t: any) => ({ aid: t.activo_id, op: t.operacion, u: t.unidades, p: t.precio, vd: t.valor_dolar, f: t.fecha }));
+	// invUSD/inv = costo de TODO lo comprado en el episodio (nunca se reduce en
+	// una venta parcial, solo se resetea al cerrar del todo) — es lo que necesita
+	// gananciaUSD más abajo: (recUSD + mercadoUSD) - invUSD da la ganancia total
+	// (realizada + no realizada) correcta precisamente PORQUE invUSD es el costo
+	// histórico completo, no lo que queda.
 	type Agg = { compU: number; inv: number; invUSD: number; rec: number; recUSD: number };
 	const nuevoAgg = (): Agg => ({ compU: 0, inv: 0, invUSD: 0, rec: 0, recUSD: 0 });
 	const agg: Record<number, Agg> = {};
@@ -390,7 +395,12 @@ export async function calcularTenencia(): Promise<Tenencia> {
 		});
 	}
 	const resultadoAbiertoUSD = hold.reduce((s, h) => s + h.gananciaUSD, 0);
-	const invertidoUSD = hold.reduce((s, h) => s + h.invUSD, 0);
+	// "Invertido" = valor de mercado de la tenencia (lo que tenés puesto HOY, a
+	// precio actual) — no el costo de compra. Definido así a propósito para que
+	// Invertido + Liquidez = Valor cartera cierre siempre exacto (ver "Valor
+	// invertido" en Tenencia en montos); "Resultado de tenencia" es una métrica
+	// aparte (cómo viene rindiendo esa tenencia), no se suma a Invertido.
+	const invertidoUSD = hold.reduce((s, h) => s + h.mercadoUSD, 0);
 
 	const liqSaldos = await calcularLiquidez();
 	for (const mon of ['ARS', 'USD']) {

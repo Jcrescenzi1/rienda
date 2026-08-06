@@ -19,6 +19,7 @@
 	// El patrón de tacto (Pointer Events + setPointerCapture + guía vertical) es el
 	// mismo que ya usan los gráficos de Evolución de Gastos e Ingresos.
 
+	import { goto } from '$app/navigation';
 	import { query } from '$lib/db/client';
 	import { descargarSerieData912, tieneHistoricoData912, type PuntoHistorico } from '$lib/db/precios_historicos';
 	import { especieDeTicker } from '$lib/db/precios';
@@ -29,8 +30,11 @@
 	let {
 		activos = [],
 		value = $bindable(''),
-		especieDe = undefined
-	}: { activos?: any[]; value?: string; especieDe?: (a: any) => string } = $props();
+		especieDe = undefined,
+		// false en la propia vista expandida (/mercado/grafico/[id]), para no
+		// mostrar un botón que reapunte a la misma pantalla en la que ya está.
+		expandible = true
+	}: { activos?: any[]; value?: string; especieDe?: (a: any) => string; expandible?: boolean } = $props();
 
 	const activo = $derived(activos.find((a) => String(a.id) === String(value)) ?? null);
 	const mon = $derived(activo?.moneda ?? 'ARS');
@@ -75,9 +79,12 @@
 	// está en vuelo, la respuesta vieja llega después y no debe pisar a la nueva.
 	let pedido = 0;
 
-	const VENTANAS: [string, string][] = [['1m', '1M'], ['3m', '3M'], ['6m', '6M'], ['1a', '1A'], ['total', 'Todo']];
-	const DIAS_VENTANA: Record<string, number | null> = { '1m': 30, '3m': 91, '6m': 182, '1a': 365, total: null };
-	const LABEL_VENTANA: Record<string, string> = { '1m': '1 mes', '3m': '3 meses', '6m': '6 meses', '1a': '1 año', total: 'todo el período' };
+	// '1s' (1 semana): data912 da un cierre por rueda, sin intradía — en esa
+	// ventana la curva va a tener ~5 puntos (los días hábiles de la semana), no
+	// una serie continua. Es una limitación de la fuente, no un bug del gráfico.
+	const VENTANAS: [string, string][] = [['1s', '1S'], ['1m', '1M'], ['3m', '3M'], ['6m', '6M'], ['1a', '1A'], ['total', 'Todo']];
+	const DIAS_VENTANA: Record<string, number | null> = { '1s': 7, '1m': 30, '3m': 91, '6m': 182, '1a': 365, total: null };
+	const LABEL_VENTANA: Record<string, string> = { '1s': '1 semana', '1m': '1 mes', '3m': '3 meses', '6m': '6 meses', '1a': '1 año', total: 'todo el período' };
 	let ventanaActiva = $state('6m');
 
 	async function traerSerie(a: any, mio: number) {
@@ -253,11 +260,20 @@
 	// Etiqueta compacta de precio para el eje: los precios van de centavos a
 	// decenas de miles según el instrumento, así que la escala se elige por
 	// magnitud en vez de forzar un formato único.
-	function fmtEjeY(v: number): string {
+	//
+	// `paso` es la distancia entre ticks consecutivos (rango visible / 3). En un
+	// rango angosto relativo al valor absoluto (ej. entre 1.502.000 y 1.508.000),
+	// la precisión fija de antes hacía que las 3 etiquetas redondearan al mismo
+	// "1,5m". Acá la cantidad de decimales sube hasta que el paso deje de
+	// colapsar a cero en esa escala, así los ticks se leen distintos entre sí.
+	function fmtEjeY(v: number, paso: number): string {
 		const a = Math.abs(v);
-		if (a >= 1000) return unidades(v / 1000, 1) + 'm';
-		if (a >= 1) return unidades(v, 0);
-		return unidades(v, 2);
+		const usaMil = a >= 1000;
+		const escala = usaMil ? v / 1000 : v;
+		const pasoEscala = Math.abs(usaMil ? paso / 1000 : paso);
+		let decimales = usaMil ? 1 : a >= 1 ? 0 : 2;
+		while (decimales < 4 && pasoEscala > 0 && Math.round(pasoEscala * 10 ** decimales) === 0) decimales++;
+		return unidades(escala, decimales) + (usaMil ? 'm' : '');
 	}
 	function fmtEjeX(iso: string): string {
 		const [y, m] = iso.split('-');
@@ -339,9 +355,10 @@
 				]
 			: [];
 
+		const pasoY = (maxY - minY) / 3;
 		const yticks = Array.from({ length: 4 }, (_, k) => {
-			const v = minY + ((maxY - minY) * k) / 3;
-			return { y: py(v), label: fmtEjeY(v) };
+			const v = minY + pasoY * k;
+			return { y: py(v), label: fmtEjeY(v, pasoY) };
 		});
 		const paso = Math.max(1, Math.floor(s.length / 6));
 		const xticks = s
@@ -501,6 +518,11 @@
 			<button type="button" class="gp-toggle" class:activo={verMedia} onclick={() => (verMedia = !verMedia)} disabled={!hayMedia}>
 				Media {RUEDAS_MEDIA}
 			</button>
+			{#if expandible && activo}
+				<!-- Ruta real de SvelteKit, no modal: así el botón/gesto atrás de Android
+				     cierra esta vista (pop de historial) en vez de salir de la app. -->
+				<button type="button" class="gp-expandir" aria-label="Expandir gráfico" title="Expandir" onclick={() => goto(`/mercado/grafico/${activo.id}`)}>⤢</button>
+			{/if}
 		</div>
 
 		<NotaVisual objetivo="Cómo se movió el precio del activo" glosario="mercado">
@@ -553,7 +575,23 @@
 	.gp-marcado-dia.pos { color: var(--pos); }
 	.gp-marcado-dia.neg { color: var(--neg); }
 
-	.gp-chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); touch-action: none; cursor: crosshair; }
+	.gp-chart { width: 100%; height: auto; max-height: 42dvh; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); touch-action: none; cursor: crosshair; }
+	/* Horizontal: no se fuerza la rotación del dispositivo, pero si ya está
+	   apaisado se aprovecha alto en vez de ancho — con width:100% el gráfico
+	   queda achatado (el aspect-ratio del viewBox da poca altura quedando el
+	   ancho de pantalla entero). dvh en vez de vh: en Android la barra de
+	   sistema achica el viewport dinámico, y vh fijo dejaría el gráfico
+	   parcialmente tapado. max-width:100% es el techo por si el alto derivado
+	   excede el ancho real de la pantalla.
+	   OJO: `orientation: landscape` solo mira la forma del viewport, no si es
+	   "un celular acostado" — una ventana de escritorio normal también matchea
+	   (es más ancha que alta) y disparaba esto siempre, inflando el gráfico a
+	   90dvh de alto en desktop aunque el layout de la app siga siendo la columna
+	   angosta de mobile (max-width:820px del body). El tope de ancho evita eso:
+	   apaisado real de celular ronda los ~900px, un monitor los supera. */
+	@media (orientation: landscape) and (max-width: 900px) {
+		.gp-chart { width: auto; height: 90dvh; max-width: 100%; max-height: none; }
+	}
 	.gp-grid { stroke: var(--border); stroke-width: 1; }
 	.gp-ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
 	.gp-xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
@@ -581,4 +619,5 @@
 	.gp-ventanas button.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
 	.gp-ventanas button:disabled { opacity: 0.4; cursor: default; }
 	.gp-toggle.activo { background: var(--warn, #fbbf24); border-color: var(--warn, #fbbf24); color: #111; }
+	.gp-expandir { margin-left: auto; padding: 3px 8px !important; font-size: 0.9rem !important; line-height: 1; }
 </style>

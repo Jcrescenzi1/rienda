@@ -1,10 +1,16 @@
 // src/lib/db/precarga.ts
-// Planillas: precarga histórica (Excel único) + exportación CSV.
+// Planillas: un .xlsx por módulo (Finanzas: Gastos+Ingresos · Inversiones:
+// Activos+Renta y amortización+Caja), generado dinámico y poblado con la data
+// actual — el mismo archivo sirve para bajar (backup liviano / mirar en Excel)
+// y para volver a subir (carga masiva / conciliar contra el extracto del
+// broker). No hay plantilla estática ni CSVs de solo lectura: todo sale de la
+// base en el momento.
 // Reglas generales:
-//  - Precarga: un solo .xlsx con hojas Gastos / Ingresos / Inversiones (plantilla en /static).
-//    Las hojas vacías se saltean: el usuario sube solo lo que quiere.
+//  - Las hojas vacías se saltean al importar: el usuario sube solo lo que quiere.
 //  - Todo-o-nada por hoja: si una fila tiene error, esa hoja no se importa.
-//  - Categorías, subcategorías, tarjetas, activos y cuentas que no existan se crean solas.
+//  - Categorías, subcategorías, tarjetas, cuentas y (en Activos) activos que no
+//    existan se crean solos. Renta y amortización es la excepción: el ticker
+//    tiene que existir de antes (ver importarRentaFilas).
 
 import { query, queryBatch } from './client';
 import { parseNum, formatNum, fechaISO } from '../format';
@@ -22,13 +28,7 @@ function confirmarDuplicadas(hoja: string, criterio: string, omitidas: number, t
 }
 type Fila = Record<string, string>;
 
-const BOM = '﻿'; // para que Excel abra el CSV exportado como UTF-8 (acentos OK)
-
-export function descargarArchivo(nombre: string, contenido: string) {
-	descargarBlob(nombre, new Blob([contenido], { type: 'text/csv;charset=utf-8' }));
-}
-
-// Igual que descargarArchivo pero para binarios (p. ej. el .xlsx de inversiones).
+// Único punto de descarga de archivo (los dos módulos son .xlsx binarios).
 export function descargarBlob(nombre: string, blob: Blob) {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
@@ -334,6 +334,146 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 	return { filas: ok.length, creados, omitidas };
 }
 
+// ---------- Importar RENTA Y AMORTIZACIÓN ----------
+
+// A diferencia de importarInversionesFilas, acá el ticker NO se crea solo: la
+// renta/amortización es un cobro sobre un activo que ya existe en la cartera
+// (nace de Compra/Venta). Un ticker que no matchea es un error de tipeo o un
+// activo que falta cargar antes — mejor cortar duro que inventar el activo con
+// datos que esta hoja ni siquiera trae completos (falta tipo).
+export async function importarRentaFilas(filas: Fila[]): Promise<ResultadoImport> {
+	const errores: string[] = [];
+
+	const activos = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const porTicker: Record<string, number> = {};
+	for (const a of activos) porTicker[a.ticker.toLowerCase()] = a.id;
+
+	type FilaOK = { fecha: string; ticker: string; moneda: string; monto_renta: number; monto_amort: number; vd: number | null };
+	const ok: FilaOK[] = [];
+
+	filas.forEach((f, i) => {
+		const n = i + 2;
+		const fecha = normFecha(f['fecha'] ?? '');
+		const ticker = (f['ticker'] ?? '').trim();
+		const moneda = (f['moneda'] ?? '').trim().toUpperCase();
+		const renta = f['monto_renta']?.trim() ? parseNum(f['monto_renta']) : 0;
+		const amort = f['monto_amort']?.trim() ? parseNum(f['monto_amort']) : 0;
+		const vd = f['valor_dolar']?.trim() ? parseNum(f['valor_dolar']) : null;
+
+		if (!fecha) errores.push(`Línea ${n}: fecha inválida "${f['fecha']}".`);
+		if (!ticker) errores.push(`Línea ${n}: falta el ticker.`);
+		else if (!(ticker.toLowerCase() in porTicker)) errores.push(`Línea ${n}: el ticker "${ticker}" no existe en tu catálogo de activos — cargalo primero en Mercado.`);
+		if (moneda !== 'ARS' && moneda !== 'USD') errores.push(`Línea ${n}: moneda "${f['moneda']}" (solo ARS o USD).`);
+		if (!Number.isFinite(renta) || renta < 0) errores.push(`Línea ${n}: monto_renta inválido "${f['monto_renta']}".`);
+		if (!Number.isFinite(amort) || amort < 0) errores.push(`Línea ${n}: monto_amort inválido "${f['monto_amort']}".`);
+		if (Number.isFinite(renta) && Number.isFinite(amort) && renta + amort <= 0) errores.push(`Línea ${n}: cargá al menos un monto (renta o amortización).`);
+		if (vd !== null && (!Number.isFinite(vd) || vd <= 0)) errores.push(`Línea ${n}: valor_dolar inválido "${f['valor_dolar']}".`);
+
+		if (fecha && ticker && ticker.toLowerCase() in porTicker && (moneda === 'ARS' || moneda === 'USD') &&
+			Number.isFinite(renta) && renta >= 0 && Number.isFinite(amort) && amort >= 0 && renta + amort > 0)
+			ok.push({ fecha, ticker, moneda, monto_renta: renta, monto_amort: amort, vd });
+	});
+	lanzarErrores(errores);
+
+	// Anti-duplicados: misma fecha + ticker + montos ya cargados.
+	const existentes = (await query(
+		'SELECT r.fecha, a.ticker, r.monto_renta, r.monto_amort FROM renta_activo r JOIN activo a ON a.id = r.activo_id WHERE r.perfil_id=1'
+	)) as any[];
+	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.ticker.toLowerCase()}|${r.monto_renta.toFixed(2)}|${r.monto_amort.toFixed(2)}`));
+	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.ticker.toLowerCase()}|${f.monto_renta.toFixed(2)}|${f.monto_amort.toFixed(2)}`));
+	const omitidas = ok.length - nuevos.length;
+	if (!confirmarDuplicadas('Renta y amortización', 'misma fecha, ticker y montos', omitidas, ok.length, nuevos.length))
+		return { filas: 0, creados: [], omitidas, cancelado: true };
+
+	const stmts = nuevos.map((f) => ({
+		sql: 'INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
+		bind: [porTicker[f.ticker.toLowerCase()], f.fecha, f.moneda, f.monto_renta, f.monto_amort, f.vd]
+	}));
+	await queryBatch(stmts);
+	return { filas: nuevos.length, creados: [], omitidas };
+}
+
+// ---------- Importar CAJA ----------
+
+const ACCIONES_CAJA = ['Ingreso', 'Retiro', 'Convertir'];
+
+// Los pares "Convertir" (dos filas: la moneda que sale en negativo y la que
+// entra en positivo, unidas por `grupo`) se tratan como una sola unidad: si al
+// reimportar falta una de las dos patas (se borró una fila al editar la
+// planilla, o se pegó un rango incompleto), se bloquea toda la hoja con el
+// detalle de qué grupo quedó a medias — insertar solo una pata dejaría una
+// conversión que no cierra (plata que "desaparece" de una moneda sin aparecer
+// en la otra).
+export async function importarCajaFilas(filas: Fila[]): Promise<ResultadoImport> {
+	const errores: string[] = [];
+	type FilaOK = { fecha: string; accion: string; moneda: string; monto: number; grupo: string | null; nota: string | null };
+	const ok: FilaOK[] = [];
+
+	filas.forEach((f, i) => {
+		const n = i + 2;
+		const fecha = normFecha(f['fecha'] ?? '');
+		const accion = (f['accion'] ?? '').trim();
+		const moneda = (f['moneda'] ?? '').trim().toUpperCase();
+		const monto = parseNum(f['monto']);
+		const grupo = (f['grupo'] ?? '').trim() || null;
+		const nota = (f['nota'] ?? '').trim() || null;
+
+		if (!fecha) errores.push(`Línea ${n}: fecha inválida "${f['fecha']}".`);
+		if (!ACCIONES_CAJA.includes(accion)) errores.push(`Línea ${n}: accion "${f['accion']}" (usar Ingreso, Retiro o Convertir).`);
+		if (moneda !== 'ARS' && moneda !== 'USD') errores.push(`Línea ${n}: moneda "${f['moneda']}" (solo ARS o USD).`);
+		if (!Number.isFinite(monto) || monto === 0) errores.push(`Línea ${n}: monto inválido "${f['monto']}".`);
+		if (accion === 'Convertir' && !grupo) errores.push(`Línea ${n}: fila Convertir sin "grupo" — no se puede aparear con su otra pata.`);
+
+		if (fecha && ACCIONES_CAJA.includes(accion) && (moneda === 'ARS' || moneda === 'USD') && Number.isFinite(monto) && monto !== 0 && (accion !== 'Convertir' || grupo))
+			ok.push({ fecha, accion, moneda, monto, grupo, nota });
+	});
+	lanzarErrores(errores);
+
+	// Anti-duplicados: misma fecha + acción + moneda + monto + grupo ya cargada
+	// (el grupo entra a la clave para no confundir dos conversiones distintas
+	// que por casualidad tengan el mismo monto el mismo día).
+	const existentes = (await query('SELECT fecha, accion, moneda, monto, grupo FROM mov_caja WHERE perfil_id=1')) as any[];
+	const clave = (r: { fecha: string; accion: string; moneda: string; monto: number; grupo: string | null }) =>
+		`${r.fecha}|${r.accion}|${r.moneda}|${r.monto.toFixed(2)}|${r.grupo ?? ''}`;
+	const setExist = new Set(existentes.map(clave));
+	const nuevos = ok.filter((f) => !setExist.has(clave(f)));
+	const omitidas = ok.length - nuevos.length;
+	if (!confirmarDuplicadas('Caja', 'misma fecha, acción, moneda, monto y grupo', omitidas, ok.length, nuevos.length))
+		return { filas: 0, creados: [], omitidas, cancelado: true };
+
+	// Chequeo de pares: por cada grupo de una fila Convertir nueva, cuenta
+	// cuántas patas hay en total (ya guardadas en la base + las nuevas de este
+	// import). Si no da exactamente 2, esa conversión está incompleta.
+	const gruposNuevos = [...new Set(nuevos.filter((f) => f.accion === 'Convertir' && f.grupo).map((f) => f.grupo as string))];
+	if (gruposNuevos.length) {
+		const enBase = (await query(
+			`SELECT grupo, COUNT(*) n FROM mov_caja WHERE perfil_id=1 AND grupo IN (${gruposNuevos.map(() => '?').join(',')}) GROUP BY grupo`,
+			gruposNuevos
+		)) as any[];
+		const enBaseMap = new Map<string, number>(enBase.map((r) => [r.grupo, r.n]));
+		const enNuevosMap = new Map<string, number>();
+		for (const f of nuevos) if (f.accion === 'Convertir' && f.grupo) enNuevosMap.set(f.grupo, (enNuevosMap.get(f.grupo) ?? 0) + 1);
+		const incompletos: string[] = [];
+		for (const g of gruposNuevos) {
+			const total = (enBaseMap.get(g) ?? 0) + (enNuevosMap.get(g) ?? 0);
+			if (total !== 2) {
+				const fila = nuevos.find((f) => f.grupo === g)!;
+				incompletos.push(`Falta la otra pata del grupo "${g}" (${fila.fecha}, ${fila.moneda} ${fila.monto}).`);
+			}
+		}
+		if (incompletos.length) {
+			throw new Error('No se importó la hoja Caja: hay conversiones incompletas.\n' + incompletos.join('\n'));
+		}
+	}
+
+	const stmts = nuevos.map((f) => ({
+		sql: 'INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo,nota) VALUES (1,?,?,?,?,?,?)',
+		bind: [f.fecha, f.accion, f.moneda, f.monto, f.grupo, f.nota]
+	}));
+	await queryBatch(stmts);
+	return { filas: nuevos.length, creados: [], omitidas };
+}
+
 // ---------- Importar EXCEL único (hojas Gastos / Ingresos / Inversiones) ----------
 
 // Normaliza una celda de Excel a string compatible con los validadores:
@@ -345,28 +485,37 @@ function celdaATexto(v: any): string {
 	return String(v).trim();
 }
 
-export async function importarExcel(file: File): Promise<string> {
+// Una hoja de un workbook ya leído -> filas normalizadas (misma limpieza que
+// usaba el importador único de antes): claves en minúscula/trim, celdas a
+// texto, filas 100% vacías descartadas.
+function hojaAFilas(XLSX: typeof import('xlsx'), wb: import('xlsx').WorkBook, nombre: string): Fila[] {
+	const ws = wb.Sheets[nombre];
+	if (!ws) return [];
+	const crudas = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { raw: true, defval: '' });
+	return crudas
+		.map((r) => {
+			const f: Fila = {};
+			for (const [k, v] of Object.entries(r)) f[k.toLowerCase().trim()] = celdaATexto(v);
+			return f;
+		})
+		.filter((f) => Object.values(f).some((v) => v !== ''));
+}
+
+// Motor común de importación multi-hoja: cada módulo (Finanzas, Inversiones)
+// arma su propio .xlsx de carga/descarga con un subconjunto de hojas, pero el
+// recorrido — leer hoja, importar, resumir, cortar todo-o-nada por hoja con el
+// error de esa hoja nombrado — es el mismo para las dos.
+async function importarHojas(
+	file: File,
+	hojas: [string, (filas: Fila[]) => Promise<ResultadoImport>][],
+	nombreModulo: string
+): Promise<string> {
 	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
 	const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
 
-	const hojas: [string, (filas: Fila[]) => Promise<ResultadoImport>][] = [
-		['Gastos', importarGastosFilas],
-		['Ingresos', importarIngresosFilas],
-		['Inversiones', importarInversionesFilas]
-	];
-
 	const partes: string[] = [];
 	for (const [nombre, importar] of hojas) {
-		const ws = wb.Sheets[nombre];
-		if (!ws) continue;
-		const crudas = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { raw: true, defval: '' });
-		const filas: Fila[] = crudas
-			.map((r) => {
-				const f: Fila = {};
-				for (const [k, v] of Object.entries(r)) f[k.toLowerCase().trim()] = celdaATexto(v);
-				return f;
-			})
-			.filter((f) => Object.values(f).some((v) => v !== '')); // ignora filas vacías
+		const filas = hojaAFilas(XLSX, wb, nombre);
 		if (!filas.length) continue;
 		try {
 			const res = await importar(filas);
@@ -384,23 +533,41 @@ export async function importarExcel(file: File): Promise<string> {
 			throw new Error(previo + `Hoja ${nombre}: ` + (err?.message ?? String(err)));
 		}
 	}
-	if (!partes.length) throw new Error('El Excel no tiene filas de datos en las hojas Gastos / Ingresos / Inversiones.');
+	if (!partes.length) throw new Error(`El Excel no tiene filas de datos en las hojas de ${nombreModulo}.`);
 	return partes.join('\n');
 }
 
-// ---------- Exportar a CSV (mismo formato que la plantilla Excel) ----------
-
-function csvCampo(v: any): string {
-	const s = v == null ? '' : String(v);
-	return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+export async function importarFinanzasXLSX(file: File): Promise<string> {
+	return importarHojas(
+		file,
+		[
+			['Gastos', importarGastosFilas],
+			['Ingresos', importarIngresosFilas]
+		],
+		'Finanzas (Gastos / Ingresos)'
+	);
 }
 
-function armarCSV(encabezado: string[], filas: any[][]): string {
-	return BOM + encabezado.join(';') + '\n' + filas.map((f) => f.map(csvCampo).join(';')).join('\n') + '\n';
+export async function importarInversionesXLSX(file: File): Promise<string> {
+	return importarHojas(
+		file,
+		[
+			['Activos', importarInversionesFilas],
+			['Renta y amortización', importarRentaFilas],
+			['Caja', importarCajaFilas]
+		],
+		'Inversiones (Activos / Renta y amortización / Caja)'
+	);
 }
 
-export async function exportarGastosCSV(): Promise<string> {
-	const rows = (await query(`
+// Exporta TODO el flujo de Finanzas en un solo .xlsx de dos hojas (Gastos ·
+// Ingresos), poblado con la data actual: el mismo archivo sirve para bajar y
+// para volver a subir (importarFinanzasXLSX), así no hace falta mantener una
+// plantilla vacía aparte ni CSVs de solo lectura.
+export async function exportarFinanzasXLSX(): Promise<Blob> {
+	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
+
+	const gastos = (await query(`
 		SELECT g.fecha, g.monto, g.moneda, c.nombre AS categoria,
 		       COALESCE(s.nombre, sm.nombre, '') AS subcategoria,
 		       g.detalle, g.medio, COALESCE(t.nombre, '') AS tarjeta, g.cuotas, g.mes_inicio_pago
@@ -411,22 +578,26 @@ export async function exportarGastosCSV(): Promise<string> {
 		LEFT JOIN subcategoria sm ON sm.id = md.subcategoria_id
 		LEFT JOIN tarjeta t ON t.id = g.tarjeta_id
 		WHERE g.perfil_id = 1 ORDER BY g.fecha, g.id`)) as any[];
-	return armarCSV(
+	const hojaGastos = [
 		['fecha', 'monto', 'moneda', 'categoria', 'subcategoria', 'detalle', 'medio', 'tarjeta', 'cuotas', 'mes_inicio_pago'],
-		rows.map((r) => [r.fecha, formatNum(r.monto), r.moneda, r.categoria, r.subcategoria, r.detalle, r.medio, r.tarjeta,
+		...gastos.map((r) => [r.fecha, formatNum(r.monto), r.moneda, r.categoria, r.subcategoria, r.detalle, r.medio, r.tarjeta,
 			r.medio === 'credito' ? r.cuotas : '', r.mes_inicio_pago ? r.mes_inicio_pago.slice(0, 7) : ''])
-	);
-}
+	];
 
-export async function exportarIngresosCSV(): Promise<string> {
-	const rows = (await query(
+	const ingresos = (await query(
 		'SELECT fecha, monto, moneda, categoria, tipo, detalle, periodo FROM ingreso WHERE perfil_id=1 ORDER BY fecha, id'
 	)) as any[];
 	const tipoLabel = (t: string | null) => (t === 'Sueldo' ? 'Regular' : t === 'Aciclico' ? 'Extraordinario' : '');
-	return armarCSV(
+	const hojaIngresos = [
 		['fecha', 'monto', 'moneda', 'categoria', 'tipo', 'detalle', 'periodo'],
-		rows.map((r) => [r.fecha, formatNum(r.monto), r.moneda, r.categoria, tipoLabel(r.tipo), r.detalle ?? '', r.periodo ?? ''])
-	);
+		...ingresos.map((r) => [r.fecha, formatNum(r.monto), r.moneda, r.categoria, tipoLabel(r.tipo), r.detalle ?? '', r.periodo ?? ''])
+	];
+
+	const wb = XLSX.utils.book_new();
+	XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hojaGastos), 'Gastos');
+	XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(hojaIngresos), 'Ingresos');
+	const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+	return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 // Exporta TODO el flujo de inversiones en un solo .xlsx de tres hojas

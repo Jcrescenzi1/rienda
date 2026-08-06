@@ -4,8 +4,9 @@
 	import { crearAutobackup, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 	import {
-		descargarArchivo, descargarBlob, importarExcel,
-		exportarGastosCSV, exportarIngresosCSV, exportarInversionesXLSX
+		descargarBlob,
+		exportarFinanzasXLSX, importarFinanzasXLSX,
+		exportarInversionesXLSX, importarInversionesXLSX
 	} from '$lib/db/precarga';
 	import { hoyISO, fechaHoraCorta } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
@@ -116,36 +117,54 @@
 		} catch (err: any) { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
-	// ----- Planillas: precarga Excel + exportación CSV -----
-	let excelInput: HTMLInputElement | undefined = $state();
-	let importandoCSV = $state(false);
+	// ----- Planillas: un .xlsx por módulo, carga y descarga a la vez -----
+	let finanzasInput: HTMLInputElement | undefined = $state();
+	let inversionesInput: HTMLInputElement | undefined = $state();
+	let importandoFinanzas = $state(false);
+	let importandoInversiones = $state(false);
 
-	async function onImportarExcel(e: Event) {
+	async function onExportarFinanzas() {
+		try {
+			descargarBlob(`rienda-finanzas-${hoyISO()}.xlsx`, await exportarFinanzasXLSX());
+		} catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
+	}
+
+	async function onImportarFinanzas(e: Event) {
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
 		if (!file) return;
-		importandoCSV = true;
+		importandoFinanzas = true;
 		try {
-			const resumen = await importarExcel(file);
+			const resumen = await importarFinanzasXLSX(file);
 			alert('Importación completa ✅\n' + resumen);
 		} catch (err: any) {
 			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
 			input.value = '';
-			importandoCSV = false;
+			importandoFinanzas = false;
 		}
-	}
-
-	async function onExportarCSV(nombre: string, exportar: () => Promise<string>) {
-		try {
-			descargarArchivo(`rienda-${nombre}-${hoyISO()}.csv`, await exportar());
-		} catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
 	}
 
 	async function onExportarInversiones() {
 		try {
 			descargarBlob(`rienda-inversiones-${hoyISO()}.xlsx`, await exportarInversionesXLSX());
 		} catch (e: any) { console.error(e); alert('Ocurrió un error. Contactá al administrador.'); }
+	}
+
+	async function onImportarInversiones(e: Event) {
+		const input = e.target as HTMLInputElement;
+		const file = input.files?.[0];
+		if (!file) return;
+		importandoInversiones = true;
+		try {
+			const resumen = await importarInversionesXLSX(file);
+			alert('Importación completa ✅\n' + resumen);
+		} catch (err: any) {
+			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
+		} finally {
+			input.value = '';
+			importandoInversiones = false;
+		}
 	}
 
 	// ----- Borrado total -----
@@ -180,7 +199,7 @@
 	<Guia
 		clave="datos"
 		para="Respaldar tus datos, que viven solo en este dispositivo."
-		uso="Descargá la copia de seguridad JSON seguido y guardala fuera del teléfono: es tu único respaldo total. Las planillas Excel y CSV no son respaldo, solo mueven datos entre Rienda y una planilla."
+		uso="Descargá la copia de seguridad JSON seguido y guardala fuera del teléfono: es tu único respaldo total. Las planillas Excel no son respaldo, solo mueven datos entre Rienda y una planilla."
 	/>
 </div>
 
@@ -261,22 +280,24 @@
 		</div>
 	</details>
 
-	<!-- Planillas Excel/CSV: NO son respaldo, mueven datos entre Rienda y una planilla -->
+	<!-- Planillas Excel: NO son respaldo, mueven datos entre Rienda y una planilla.
+	     Un .xlsx por módulo, siempre generado con tu data actual: sirve para
+	     bajar (mirar/editar en Excel) y para volver a subir (el mismo archivo). -->
 	<details class="sec">
-		<summary>Planillas (Excel / CSV)</summary>
+		<summary>Planillas (Excel)</summary>
 		<div class="sec-body">
-			<p class="nota"><strong>No son un respaldo</strong> — para eso está la copia JSON de arriba. Sirven para mover datos entre Rienda y una planilla.</p>
-			<p class="nota"><strong>Excel — precargar (traer datos):</strong> bajá la plantilla, completá las hojas que quieras (Gastos / Ingresos / Inversiones) y subila. Importar <strong>AGREGA</strong>: no pisa ni borra lo que ya tenés y omite duplicados. Crea categorías, tarjetas y activos que falten.</p>
+			<p class="nota"><strong>No son un respaldo</strong> — para eso está la copia JSON de arriba. Cada Excel sale poblado con tu data actual: bajalo, editalo o agregá filas, y subilo de nuevo. Importar <strong>AGREGA</strong>: no pisa ni borra lo que ya tenés y omite duplicados.</p>
+			<p class="nota"><strong>Finanzas</strong> (hojas Gastos · Ingresos). Crea categorías y tarjetas que falten.</p>
 			<div class="acc">
-				<a class="btn btn-secondary" href="/rienda-plantilla.xlsx" download>⬇ Plantilla Excel</a>
-				<button class="btn btn-primary" disabled={importandoCSV} onclick={() => excelInput?.click()}>⬆ Importar planilla (agrega)</button>
-				<input type="file" accept=".xlsx" bind:this={excelInput} onchange={onImportarExcel} style="display:none" />
+				<button class="btn btn-secondary" onclick={onExportarFinanzas}>⬇ Excel Finanzas</button>
+				<button class="btn btn-primary" disabled={importandoFinanzas} onclick={() => finanzasInput?.click()}>⬆ Importar Finanzas (agrega)</button>
+				<input type="file" accept=".xlsx" bind:this={finanzasInput} onchange={onImportarFinanzas} style="display:none" />
 			</div>
-			<p class="nota"><strong>CSV — exportar (sacar datos):</strong> tus datos en formato planilla para mirarlos o analizarlos afuera (Excel, Google Sheets). Es solo salida: no se vuelve a importar.</p>
+			<p class="nota"><strong>Inversiones</strong> (hojas Activos · Renta y amortización · Caja). La hoja Activos crea activos y cuentas que falten; Renta y amortización necesita que el ticker ya exista.</p>
 			<div class="acc">
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('gastos', exportarGastosCSV)}>⬇ CSV Gastos</button>
-				<button class="btn btn-secondary" onclick={() => onExportarCSV('ingresos', exportarIngresosCSV)}>⬇ CSV Ingresos</button>
 				<button class="btn btn-secondary" onclick={onExportarInversiones}>⬇ Excel Inversiones</button>
+				<button class="btn btn-primary" disabled={importandoInversiones} onclick={() => inversionesInput?.click()}>⬆ Importar Inversiones (agrega)</button>
+				<input type="file" accept=".xlsx" bind:this={inversionesInput} onchange={onImportarInversiones} style="display:none" />
 			</div>
 		</div>
 	</details>

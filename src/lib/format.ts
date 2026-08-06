@@ -47,7 +47,10 @@ export function montoAGuardar(textoActual: string, original: number | null | und
 export function pesos(n: number | null | undefined, mon = 'ARS', dec = 0): string {
 	const v = Number(n) || 0;
 	const factor = 10 ** dec;
-	const redondeado = Math.round(v * factor) / factor;
+	let redondeado = Math.round(v * factor) / factor;
+	// Un valor chico y negativo (ej. -0,004 en Caja Líquido) redondea a -0, que
+	// toLocaleString muestra como "-0" — normaliza a 0 (=== also matches -0).
+	if (redondeado === 0) redondeado = 0;
 	return (mon === 'USD' ? 'U$D ' : '$') + redondeado.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 }
 
