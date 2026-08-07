@@ -52,6 +52,13 @@
     // Concientización de caja: el gasto se cuenta una sola vez (devengado), esto
     // solo ajusta cuánto te queda libre después de separar para las tarjetas.
     let ingresoDisponible = $derived(ingresosMes - (creditoMes - reservaMes));
+    // Ingreso disponible en USD: solo aparece cuando hay ALGO que netear (ingreso
+    // puntual en USD Y cuota en dólares ese mes). Sin cuota, mostrarlo sería
+    // repetir el mismo número que ya se ve en "Ingreso del mes (USD)" sin restar
+    // nada — no aporta. Cuando sí aplica, la cuota deja de listarse aparte bajo
+    // Gasto y pasa a netear acá — ver disp-pie más abajo.
+    let hayNetoUsd = $derived(ingresoUsdMes > 0 && creditoMesUsd > 0);
+    let ingresoDisponibleUsd = $derived(hayNetoUsd ? ingresoUsdMes - creditoMesUsd : 0);
     let descubierto = $derived(deudaSig - reservaSig);
     // El valor del descubierto se pinta amarillo solo si supera el 10% del disponible.
     let deudaAlta = $derived(descubierto > 0 && (ingresoDisponible <= 0 || descubierto > ingresoDisponible * 0.10));
@@ -505,7 +512,7 @@
         <button class="disp-toggle" onclick={() => (detalleAbierto = !detalleAbierto)} aria-expanded={detalleAbierto} title="Ver/ocultar cómo se calcula">
             <span class="flecha">{detalleAbierto ? '▾' : '▸'}</span>
             <span class="disp-titulo">Ingreso disponible</span>
-            <span class="disp-valor"><CountUp value={ingresoDisponible} format={peso} /></span>
+            <span class="disp-valor"><span class="dv-ars"><CountUp value={ingresoDisponible} format={peso} /></span>{#if hayNetoUsd}<span class="dv-usd">{usd(ingresoDisponibleUsd)}</span>{/if}</span>
         </button>
         {#if detalleAbierto}
             <table class="disp-tabla disp-detalle">
@@ -514,7 +521,7 @@
                     {#if ingresoUsdMes > 0}<tr class="disp-usd"><td>Ingreso del mes (USD)</td><td class="num">{usd(ingresoUsdMes)}</td></tr>{/if}
                     <tr><td>− Pago de Tarjetas del Mes Corriente</td><td class="num">{creditoMes ? '−' + peso(creditoMes) : peso(0)}</td></tr>
                     <tr><td>+ Reservado para el Mes Corriente</td><td class="num">{reservaMes ? '+' + peso(reservaMes) : peso(0)}</td></tr>
-                    {#if creditoMesUsd > 0}<tr class="disp-usd"><td>Cuotas en dólares (se pagan aparte)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
+                    {#if hayNetoUsd}<tr class="disp-usd"><td>− Cuotas en dólares (netean el ingreso USD)</td><td class="num">{usd(creditoMesUsd)}</td></tr>{/if}
                 </tbody>
             </table>
             <p class="disp-nota">La reserva se edita por mes en <a href="/credito">Crédito</a>.</p>
@@ -541,7 +548,7 @@
             {#if gastoUsdMes > 0}
                 <div class="disp-linea disp-usdrow"><span>Gasto del mes (USD)</span><strong>{usd(gastoUsdMes)}</strong></div>
             {/if}
-            {#if creditoMesUsd > 0}
+            {#if creditoMesUsd > 0 && !hayNetoUsd}
                 <div class="disp-linea disp-usdrow"><span>Cuotas en dólares (aparte)</span><strong>{usd(creditoMesUsd)}</strong></div>
             {/if}
         </div>
@@ -684,8 +691,11 @@
     .deuda-panel.warn { border-left-color: var(--warn); }
     .deuda-panel.ok .disp-valor { color: var(--pos); }
     .deuda-panel .disp-valor.alta { color: var(--warn); }
-    /* Credito neto: ARS y USD en lineas separadas, alineadas a la derecha */
-    .deuda-panel .disp-valor { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
+    /* Credito neto e Ingreso disponible: cuando hay monto en USD además del de
+       ARS (.dv-ars/.dv-usd), van en lineas separadas, alineadas a la derecha —
+       mismo patrón visual en los dos paneles, sin diferencia de tamaño entre
+       ARS y USD (igual que ya se veía en Crédito neto). */
+    .deuda-panel .disp-valor, .disponible .disp-toggle .disp-valor { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.15; }
 
     h2 { font-size: 1.02rem; margin-top: 26px; border-left: 3px solid var(--accent); padding-left: 12px; }
     /* Título del consolidado + input de meta de ahorro en una sola fila. El

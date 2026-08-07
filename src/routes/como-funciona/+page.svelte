@@ -72,10 +72,10 @@
 			<p>Rienda decide el trato del dólar por <strong>recurrente vs puntual</strong>, no por la moneda:</p>
 			<ul>
 				<li><strong>Recurrente</strong> (gastos e ingresos periódicos, cuotas): se pesifica al dólar MEP y entra a tu flujo en pesos.</li>
-				<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD): sale de tu stock de dólares, queda aparte del cálculo en pesos y se muestra informativo en USD.</li>
+				<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD): sale de tu stock de dólares y se muestra informativo en USD. Si ese mes no cobrás ningún ingreso puntual en USD, la cuota en dólares que tengas queda aparte del cálculo en pesos, bajo Gasto; si sí cobrás uno, esa cuota se netea contra ese ingreso en cambio — el resultado es el <strong>"Ingreso disponible (USD)"</strong> que se muestra en Cuenta Corriente, al lado del disponible en pesos.</li>
 			</ul>
 			<p>El dólar de referencia es el <strong>MEP (bolsa)</strong>, y cada conversión usa el valor del día del propio movimiento (no flota con el dólar de hoy).</p>
-			<p>La cotización de dólar e inflación no depende solo de vos: al abrir la app se refresca sola si la última guardada no es de ayer o de hoy (silencioso, sin avisar si falla). Si necesitás algo más fresco al toque, el botón <strong>"Actualizar tipo de cambio"</strong> (menú → Datos) la fuerza en el momento.</p>
+			<p>La cotización de dólar e inflación no depende solo de vos: el valor de hoy se refresca solo cada 20 minutos, junto con los precios de Mercado (silencioso, sin avisar si falla); el histórico completo del dólar y la inflación se resincroniza aparte, una vez por día. Si necesitás algo más fresco al toque, el botón <strong>"Actualizar tipo de cambio"</strong> (menú → Datos) fuerza las dos actualizaciones en el momento.</p>
 		</div>
 	{/if}
 </section>

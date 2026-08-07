@@ -256,3 +256,10 @@ export function fechaHoraCorta(iso: string | null | undefined, sinDato = 'nunca'
 	const d = new Date(iso);
 	return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
+
+// Solo la hora de un timestamp de sistema: "14:30". Para pegar al lado de una
+// fecha que ya se muestra en otro formato (ej. fmtFecha) sin duplicar el día.
+export function horaCorta(iso: string | null | undefined): string {
+	if (!iso) return '';
+	return new Date(iso).toLocaleString('es-AR', { hour: '2-digit', minute: '2-digit' });
+}

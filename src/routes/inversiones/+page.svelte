@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
-	import { fmtFecha, fechaISO, pesos, fechaHoraCorta } from '$lib/format';
+	import { fmtFecha, fechaISO, pesos, fechaHoraCorta, horaCorta } from '$lib/format';
 	import { calcularTenencia, calcularSerieTWR, rendimientoVentana } from '$lib/cartera';
 	import { actualizarPreciosYFoto } from '$lib/db/precios';
 	import Guia from '$lib/Guia.svelte';
@@ -15,6 +15,7 @@
 	let detalleMix = $state<any[]>([]);
 	let dolar = $state(1);
 	let dolarFecha = $state<string | null>(null); // fecha de la cotización MEP usada
+	let dolarActualizadoEn = $state<string | null>(null); // hora de la última corrida de actualizarDolar()
 
 	// Rendimiento por ventana (Bloque 5): mismo TWR encadenado que Evolución de
 	// cartera (calcularSerieTWR/rendimientoVentana en cartera.ts), rebasado a
@@ -41,6 +42,9 @@
 		// Fecha de esa cotización MEP (para mostrar a qué dólar y qué tan fresco se valúa).
 		const df = (await query("SELECT fecha FROM cotizacion_dolar WHERE perfil_id=1 AND casa='bolsa' ORDER BY fecha DESC LIMIT 1")) as any[];
 		dolarFecha = df[0]?.fecha ?? null;
+
+		const md = (await query("SELECT valor FROM meta WHERE clave='dolar_actualizado_en'")) as any[];
+		dolarActualizadoEn = md[0]?.valor ?? null;
 
 		const mp = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
 		preciosActualizadosEn = mp[0]?.valor ?? null;
@@ -157,10 +161,11 @@
 		<a href="/config-tickers" class="btn btn-secondary">🎯 Mercado</a>
 	</div>
 
+	<h2>Rendimiento de cartera</h2>
 	<div class="resumen">
-		<div class="card"><span>Rendimiento del año</span><strong>{fmtRend(rendAnio)}</strong></div>
-		<div class="card"><span>Rendimiento del trimestre</span><strong>{fmtRend(rendTrimestre)}</strong></div>
-		<div class="card"><span>Rendimiento del mes</span><strong>{fmtRend(rendMes)}</strong></div>
+		<div class="card"><span>Anual</span><strong>{fmtRend(rendAnio)}</strong></div>
+		<div class="card"><span>Trimestral</span><strong>{fmtRend(rendTrimestre)}</strong></div>
+		<div class="card"><span>Mensual</span><strong>{fmtRend(rendMes)}</strong></div>
 	</div>
 	<NotaVisual objetivo="Cuánto rindió tu cartera" glosario="tenencia" glosarioTexto="Qué es el TWR">
 		{#snippet muestra()}El rendimiento de toda tu cartera en el último año, trimestre y mes.{/snippet}
@@ -168,7 +173,7 @@
 		{#snippet usar()}Compararlo contra un plazo fijo, la inflación o el dólar del mismo plazo, para saber si la estrategia valió la pena.{/snippet}
 	</NotaVisual>
 
-	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}</span></div>
+	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}{dolarActualizadoEn ? ' ' + horaCorta(dolarActualizadoEn) : ''}</span></div>
 
 	<div class="preciosbar">
 		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
@@ -176,6 +181,7 @@
 		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
 	</div>
 
+	<h2>Tenencia por activo</h2>
 	<div class="tabla-scroll">
 	<table class="tabla-cartera">
 		<thead><tr><th>Activo</th>
@@ -201,9 +207,10 @@
 		{#snippet usar()}Ver qué posiciones sostienen el resultado y cuáles lo restan, antes de decidir dónde reforzar o de dónde salir.{/snippet}
 	</NotaVisual>
 
+	<h2>Composición de cartera</h2>
 	<div class="graf-fila">
 		<div class="graf">
-			<h2>Exposición al tipo de cambio (≈USD)</h2>
+			<h3>Exposición al tipo de cambio (≈USD)</h3>
 			{#if exposicion.tot > 0}
 				<div class="bars">
 					{#each exposicion.filas as f (f.clave)}
@@ -221,7 +228,7 @@
 			{/if}
 		</div>
 		<div class="graf">
-			<h2>Estructura de renta (≈USD)</h2>
+			<h3>Estructura de renta (≈USD)</h3>
 			<div class="bars">
 				{#each buckets as b (b.renta)}
 					<div class="barrow"><span class="lbl">{b.renta}</span>
@@ -243,7 +250,7 @@
 		</NotaVisual>
 	{/if}
 
-	<h2>Detalle del mix — ranking de concentración</h2>
+	<h3>Detalle del mix — ranking de concentración</h3>
 	<div class="tabla-scroll">
 	<table class="mix">
 		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th>Exposición</th><th class="num">% del total</th></tr></thead>
@@ -272,7 +279,11 @@
 :global(body) { max-width: 980px; margin: 0 auto; padding: 16px; }
 	h2 { font-size: 1.05rem; margin-top: 20px; }
 	h2 { border-left: 3px solid var(--accent); padding-left: 12px; }
-	.graf h2 { border-left: none; padding-left: 0; }
+	/* Subtítulos internos de una sección ya encabezada por su propio h2 (ej.
+	   "Composición de cartera" agrupa Exposición + Estructura de renta + Detalle
+	   del mix): un nivel menos que el h2 de sección, sin la regla de acento. */
+	h3 { font-size: 0.92rem; font-weight: 600; color: var(--text-dim); margin: 16px 0 6px; }
+	.graf h3 { margin: 0 0 6px; }
 	.sk-tabla { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
@@ -334,7 +345,6 @@
 	   (labels/altura/fuente más chicos) en vez de apilarse, para que entren en
 	   paralelo en un celular; solo apilan en pantallas realmente extremas (<=320px). */
 	.graf-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 24px; align-items: start; }
-	.graf h2 { margin-top: 16px; }
 	.bars { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 	.barrow { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
 	.lbl { width: 64px; color: var(--text-dim); flex-shrink: 0; }

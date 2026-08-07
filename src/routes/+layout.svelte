@@ -4,10 +4,9 @@
 	import { onMount } from 'svelte';
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
-	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
+	import { actualizarCotizaciones, actualizarInflacionYHistorico } from '$lib/db/cotizaciones';
 	import { notif } from '$lib/notif.svelte';
 	import { query } from '$lib/db/client';
-	import { fechaISO } from '$lib/format';
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
 
@@ -46,19 +45,22 @@
 		if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
 	}
 
-	// Actualiza dólar/inflación si la última cotización guardada no es de ayer o
-	// de hoy (es decir, tiene más de 1 día). No distingue feriados/fin de semana
-	// a propósito: si no hay cotización nueva la fuente sigue devolviendo el
-	// último cierre disponible, así que no hace falta lógica de días hábiles acá
-	// — de última, se reintenta sin romper nada. Silencioso: sin internet o con
-	// la API caída, sigue con lo guardado.
+	// Resync pesado (histórico completo de dólar + inflación, ArgentinaDatos) si
+	// la última corrida tiene más de 1 día. Chequea contra meta
+	// (cotizaciones_resync_en) y no contra MAX(fecha) de cotizacion_dolar: esa
+	// columna ahora también la escribe actualizarDolar() (liviano, todos los días
+	// vía el refresco de precios de 20 min), así que dejó de servir como señal de
+	// "cuándo corrió el resync pesado". No distingue feriados/fin de semana a
+	// propósito: si no hay cotización nueva la fuente sigue devolviendo el último
+	// cierre disponible, así que no hace falta lógica de días hábiles acá — de
+	// última, se reintenta sin romper nada. Silencioso: sin internet o con la API
+	// caída, sigue con lo guardado.
 	async function autoCotizaciones() {
 		try {
-			const r = (await query("SELECT MAX(fecha) AS f FROM cotizacion_dolar WHERE perfil_id=1")) as any[];
-			const ult = r[0]?.f;
-			const ayer = fechaISO(new Date(Date.now() - 86400000));
-			if (ult && ult >= ayer) return; // es de ayer o de hoy: está fresca
-			await actualizarCotizaciones();
+			const r = (await query("SELECT valor FROM meta WHERE clave='cotizaciones_resync_en'")) as any[];
+			const ult = r[0]?.valor;
+			if (ult && Date.now() - new Date(ult).getTime() < 24 * 60 * 60 * 1000) return; // corrió hace <24h: fresco
+			await actualizarInflacionYHistorico();
 		} catch { /* sin conexión o API caída: no molestar */ }
 	}
 

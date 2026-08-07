@@ -17,6 +17,7 @@ import { hoyISO } from '../format';
 import { BASE, ajustarEscala } from './data912';
 import { sqlUpsertPrecioHistorico } from './precios_historicos';
 import { calcularFoto, guardarSnapshot } from '../cartera';
+import { actualizarDolar } from './cotizaciones';
 
 const PANELES = ['arg_bonds', 'arg_corp', 'arg_cedears', 'arg_stocks', 'arg_notes'];
 
@@ -377,6 +378,16 @@ export async function sincronizarCatalogoData912(): Promise<string> {
 // si no, la foto se "editaría" cada 20 min aunque no haya cambiado nada).
 export async function actualizarPreciosYFoto(): Promise<string> {
 	const mensaje = await actualizarPrecios();
+	try {
+		// Dólar de hoy (DolarApi.com): se cuelga acá para compartir el mismo gatillo
+		// de 20 min que ya gobierna este refresco (ver autoPrecios en +layout.svelte)
+		// y para que "Actualizar precios" (Mercado/Tenencia/Montos) también deje el
+		// tipo de cambio al día. Best-effort, no bloquea el resultado de precios: si
+		// falla, se sigue con el ya guardado (mismo criterio que la foto, abajo).
+		await actualizarDolar();
+	} catch (e) {
+		console.error('[precios] no se pudo actualizar el dólar del día:', e);
+	}
 	try {
 		const fecha = fechaCierreActual();
 		const foto = await calcularFoto();
