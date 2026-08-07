@@ -257,23 +257,12 @@
 	// se dibuja en el 72% de arriba. Sin volumen, el precio usa todo el alto.
 	const FRAC_PRECIO = 0.72, FRAC_VOL = 0.2;
 
-	// Etiqueta compacta de precio para el eje: los precios van de centavos a
-	// decenas de miles según el instrumento, así que la escala se elige por
-	// magnitud en vez de forzar un formato único.
-	//
-	// `paso` es la distancia entre ticks consecutivos (rango visible / 3). En un
-	// rango angosto relativo al valor absoluto (ej. entre 1.502.000 y 1.508.000),
-	// la precisión fija de antes hacía que las 3 etiquetas redondearan al mismo
-	// "1,5m". Acá la cantidad de decimales sube hasta que el paso deje de
-	// colapsar a cero en esa escala, así los ticks se leen distintos entre sí.
-	function fmtEjeY(v: number, paso: number): string {
-		const a = Math.abs(v);
-		const usaMil = a >= 1000;
-		const escala = usaMil ? v / 1000 : v;
-		const pasoEscala = Math.abs(usaMil ? paso / 1000 : paso);
-		let decimales = usaMil ? 1 : a >= 1 ? 0 : 2;
-		while (decimales < 4 && pasoEscala > 0 && Math.round(pasoEscala * 10 ** decimales) === 0) decimales++;
-		return unidades(escala, decimales) + (usaMil ? 'm' : '');
+	// Etiqueta de precio para el eje: precio completo siempre, sin dividir por
+	// mil ni sufijo "m" (antes escalaba a "1,5m" y se perdía precisión). La
+	// cantidad de decimales la decide quien arma las 4 etiquetas del eje (ver
+	// yticks más abajo), no esta función.
+	function fmtEjeY(v: number, decimales: number): string {
+		return unidades(v, decimales);
 	}
 	function fmtEjeX(iso: string): string {
 		const [y, m] = iso.split('-');
@@ -355,11 +344,19 @@
 				]
 			: [];
 
+		// Decimales de las 4 etiquetas del eje: suben hasta que las 4 den textos
+		// distintos entre sí (en vez de inferirlo del paso entre ticks). En un rango
+		// angosto relativo al valor absoluto (ej. entre 1.502.000 y 1.508.000), con
+		// pocos decimales dos etiquetas pueden redondear al mismo texto.
 		const pasoY = (maxY - minY) / 3;
-		const yticks = Array.from({ length: 4 }, (_, k) => {
-			const v = minY + pasoY * k;
-			return { y: py(v), label: fmtEjeY(v, pasoY) };
-		});
+		const valoresY = Array.from({ length: 4 }, (_, k) => minY + pasoY * k);
+		let decimalesY = Math.abs(minY) >= 1 ? 0 : 2;
+		while (decimalesY < 6) {
+			const labels = valoresY.map((v) => fmtEjeY(v, decimalesY));
+			if (new Set(labels).size === labels.length) break;
+			decimalesY++;
+		}
+		const yticks = valoresY.map((v) => ({ y: py(v), label: fmtEjeY(v, decimalesY) }));
 		const paso = Math.max(1, Math.floor(s.length / 6));
 		const xticks = s
 			.map((p, i) => ({ i, fecha: p.fecha }))
@@ -579,18 +576,18 @@
 	/* Horizontal: no se fuerza la rotación del dispositivo, pero si ya está
 	   apaisado se aprovecha alto en vez de ancho — con width:100% el gráfico
 	   queda achatado (el aspect-ratio del viewBox da poca altura quedando el
-	   ancho de pantalla entero). dvh en vez de vh: en Android la barra de
-	   sistema achica el viewport dinámico, y vh fijo dejaría el gráfico
-	   parcialmente tapado. max-width:100% es el techo por si el alto derivado
-	   excede el ancho real de la pantalla.
+	   ancho de pantalla entero).
 	   OJO: `orientation: landscape` solo mira la forma del viewport, no si es
 	   "un celular acostado" — una ventana de escritorio normal también matchea
-	   (es más ancha que alta) y disparaba esto siempre, inflando el gráfico a
-	   90dvh de alto en desktop aunque el layout de la app siga siendo la columna
-	   angosta de mobile (max-width:820px del body). El tope de ancho evita eso:
-	   apaisado real de celular ronda los ~900px, un monitor los supera. */
-	@media (orientation: landscape) and (max-width: 900px) {
-		.gp-chart { width: auto; height: 100dvh; max-width: 100%; max-height: none; align-self: center; }
+	   (es más ancha que alta). Antes se acotaba con max-width:900px (adivinando
+	   el ancho típico de un celular apaisado), pero eso es frágil: un tablet o
+	   una ventana angosta de desktop también podían colar/quedar afuera por
+	   error. `pointer: coarse` es la señal real — solo matchea en dispositivos
+	   táctiles (celular/tablet), nunca con mouse — así que no hace falta
+	   adivinar anchos. aspect-ratio explícito (igual al viewBox W=720/H=320 del
+	   script) para no depender de que el navegador lo infiera solo del SVG. */
+	@media (orientation: landscape) and (pointer: coarse) {
+		.gp-chart { width: auto; height: 480px; aspect-ratio: 720 / 320; max-width: 100%; max-height: none; align-self: center; }
 	}
 	.gp-grid { stroke: var(--border); stroke-width: 1; }
 	.gp-ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
