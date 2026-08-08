@@ -273,7 +273,7 @@
 			<div class="grupo">
 				<span class="gtit">Datos</span>
 				<button class="item" class:activo={actual === '/datos'} onclick={() => irA('/datos')}>Tus datos</button>
-				<button class="item" class:activo={actual === '/como-funciona'} onclick={() => irA('/como-funciona')}>Sobre Rienda</button>
+				<button class="item" class:activo={actual === '/sobre-rienda'} onclick={() => irA('/sobre-rienda')}>Sobre Rienda</button>
 				<button class="item" onclick={onActualizarCotiz} disabled={actualizandoCotiz}>
 					{actualizandoCotiz ? 'Actualizando…' : 'Actualizar tipo de cambio'}
 				</button>

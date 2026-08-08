@@ -587,7 +587,7 @@
 	   adivinar anchos. aspect-ratio explícito (igual al viewBox W=720/H=320 del
 	   script) para no depender de que el navegador lo infiera solo del SVG. */
 	@media (orientation: landscape) and (pointer: coarse) {
-		.gp-chart { width: auto; height: 480px; aspect-ratio: 720 / 320; max-width: 100%; max-height: none; align-self: center; }
+	.gp-chart { width: auto; height: min(480px, 78dvh); aspect-ratio: 720 / 320; max-width: 100%; max-height: 78dvh; align-self: center; }
 	}
 	.gp-grid { stroke: var(--border); stroke-width: 1; }
 	.gp-ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }

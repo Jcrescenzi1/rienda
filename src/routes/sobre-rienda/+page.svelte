@@ -6,7 +6,7 @@
 
 	// Acordeón: un ítem abierto a la vez en toda la página, mismo patrón que
 	// Configuración. Arranca con el primero, salvo que la URL traiga hash
-	// (linkeado desde NotaVisual, ej. /como-funciona#tenencia), en cuyo caso
+	// (linkeado desde NotaVisual, ej. /sobre-rienda#tenencia), en cuyo caso
 	// arranca abierto ahí.
 	let abierta = $state<string>('');
 	function toggle(s: string) { abierta = abierta === s ? '' : s; }
@@ -57,7 +57,7 @@
 	</button>
 	{#if abierta === 'tarjetas'}
 		<div class="acc-body">
-			<p>Una tarjeta puede ser de débito o crédito. En una compra en crédito indicás <strong>cuotas</strong> y el <strong>mes de inicio de pago</strong> (por defecto, el mes siguiente). Rienda reparte la compra 1/N y proyecta cada cuota a su mes de vencimiento.</p>
+			<p>Una tarjeta puede ser de débito o crédito. En una compra en crédito indicás <strong>cuotas</strong> y el <strong>mes de inicio de pago</strong> (por defecto, el mes siguiente). Rienda proyecta el pago de cada cuota a su mes de vencimiento para que te sea mas facil el seguimiento.</p>
 			<p>El gasto se cuenta <strong>entero el día que lo hacés</strong> (devengado), no cuando pagás las cuotas. El vencimiento mensual de tarjeta solo ajusta tu <strong>Ingreso disponible</strong> del mes (cuánto te queda libre después de separar para pagar la tarjeta). Pesos y dólares de la tarjeta se muestran por separado (no se mezclan).</p>
 		</div>
 	{/if}
@@ -71,8 +71,8 @@
 		<div class="acc-body">
 			<p>Rienda decide el trato del dólar por <strong>recurrente vs puntual</strong>, no por la moneda:</p>
 			<ul>
-				<li><strong>Recurrente</strong> (gastos e ingresos periódicos, cuotas): se pesifica al dólar MEP y entra a tu flujo en pesos.</li>
-				<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD): sale de tu stock de dólares y se muestra informativo en USD. Si ese mes no cobrás ningún ingreso puntual en USD, la cuota en dólares que tengas queda aparte del cálculo en pesos, bajo Gasto; si sí cobrás uno, esa cuota se netea contra ese ingreso en cambio — el resultado es el <strong>"Ingreso disponible (USD)"</strong> que se muestra en Cuenta Corriente, al lado del disponible en pesos.</li>
+				<li><strong>Recurrente</strong> (gastos e ingresos periódicos, registrados desde la pantalla "Recurrentes"): se pesifica al dólar MEP y entra a tu flujo en pesos.</li>
+				<li><strong>Puntual</strong> (un gasto o ingreso suelto en USD):  se muestra informativo en USD. Si ese mes no cobrás ningún ingreso puntual en USD, la cuota en dólares que tengas queda aparte del cálculo en pesos, bajo Gasto; si cobrás uno, esa cuota se netea contra ese ingreso en cambio — el resultado es el <strong>"Ingreso disponible (USD)"</strong> que se muestra en Cuenta Corriente, al lado del disponible en pesos.</li>
 			</ul>
 			<p>El dólar de referencia es el <strong>MEP (bolsa)</strong>, y cada conversión usa el valor del día del propio movimiento (no flota con el dólar de hoy).</p>
 			<p>La cotización de dólar e inflación no depende solo de vos: el valor de hoy se refresca solo cada 20 minutos, junto con los precios de Mercado (silencioso, sin avisar si falla); el histórico completo del dólar y la inflación se resincroniza aparte, una vez por día. Si necesitás algo más fresco al toque, el botón <strong>"Actualizar tipo de cambio"</strong> (menú → Datos) fuerza las dos actualizaciones en el momento.</p>

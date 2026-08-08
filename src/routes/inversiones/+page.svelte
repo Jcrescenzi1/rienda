@@ -172,16 +172,15 @@
 		{#snippet leer()}Es <strong>TWR</strong>: descuenta el efecto de tus ingresos y retiros de plata, así que mide cómo rindió lo invertido y no cuánto creció el saldo. <strong>“Sin datos suficientes”</strong> significa que esa ventana todavía no tiene dos fotos de cartera.{/snippet}
 		{#snippet usar()}Compararlo contra un plazo fijo, la inflación o el dólar del mismo plazo, para saber si la estrategia valió la pena.{/snippet}
 	</NotaVisual>
-
-	<div class="moneda-fija"><span class="moneda-lbl">Valuado en USD</span> <span class="moneda-badge">al dólar MEP (bolsa) {money(dolar, 'ARS')}{dolarFecha ? ' · ' + fmtFecha(dolarFecha) : ''}{dolarActualizadoEn ? ' ' + horaCorta(dolarActualizadoEn) : ''}</span></div>
-
-	<div class="preciosbar">
-		<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
-		<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
-		<span class="preciostamp">Precios: <strong>{fmtFechaHora(preciosActualizadosEn)}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</span>
-	</div>
-
+	
 	<h2>Tenencia por activo</h2>
+	
+	<div class="preciosbar">
+	<a href="/inversiones/montos" class="btn btn-secondary">💰 Tenencia en montos</a>
+	<button class="btn btn-secondary" onclick={onActualizarPrecios} disabled={actualizandoPrecios}>{actualizandoPrecios ? 'Actualizando…' : '⟳ Actualizar precios'}</button>
+</div>
+<div class="preciostamp">Precio y Tipo de Cambio: <strong>{fechaHoraCorta(preciosActualizadosEn)}</strong> - Valor USD: <strong>{money(dolar, 'ARS')}</strong>{#if preciosMsg} · <span class:err={preciosMsgErr}>{#if preciosMsgErr}<span class="err-x">✗</span> {/if}{preciosMsg}</span>{/if}</div>
+
 	<div class="tabla-scroll">
 	<table class="tabla-cartera">
 		<thead><tr><th>Activo</th>
@@ -210,7 +209,7 @@
 	<h2>Composición de cartera</h2>
 	<div class="graf-fila">
 		<div class="graf">
-			<h3>Exposición al tipo de cambio (≈USD)</h3>
+			<h3>Exposición al tipo de cambio</h3>
 			{#if exposicion.tot > 0}
 				<div class="bars">
 					{#each exposicion.filas as f (f.clave)}
@@ -228,7 +227,7 @@
 			{/if}
 		</div>
 		<div class="graf">
-			<h3>Estructura de renta (≈USD)</h3>
+			<h3>Estructura de renta</h3>
 			<div class="bars">
 				{#each buckets as b (b.renta)}
 					<div class="barrow"><span class="lbl">{b.renta}</span>
@@ -288,9 +287,6 @@
 	.preciosbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
 	.preciostamp { font-size: 0.78rem; color: var(--text-dim); }
 	.preciostamp strong { color: var(--text); font-family: var(--font-num); font-weight: 400; }
-	.moneda-fija { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 6px 0; }
-	.moneda-lbl { font-size: 0.75rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
-	.moneda-badge { font-size: 0.8rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 5px 12px; color: var(--text); }
 	.preciostamp span.err { color: var(--neg); }
 	.err-x { font-size: 1.3em; line-height: 1; }
 	/* .resumen/.card: base global en +layout.svelte. */

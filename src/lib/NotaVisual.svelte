@@ -7,12 +7,12 @@
 	//   Cómo usarlo  -> qué decisión habilita
 	//
 	// Y dos opcionales: `fuente` (de dónde salen los datos, solo cuando no es obvio
-	// o tiene un límite que importa) y `glosario` (ancla de /como-funciona).
+	// o tiene un límite que importa) y `glosario` (ancla de /sobre-rienda).
 	//
 	// Por qué componente y no un <details> escrito a mano en cada archivo: la
 	// estructura queda garantizada en vez de depender de acordarse, el CSS deja de
 	// estar duplicado en ocho pantallas, y las definiciones de conceptos (PPC, PPV,
-	// TWR…) se linkean a /como-funciona en lugar de repetirse en cada visual — que
+	// TWR…) se linkean a /sobre-rienda en lugar de repetirse en cada visual — que
 	// era de donde salía la mitad del texto.
 	//
 	// El rótulo visible es "Descripción - <objetivo>": el objetivo de la visual se
@@ -34,7 +34,7 @@
 		leer: Snippet;
 		usar: Snippet;
 		fuente?: Snippet;
-		// Ancla de sección en /como-funciona (capa 3), donde viven las definiciones.
+		// Ancla de sección en /sobre-rienda (capa 3), donde viven las definiciones.
 		glosario?: string;
 		glosarioTexto?: string;
 	} = $props();
@@ -55,7 +55,7 @@
 		{/if}
 	</dl>
 	{#if glosario}
-		<a class="glosario" href="/como-funciona#{glosario}">{glosarioTexto} →</a>
+		<a class="glosario" href="/sobre-rienda#{glosario}">{glosarioTexto} →</a>
 	{/if}
 </details>
 

@@ -56,7 +56,7 @@
 			{:else}
 				<p>{texto}</p>
 			{/if}
-			{#if verMas}<a class="vermas" href="/como-funciona">Sobre Rienda →</a>{/if}
+			{#if verMas}<a class="vermas" href="/sobre-rienda">Sobre Rienda →</a>{/if}
 			<button class="ok" onclick={entendido}>Entendido</button>
 		</div>
 	{/if}
