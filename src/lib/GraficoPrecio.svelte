@@ -84,7 +84,6 @@
 	// una serie continua. Es una limitación de la fuente, no un bug del gráfico.
 	const VENTANAS: [string, string][] = [['1s', '1S'], ['1m', '1M'], ['3m', '3M'], ['6m', '6M'], ['1a', '1A'], ['total', 'Todo']];
 	const DIAS_VENTANA: Record<string, number | null> = { '1s': 7, '1m': 30, '3m': 91, '6m': 182, '1a': 365, total: null };
-	const LABEL_VENTANA: Record<string, string> = { '1s': '1 semana', '1m': '1 mes', '3m': '3 meses', '6m': '6 meses', '1a': '1 año', total: 'todo el período' };
 	let ventanaActiva = $state('6m');
 
 	async function traerSerie(a: any, mio: number) {
@@ -377,15 +376,13 @@
 	const snapTacto = $derived(puntoTacto != null ? serieVentana[puntoTacto] ?? null : null);
 
 	// Variación que se muestra al lado de la última cotización:
-	//  - con un día tocado: cuánto se movió el papel DESDE ese día HASTA hoy;
-	//  - sin tocar nada: cuánto se movió dentro de la ventana elegida.
+	// Variación que se muestra al lado del valor:
+	//  - con un día marcado: cuánto se movió el papel DESDE ese día HASTA hoy;
+	//  - sin marcar nada: cuánto se movió dentro de la ventana elegida.
 	const variacionMostrada = $derived.by(() => {
 		if (snapTacto && ultima && snapTacto.precio) return ultima.precio / snapTacto.precio - 1;
 		return chart?.variacion ?? null;
 	});
-	const etiquetaVariacion = $derived(
-		snapTacto ? 'desde el día marcado' : LABEL_VENTANA[ventanaActiva] ?? ''
-	);
 
 	function indiceMasCercano(xViewBox: number): number | null {
 		if (!chart) return null;
@@ -429,37 +426,23 @@
 	     publicada, así que el camino por defecto lleva a activos que sí grafican. -->
 	<ComboActivo {activos} bind:value {especieDe} especieInicial="Pesos" placeholder="Buscar por ticker o nombre…" />
 
-	{#if ultima}
-		<!-- La última cotización queda siempre a la vista: es el dato de referencia
-		     contra el que se lee todo lo demás, incluida la variación al marcar un día. -->
-		<div class="gp-head">
-			<span class="gp-lbl">Última cotización</span>
-			<span class="gp-precio">{money(ultima.precio, mon)}</span>
-			<span class="gp-fecha">{fmtFechaCorta(ultima.fecha)}</span>
-			{#if variacionMostrada != null}
-				<span class="gp-var" class:pos={variacionMostrada >= 0} class:neg={variacionMostrada < 0}>
-					{variacionMostrada >= 0 ? '+' : ''}{(variacionMostrada * 100).toFixed(1)}%
-				</span>
-				<span class="gp-varlbl">{etiquetaVariacion}</span>
-			{/if}
-		</div>
+{#if ultima}
+	<!-- Fila única y fija: sin panel aparte al tocar el gráfico. -->
+	<div class="gp-head">
 		{#if snapTacto}
-			<div class="gp-marcado">
-				<span class="gp-lbl">Día marcado</span>
-				<span class="gp-marcado-v">{fmtFechaCorta(snapTacto.fecha)} · {money(snapTacto.precio, mon)}</span>
-				{#if snapTacto.varDia != null}
-					<!-- Cierre del día contra el día anterior: es EXACTAMENTE el signo que
-					     pinta la barra de volumen de esa rueda. Mostrarlo acá es lo que
-					     vuelve legible por qué una barra más alta puede estar en rojo. -->
-					<span class="gp-marcado-dia" class:pos={snapTacto.varDia >= 0} class:neg={snapTacto.varDia < 0}>
-						{snapTacto.varDia >= 0 ? '+' : ''}{(snapTacto.varDia * 100).toFixed(1)}% en el día
-					</span>
-				{/if}
-				{#if snapTacto.media != null}<span class="gp-marcado-x">media {money(snapTacto.media, mon)}</span>{/if}
-				{#if snapTacto.volumen != null}<span class="gp-marcado-x">vol {fmtVol(snapTacto.volumen)}</span>{/if}
-			</div>
+			<span class="gp-lbl">Valor ({fmtFechaCorta(snapTacto.fecha)}):</span>
+			<span class="gp-precio">{money(snapTacto.precio, mon)} - {money(ultima.precio, mon)}</span>
+		{:else}
+			<span class="gp-lbl">Valor:</span>
+			<span class="gp-precio">{money(ultima.precio, mon)}</span>
 		{/if}
-	{/if}
+		{#if variacionMostrada != null}
+			<span class="gp-var" class:pos={variacionMostrada >= 0} class:neg={variacionMostrada < 0}>
+				{variacionMostrada >= 0 ? '+' : ''}{(variacionMostrada * 100).toFixed(1)}%
+			</span>
+		{/if}
+	</div>
+{/if}
 
 	{#if chart}
 		<svg
@@ -556,21 +539,12 @@
 <style>
 	.gp { display: flex; flex-direction: column; gap: 6px; }
 
-	.gp-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-	.gp-lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); }
+	.gp-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: nowrap; overflow-x: auto; }
+	.gp-lbl { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); white-space: nowrap; }
 	.gp-precio { font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
-	.gp-fecha { font-size: 0.76rem; color: var(--text-dim); }
 	.gp-var { font-size: 0.86rem; font-weight: 700; white-space: nowrap; }
 	.gp-var.pos { color: var(--pos); }
 	.gp-var.neg { color: var(--neg); }
-	.gp-varlbl { font-size: 0.72rem; color: var(--text-dim); }
-
-	.gp-marcado { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; padding: 4px 8px; border-left: 2px solid var(--accent); background: rgba(91, 157, 255, 0.07); border-radius: 0 6px 6px 0; }
-	.gp-marcado-v { font-size: 0.84rem; font-weight: 600; }
-	.gp-marcado-x { font-size: 0.74rem; color: var(--text-dim); }
-	.gp-marcado-dia { font-size: 0.76rem; font-weight: 600; }
-	.gp-marcado-dia.pos { color: var(--pos); }
-	.gp-marcado-dia.neg { color: var(--neg); }
 
 	.gp-chart { width: 100%; height: auto; max-height: 42dvh; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); touch-action: none; cursor: crosshair; }
 	/* Horizontal: no se fuerza la rotación del dispositivo, pero si ya está

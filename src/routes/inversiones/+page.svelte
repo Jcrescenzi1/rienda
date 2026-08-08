@@ -242,7 +242,7 @@
 		</div>
 	</div>
 	{#if exposicion.tot > 0}
-		<NotaVisual objetivo="Nivel de exposición al tipo de cambio y al tipo de renta">
+		<NotaVisual objetivo="Exposición al tipo de cambio y de renta">
 			{#snippet muestra()}Cómo se reparte tu cartera entre <strong>Dólar</strong>, <strong>CER</strong> y <strong>Peso</strong>, y entre renta fija, mixta, variable y líquido. Incluye la liquidez.{/snippet}
 			{#snippet leer()}Es exposición, no moneda de cotización: un CEDEAR cotiza en pesos pero sigue al dólar, y una ON dollar-linked también. <strong>Peso</strong> es la porción que no te cubre ante una devaluación; <strong>CER</strong> sigue la inflación.{/snippet}
 			{#snippet usar()}Chequear si estás cubierto ante un salto del tipo de cambio; la exposición de cada activo la fijás en <a href="/config-tickers" class="link">Mercado</a>.{/snippet}
