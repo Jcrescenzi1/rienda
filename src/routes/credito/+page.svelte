@@ -208,7 +208,7 @@
         </tbody>
     </table>
     </div>
-    <p class="nota">Pesos y dólares se muestran por separado porque son unidades distintas. La <strong>reserva</strong> (en pesos) se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Cuenta Corriente: plata que ya separaste no te quita del disponible.</p>
+    <p class="nota">La <strong>reserva</strong> (en pesos) se descuenta del vencimiento al calcular tu <strong>Ingreso disponible</strong> en Cuenta Corriente: plata que ya separaste no te quita del disponible.</p>
 {/if}
 
 <style>

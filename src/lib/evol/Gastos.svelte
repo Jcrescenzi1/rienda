@@ -411,6 +411,8 @@
 
 	<ToggleMoneda />
 
+	<h2>Registros</h2><p class="nota">Editás el valor original cargado. La composición por categoría se ve en Análisis por categoría.</p>
+
 	<div class="filtros">
 		<label>Categoría
 			<MultiSelect options={catOptions} selected={selCat} onchange={(s) => (selCat = s)} label="Categoría" />
@@ -430,8 +432,6 @@
 		<button class="btn btn-secondary" onclick={limpiar}>Limpiar</button>
 	</div>
 
-	<h2>Registros</h2>
-	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico. Cambiar el detalle reclasifica vía diccionario. La composición por categoría se ve en Análisis por categoría.</p>
 	{#if msgEd}<p class="msg-ed" class:err={msgEdErr}>{#if msgEdErr}<span class="err-x">✗</span> {/if}{msgEd}</p>{/if}
 	<div class="fichas">
 		{#each registros as g (g.id)}

@@ -53,10 +53,10 @@
 		// como fecha calendario (restar meses a hoy), no un conteo de fotos.
 		const snapRows = (await query('SELECT fecha, valor_usd, flujo_usd FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
 		const serie = calcularSerieTWR(snapRows);
-		const cutoffMeses = (n: number) => { const d = new Date(); d.setMonth(d.getMonth() - n); return fechaISO(d); };
-		rendMes = rendimientoVentana(serie, cutoffMeses(1));
-		rendTrimestre = rendimientoVentana(serie, cutoffMeses(3));
-		rendAnio = rendimientoVentana(serie, cutoffMeses(12));
+		const cutoffDias = (n: number) => { const d = new Date(); d.setDate(d.getDate() - n); return fechaISO(d); };
+		rendMes = rendimientoVentana(serie, cutoffDias(30));
+		rendTrimestre = rendimientoVentana(serie, cutoffDias(91));
+		rendAnio = rendimientoVentana(serie, cutoffDias(365));
 
 		// Detalle del mix: ranking de concentración (activos + líquido), ordenado por
 		// % del total de mayor a menor. El desglose por renta ya lo muestra el
@@ -163,10 +163,11 @@
 
 	<h2>Rendimiento de cartera</h2>
 	<div class="resumen">
-		<div class="card"><span>Anual</span><strong>{fmtRend(rendAnio)}</strong></div>
-		<div class="card"><span>Trimestral</span><strong>{fmtRend(rendTrimestre)}</strong></div>
-		<div class="card"><span>Mensual</span><strong>{fmtRend(rendMes)}</strong></div>
+		<div class="card big centro"><span>Anual</span><strong>{fmtRend(rendAnio)}</strong></div>
+		<div class="card big centro"><span>Trimestral</span><strong>{fmtRend(rendTrimestre)}</strong></div>
+		<div class="card big centro"><span>Mensual</span><strong>{fmtRend(rendMes)}</strong></div>
 	</div>
+	
 	<NotaVisual objetivo="Cuánto rindió tu cartera" glosario="tenencia" glosarioTexto="Qué es el TWR">
 		{#snippet muestra()}El rendimiento de toda tu cartera en el último año, trimestre y mes.{/snippet}
 		{#snippet leer()}Es <strong>TWR</strong>: descuenta el efecto de tus ingresos y retiros de plata, así que mide cómo rindió lo invertido y no cuánto creció el saldo. <strong>“Sin datos suficientes”</strong> significa que esa ventana todavía no tiene dos fotos de cartera.{/snippet}
@@ -290,6 +291,7 @@
 	.preciostamp span.err { color: var(--neg); }
 	.err-x { font-size: 1.3em; line-height: 1; }
 	/* .resumen/.card: base global en +layout.svelte. */
+	.card.centro strong { text-align: center; }
 
 	table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
 	th, td { padding: 5px 7px; text-align: left; }

@@ -345,6 +345,8 @@
 
 	<ToggleMoneda />
 
+	<h2>Registros</h2><p class="nota">Editás el valor original cargado.</p>
+	
 	<div class="filtros">
 		<label>Categoría
 			<MultiSelect options={catOptions} selected={selCat} onchange={(s) => (selCat = s)} label="Categoría" />
@@ -359,8 +361,7 @@
 		<button class="btn btn-secondary" onclick={limpiar}>Limpiar</button>
 	</div>
 
-	<h2>Registros</h2>
-	<p class="nota">Editás el valor original cargado. El selector de moneda solo afecta el gráfico.</p>
+	
 	{#if msgEd}<p class="msg-ed" class:err={msgEdErr}>{#if msgEdErr}<span class="err-x">✗</span> {/if}{msgEd}</p>{/if}
 	<div class="fichas">
 		{#each registros as i (i.id)}
