@@ -303,6 +303,7 @@
 		--bg: #070b14;
 		--surface: #172033;
 		--surface-2: #1d2942;
+		--surface-3: #233251;
 		--border: #2a3a57;
 		--text: #e4e8f0;
 		--text-dim: #94a0b8;

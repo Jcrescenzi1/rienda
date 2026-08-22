@@ -584,9 +584,9 @@
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each consolidado as c (c.cat)}
-                <tr>
+                <tr class={c.esAhorro ? 'fila-ahorro' : 'fila-gasto'}>
                     {#if c.esAhorro}
-                        <td><strong>{c.cat}</strong>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(c.real)}" aria-hidden="true"><i style="width:{Math.min(c.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}</td>
+                        <td><a class="consol-link" href="/evolucion-finanzas?tab=capacidad"><strong>{c.cat}</strong></a>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(c.real)}" aria-hidden="true"><i style="width:{Math.min(c.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}</td>
                         <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
                         <td class="num">{metaAhorroMonto > 0 ? pesoMil(metaAhorroMonto) : '—'}</td>
                         <td class="num real {claseAhorro(c.real)}" title={tituloAhorro(c.real)}>{pesoMil(c.real)}</td>
@@ -707,6 +707,10 @@
        para legibilidad general de todas sus filas (no solo la de ahorro). */
     table.consol { font-size: 0.98rem; }
     table.consol th, table.consol td { padding: 7px 6px; }
+    tr.fila-gasto { background: var(--surface-2); }
+    tr.fila-ahorro { background: var(--surface-3); }
+    .consol-link { text-decoration: none; color: inherit; }
+    .consol-link:hover strong { color: var(--accent); }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
     table th:first-child, table td:first-child {
