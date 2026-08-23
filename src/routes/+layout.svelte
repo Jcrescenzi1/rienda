@@ -24,6 +24,12 @@
 	// ===== Perfil / bienvenida =====
 	let perfilListo = $state(false);
 	let chequeando = $state(true);
+	// true solo cuando hayPerfil() efectivamente pudo consultar la base y falló
+	// la conexión/consulta (worker colgado, timeout, etc.) — nunca cuando la
+	// consulta contestó "0 perfiles". Sin esto, cualquier error de query se
+	// confundía con "no hay perfil creado" y mandaba a un usuario con datos
+	// reales a la pantalla de Bienvenida (onboarding desde cero).
+	let perfilError = $state(false);
 	let nombreNuevo = $state('');
 	let modoNuevo = $state<ModoPeriodo>('calendario'); // preseleccionado (Capa 1)
 	let creando = $state(false);
@@ -39,10 +45,18 @@
 	function atras() { if (paso > 1) paso--; }
 
 	async function chequearPerfil() {
-		try { perfilListo = await hayPerfil(); }
-		catch { perfilListo = false; }
-		finally { chequeando = false; }
-		if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
+		perfilError = false;
+		try {
+			perfilListo = await hayPerfil();
+			chequeando = false;
+			if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
+		} catch (e) {
+			// La consulta falló (worker colgado, timeout, etc.): NO sabemos si hay
+			// perfil o no, así que no tocamos perfilListo ni mostramos onboarding.
+			console.error(e);
+			chequeando = false;
+			perfilError = true;
+		}
 	}
 
 	// Resync pesado (histórico completo de dólar + inflación, ArgentinaDatos) si
@@ -194,6 +208,14 @@
 
 {#if chequeando}
 	<div class="cargando-app"><p>Cargando…</p></div>
+{:else if perfilError}
+	<div class="bienvenida">
+		<div class="bcard">
+			<h2 class="bq">No pudimos verificar tu perfil</h2>
+			<p>Puede ser un problema pasajero de la base local. Tus datos no se tocaron.</p>
+			<button class="crear" onclick={chequearPerfil}>Reintentar</button>
+		</div>
+	</div>
 {:else if !perfilListo}
 	<!-- Bienvenida -->
 	<div class="bienvenida">
