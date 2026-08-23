@@ -141,6 +141,10 @@
 		try {
 			const msg = await actualizarCotizaciones();
 			alert(msg);
+			// Pequeño margen antes de recargar: le da tiempo al navegador de liberar
+			// el handle del worker viejo antes de que el reload cree uno nuevo. No
+			// elimina la carrera (es una limitación del navegador/OPFS), solo la reduce.
+			await new Promise((r) => setTimeout(r, 400));
 			location.reload();
 		} catch (e: any) {
 			console.error(e); // Brief H / B3: detalle a consola, no crudo en pantalla.
