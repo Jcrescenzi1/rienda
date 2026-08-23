@@ -180,7 +180,7 @@
 	.rec-dias { color: var(--text-dim); font-size: 0.82rem; white-space: nowrap; }
 
 	.fila {
-		display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%;
+		display: flex; justify-content: space-between; align-items: center; gap: 12px;
 		text-align: left; font: inherit; cursor: pointer;
 		border: 1px solid var(--border); border-left: 3px solid var(--accent);
 		background: var(--surface); color: var(--text); border-radius: 0 8px 8px 0;
