@@ -21,6 +21,15 @@
 	});
 	let { children } = $props();
 
+	// ===== Red global para promesas de datos no atrapadas =====
+	// Pantallas como Datos o Inversiones hacen sus propias query() en cargar()
+	// sin try/catch. Si esa query rechaza (worker colgado, timeout de client.ts,
+	// etc.) la pantalla se queda trabada sin avisar nada. Este listener es la
+	// red de contención para CUALQUIER promesa así en cualquier pantalla: no
+	// distingue causas, un solo mensaje genérico y una recarga completa como
+	// única vía de recuperación real.
+	let errorGlobal = $state('');
+
 	// ===== Perfil / bienvenida =====
 	let perfilListo = $state(false);
 	let chequeando = $state(true);
@@ -187,6 +196,15 @@
 	let enEvolGastos = $derived(actual === '/evolucion-finanzas' && (tabQS === null || tabQS === 'gastos' || tabQS === 'categorias' || tabQS === 'capacidad'));
 	let enEvolIngresos = $derived(actual === '/evolucion-finanzas' && (tabQS === 'ingresos' || tabQS === 'poder'));
 
+	// Red global: cualquier promesa rechazada que nadie atrapó en toda la app
+	// cae acá. No parsea el error ni distingue causas a propósito — un solo
+	// texto genérico, porque no hay forma confiable de saber desde acá qué
+	// pantalla era ni qué estaba cargando.
+	function onRechazoNoAtrapado(e: PromiseRejectionEvent) {
+		console.error(e.reason);
+		errorGlobal = 'Algo se colgó cargando datos. Cerrá la app por completo (no solo minimizarla) y volvé a abrirla.';
+	}
+
 	onMount(() => {
 		chequearPerfil();
 		if (!dev && 'serviceWorker' in navigator) {
@@ -201,10 +219,25 @@
 		// La captura de beforeinstallprompt / standalone vive en pwa.svelte.ts (a
 		// nivel módulo, se evalúa temprano vía el import de InstalarApp).
 		window.addEventListener('scroll', alScrollear, { passive: true });
-		return () => window.removeEventListener('scroll', alScrollear);
+		window.addEventListener('unhandledrejection', onRechazoNoAtrapado);
+		return () => {
+			window.removeEventListener('scroll', alScrollear);
+			window.removeEventListener('unhandledrejection', onRechazoNoAtrapado);
+		};
 	});
 
 </script>
+
+{#if errorGlobal}
+	<div class="banner-global-err">
+		<span class="err-x">✗</span>
+		<p>{errorGlobal}</p>
+		<div class="banner-global-acciones">
+			<button class="crear" onclick={() => location.reload()}>Reintentar</button>
+			<button class="banner-global-cerrar" onclick={() => (errorGlobal = '')} aria-label="Cerrar aviso">✕</button>
+		</div>
+	</div>
+{/if}
 
 {#if chequeando}
 	<div class="cargando-app"><p>Cargando…</p></div>
@@ -615,6 +648,24 @@
 	.bmsg { font-size: 0.82rem; color: var(--neg); margin: 0; }
 	.bmsg.err { display: flex; align-items: center; gap: 6px; }
 	.bmsg .err-x { font-size: 1.3em; line-height: 1; }
+
+	/* Banner global de error (unhandledrejection): fijo arriba de TODO, incluida
+	   la barra superior y cualquier pantalla — misma pieza para las 100%. */
+	.banner-global-err {
+		position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+		display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+		background: #2a1414; border-bottom: 1px solid var(--neg);
+		color: var(--text); padding: 10px 16px; font-size: 0.88rem;
+	}
+	.banner-global-err .err-x { color: var(--neg); font-size: 1.2em; line-height: 1; }
+	.banner-global-err p { margin: 0; flex: 1; min-width: 200px; }
+	.banner-global-acciones { display: flex; align-items: center; gap: 8px; }
+	.banner-global-cerrar {
+		background: none; border: none; color: var(--text-dim); cursor: pointer;
+		font-size: 1rem; line-height: 1; padding: 4px;
+	}
+	.banner-global-cerrar:hover { color: var(--text); }
+
 	.separador { display: flex; align-items: center; gap: 10px; color: var(--text-dim); font-size: 0.8rem; }
 	.separador::before, .separador::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 	.importar-b { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 9px; cursor: pointer; font-size: 0.9rem; }
