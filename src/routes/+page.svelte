@@ -370,8 +370,12 @@
     }
 
     async function guardarPresup(scid: number, valor: string) {
-        // Campo vacío = presupuesto 0 (comportamiento histórico de "borrar" el valor)
-        const monto = valor.trim() === '' ? 0 : parseNum(valor);
+        // Campo vacío = presupuesto 0 (comportamiento histórico de "borrar" el valor).
+        // El input está en MILES (consistencia visual con el resto de la tabla) -> se
+        // multiplica x1000 antes de guardar el monto real en pesos. parseNum ya soporta
+        // coma decimal, así que "45,5" sigue guardando $45.500 sin perder precisión.
+        const montoMil = valor.trim() === '' ? 0 : parseNum(valor);
+        const monto = montoMil * 1000;
         if (scid == null || !Number.isFinite(monto) || monto < 0) return;
         await query("INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto) VALUES (1, ?, 'default', ?) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto = excluded.monto", [scid, monto]);
         await cargar();
@@ -659,39 +663,47 @@
     </table>
     </div>
 
-    <h2>Detalle por subcategoría</h2>
+    <h2>Detalle por subcategoría · en miles</h2>
     <div class="tabla-scroll">
-    <table>
+    <table class="detalle">
         <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
             {#each grupos as g (g.cat)}
                 <tr class="cat"><td colspan="5">{g.cat}</td></tr>
                 {#each g.rows as f (f.scid ?? 'null')}
                     <tr>
-                        <td class="ind">{f.nombre}</td>
-                        <td class="num">{peso(f.n2)}</td>
-                        <td class="num">{peso(f.n1)}</td>
+                        <td class="ind">
+                            {#if f.scid != null && f.autoPresup && f.esAhorro}
+                                <a class="sub-link" href="/evolucion-finanzas?tab=capacidad" title="Se edita en Capacidad de ahorro, no acá.">{f.nombre}</a>
+                            {:else if f.scid != null && f.autoPresup}
+                                <a class="sub-link" href="/suscripciones" title="Se edita en Gastos, tab Recurrente, no acá.">{f.nombre}</a>
+                            {:else}
+                                {f.nombre}
+                            {/if}
+                        </td>
+                        <td class="num">{pesoMil(f.n2)}</td>
+                        <td class="num">{pesoMil(f.n1)}</td>
                         <td class="num">
                             {#if f.scid == null}
                                 —
                             {:else if f.autoPresup && f.esAhorro}
-                                <span class="auto-presup" title="Definido por tu meta de ahorro. Se edita en Capacidad de ahorro, no acá.">{formatNum(f.presup, 0)} <em>recurrente</em></span>
+                                <span class="auto-presup" title="Definido por tu meta de ahorro. Se edita en Capacidad de ahorro, no acá.">{formatNum(f.presup / 1000, 0)}</span>
                             {:else if f.autoPresup}
-                                <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup, 0)} <em>recurrente</em></span>
+                                <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup / 1000, 0)}</span>
                             {:else}
-                                <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup, 0) : ''} placeholder="—"
+                                <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup / 1000, 0) : ''} placeholder="—"
                                     onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
                             {/if}
                         </td>
-                        <td class="num real {claseEstado(f.estado)}" title={f.estado}>{peso(f.real)}</td>
+                        <td class="num real {claseEstado(f.estado)}" title={f.estado}>{pesoMil(f.real)}</td>
                     </tr>
                 {/each}
             {/each}
         </tbody>
         <tfoot>
             <tr><td><strong>Total general</strong></td>
-                <td class="num">{peso(totales.n2)}</td><td class="num">{peso(totales.n1)}</td>
-                <td class="num">{peso(totales.presup)}</td><td class="num">{peso(totales.real)}</td></tr>
+                <td class="num">{pesoMil(totales.n2)}</td><td class="num">{pesoMil(totales.n1)}</td>
+                <td class="num">{pesoMil(totales.presup)}</td><td class="num">{pesoMil(totales.real)}</td></tr>
         </tfoot>
     </table>
     </div>
@@ -727,7 +739,7 @@
     .disp-toggle .flecha { color: var(--text-dim); font-size: 0.8rem; width: 12px; display: inline-block; }
     .disp-toggle .disp-titulo { font-family: var(--font-display); font-size: 0.74rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
     .disp-toggle .disp-valor { margin-left: auto; font-family: var(--font-num); font-size: 1.35rem; font-weight: 300; color: var(--text); white-space: nowrap; }
-    .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .disp-tabla { width: 100%; border-collapse: collapse; font-size: 0.90rem; }
     .disp-tabla td { border: none !important; padding: 4px 2px; color: var(--text-dim); }
     .disp-tabla td.num { text-align: right; white-space: nowrap; }
     .disp-pie { display: flex; flex-direction: column; border-top: 1px solid var(--border); margin-top: 8px; }
@@ -761,14 +773,19 @@
        para legibilidad general de todas sus filas (no solo la de ahorro). */
     table.consol { font-size: 0.98rem; }
     table.consol th, table.consol td { padding: 7px 6px; }
+    /* Detalle por subcategoría: un poco menor que el consolidado (tiene una
+       columna más densa: badge "recurrente" + input editable), pero bien por
+       encima del tamaño base de tabla para que se lea igual de cómodo. */
+    table.detalle { font-size: 0.94rem; }
     tr.fila-gasto { background: var(--surface-2); }
     tr.fila-ahorro { background: var(--surface-3); }
     /* Azul + subrayado permanente (no solo hover): que se note a simple vista
        que el nombre de categoría es un link a su configuración (ej. Ahorro ->
        Capacidad de ahorro), sin afectar categorías sin vínculo (esas quedan
        en <strong> plano, fuera de esta clase). */
-    .consol-link { text-decoration: underline; color: var(--accent); }
-    .consol-link:hover strong { color: var(--accent); }
+    .consol-link { text-decoration: underline; color: #6f93c4; }
+    .consol-link:hover strong { color: #6f93c4; }
+    .sub-link { text-decoration: underline; color: #6f93c4; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
     table th:first-child, table td:first-child {
@@ -788,9 +805,8 @@
     .presubar.ok i { background: var(--pos); }
     .presubar.warn i { background: var(--warn); }
     .presubar.bad i { background: var(--neg); }
-    input.presup { width: 100%; max-width: 90px; text-align: right; padding: 3px 4px; box-sizing: border-box; }
-    .auto-presup { font-size: 0.82rem; color: var(--text-dim); white-space: nowrap; }
-    .auto-presup em { font-style: normal; font-size: 0.65rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 4px; margin-left: 3px; }
+    input.presup { width: 100%; max-width: 90px; text-align: right; padding: 3px 4px; box-sizing: border-box; font: inherit; }
+    .auto-presup { font-size: 1em; color: var(--text-dim); white-space: nowrap; }
     td.real { font-weight: 600; }
     td.real.ok { color: var(--pos); }
     td.real.warn { color: var(--warn); }
