@@ -29,6 +29,11 @@
 	// distingue causas, un solo mensaje genérico y una recarga completa como
 	// única vía de recuperación real.
 	let errorGlobal = $state('');
+	// true si el Reintentar del banner ya se probó hace <60s en este mismo
+	// arranque y volvió a colgarse: ahí se oculta el botón (ver onReintentarBanner
+	// / onRechazoNoAtrapado más abajo), porque un segundo reload en caliente no
+	// resuelve nada — hace falta el cierre real de la PWA.
+	let errorGlobalEscalado = $state(false);
 
 	// ===== Perfil / bienvenida =====
 	let perfilListo = $state(false);
@@ -202,7 +207,28 @@
 	// pantalla era ni qué estaba cargando.
 	function onRechazoNoAtrapado(e: PromiseRejectionEvent) {
 		console.error(e.reason);
+		// Escalada: si el Reintentar de este banner ya se tocó hace <60s (mismo
+		// contexto de navegación) y volvió a colgarse, un segundo reload no va a
+		// arreglar nada — se oculta el botón y queda solo la instrucción real
+		// (cerrar la PWA de verdad). sessionStorage se resetea solo al cerrar la
+		// PWA y reabrirla, así que la próxima sesión real vuelve a ofrecer Reintentar.
+		let reciente = false;
+		try {
+			const ts = sessionStorage.getItem('banner_reintento_ts');
+			reciente = ts != null && Date.now() - Number(ts) < 60000;
+		} catch { /* sessionStorage no disponible: no escala, se comporta como antes */ }
+		errorGlobalEscalado = reciente;
 		errorGlobal = 'Algo se colgó cargando datos. Cerrá la app por completo (no solo minimizarla) y volvé a abrirla.';
+	}
+
+	async function onReintentarBanner() {
+		// Mismo margen que onActualizarCotiz(): le da tiempo al navegador de
+		// liberar el handle del worker viejo antes de que el reload cree uno
+		// nuevo. Guarda el timestamp para que onRechazoNoAtrapado pueda escalar
+		// si este reload no soluciona nada y se cuelga de nuevo.
+		try { sessionStorage.setItem('banner_reintento_ts', String(Date.now())); } catch { /* no soportado */ }
+		await new Promise((r) => setTimeout(r, 400));
+		location.reload();
 	}
 
 	onMount(() => {
@@ -233,7 +259,9 @@
 		<span class="err-x">✗</span>
 		<p>{errorGlobal}</p>
 		<div class="banner-global-acciones">
-			<button class="crear" onclick={() => location.reload()}>Reintentar</button>
+			{#if !errorGlobalEscalado}
+				<button class="crear" onclick={onReintentarBanner}>Reintentar</button>
+			{/if}
 			<button class="banner-global-cerrar" onclick={() => (errorGlobal = '')} aria-label="Cerrar aviso">✕</button>
 		</div>
 	</div>

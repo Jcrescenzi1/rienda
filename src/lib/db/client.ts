@@ -39,6 +39,38 @@ function getWorker(): Worker {
   return worker;
 }
 
+// Liberación proactiva del worker en background sostenido. El VFS OPFS-SAHPool
+// que usa worker.ts exige lock exclusivo (una sola instancia puede tenerlo
+// abierto a la vez): si el sistema operativo congela o mata la pestaña
+// mientras el worker sigue "vivo" con el lock tomado, la próxima apertura se
+// cuelga esperando ese lock — es la causa de fondo del banner de error
+// global. Soltarlo nosotros mismos antes de que eso pase reduce la ventana en
+// la que puede ocurrir. Se usa `visibilitychange` (confiable en mobile) y NO
+// `pagehide` (no dispara en el escenario real de background + kill, según
+// MDN). Con debounce: no actúa en cambios de pantalla cortos (chequear otra
+// app, notificación) — solo en background sostenido de 5s+, que es donde el
+// SO puede llegar a evaluar descartar la pestaña. Si hay una query en vuelo
+// en ese momento se la deja terminar tranquila (no se fuerza el corte): es un
+// caso raro y cortarla a la fuerza generaría un error visible falso apenas se
+// vuelva a foreground; en el peor caso, si el SO igual mata la pestaña con
+// esa query en curso, el timeout de 15s y el banner ya cubren esa red.
+if (typeof document !== 'undefined') {
+  let backgroundTimer: ReturnType<typeof setTimeout> | null = null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      backgroundTimer = setTimeout(() => {
+        if (worker && pendientes.size === 0) {
+          worker.terminate();
+          worker = null;
+        }
+      }, 5000);
+    } else if (backgroundTimer) {
+      clearTimeout(backgroundTimer);
+      backgroundTimer = null;
+    }
+  });
+}
+
 // Registra una promesa pendiente con watchdog: si nadie la resuelve/rechaza
 // dentro de TIMEOUT_MS, se corta el worker y se avisa con un error claro.
 function encolarConTimeout(
