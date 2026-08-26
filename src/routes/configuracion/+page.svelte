@@ -68,7 +68,7 @@
 		`)) as any[];
 
 		subcategorias = (await query(`
-			SELECT sc.id, sc.nombre,
+			SELECT sc.id, sc.nombre, sc.es_meta_ahorro,
 				(SELECT COUNT(*) FROM mapeo_detalle m WHERE m.subcategoria_id = sc.id)
 				+ (SELECT COUNT(*) FROM gasto g WHERE g.subcategoria_id = sc.id) AS usos
 			FROM subcategoria sc WHERE sc.perfil_id=1 ORDER BY sc.nombre
@@ -163,6 +163,7 @@
 		catch(e:any){ if (esUnique(e)) flash('Ya existe esa subcategoría.'); else flashError(e); }
 	}
 	async function borrarSub(s:any){
+		if(s.es_meta_ahorro){ alert('No se puede eliminar — es tu subcategoría de meta de ahorro, vinculada a Capacidad de ahorro.'); return; }
 		if(s.usos>0){ alert(`No se puede eliminar "${s.nombre}": está usada en ${s.usos} regla(s)/gasto(s).`); return; }
 		if(!confirm(`¿Eliminar la subcategoría "${s.nombre}"?`)) return;
 		try {
@@ -349,7 +350,7 @@
 								<td class="acciones">
 									{#if editSubId !== s.id}
 										<button aria-label="Editar" class="lapiz" onclick={() => abrirEditSub(s)} title="Renombrar">✏</button>
-										<button aria-label="Eliminar" class="del" class:off={s.usos > 0} onclick={() => borrarSub(s)} title={s.usos > 0 ? 'Está en uso' : 'Eliminar'}>✕</button>
+										<button aria-label="Eliminar" class="del" class:off={s.usos > 0 || s.es_meta_ahorro} onclick={() => borrarSub(s)} title={s.es_meta_ahorro ? 'Es tu subcategoría de meta de ahorro' : s.usos > 0 ? 'Está en uso' : 'Eliminar'}>✕</button>
 									{/if}
 								</td>
 							</tr>

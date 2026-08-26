@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS subcategoria (
   perfil_id   INTEGER NOT NULL REFERENCES perfil(id),
   nombre      TEXT NOT NULL,
   activa      INTEGER NOT NULL DEFAULT 1,
+  es_meta_ahorro INTEGER NOT NULL DEFAULT 0 CHECK (es_meta_ahorro IN (0,1)),
   UNIQUE (perfil_id, nombre)
 );
 

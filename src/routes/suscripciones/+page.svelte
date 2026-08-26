@@ -150,6 +150,9 @@
 	// El presupuesto de cada subcat con pago fijo = suma de sus fijos (ARS, USD al
 	// MEP). Se marca auto=1 y NO se edita desde la tabla de presupuesto. Fuente
 	// unica de edicion: esta pantalla. Limpia los auto viejos en cada pasada.
+	// Excluye la subcategoría de meta de ahorro (es_meta_ahorro=1): su
+	// auto-presupuesto lo administra Home, no esta pantalla — si no se excluyera,
+	// el DELETE blanket de abajo lo borraría cada vez que se visita Suscripciones.
 	async function recalcPresupuestoFijos() {
 		const dol = await mepDelPeriodo();
 		const filas = (await query(`
@@ -166,13 +169,18 @@
 		// "edición" y disparar el aviso de backup solo por mirar la pantalla).
 		const deseado: Record<number, number> = {};
 		for (const [scid, monto] of Object.entries(sum)) deseado[Number(scid)] = Math.round(monto);
-		const actualRows = (await query('SELECT subcategoria_id AS scid, monto FROM presupuesto WHERE perfil_id=1 AND auto=1')) as any[];
+		const actualRows = (await query(`
+			SELECT subcategoria_id AS scid, monto FROM presupuesto
+			WHERE perfil_id=1 AND auto=1
+			AND subcategoria_id NOT IN (SELECT id FROM subcategoria WHERE perfil_id=1 AND es_meta_ahorro=1)`)) as any[];
 		const actual: Record<number, number> = {};
 		for (const r of actualRows) actual[r.scid] = Math.round(r.monto);
 		const mismas = Object.keys(deseado).length === Object.keys(actual).length
 			&& Object.keys(deseado).every((k) => actual[Number(k)] === deseado[Number(k)]);
 		if (mismas) return;
-		await query('DELETE FROM presupuesto WHERE perfil_id=1 AND auto=1');
+		await query(`
+			DELETE FROM presupuesto WHERE perfil_id=1 AND auto=1
+			AND subcategoria_id NOT IN (SELECT id FROM subcategoria WHERE perfil_id=1 AND es_meta_ahorro=1)`);
 		for (const [scid, monto] of Object.entries(deseado)) {
 			await query(
 				"INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto, auto) VALUES (1, ?, 'default', ?, 1) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto=excluded.monto, auto=1",

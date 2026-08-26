@@ -99,6 +99,14 @@ async function init() {
 		db.exec('ALTER TABLE categoria ADD COLUMN es_ahorro INTEGER NOT NULL DEFAULT 0');
 	}
 
+	// Columna es_meta_ahorro en subcategoria (0|1): marca la subcategoría cuyo
+	// presupuesto se autocompleta con la meta de ahorro (umbral% x ingresos
+	// regulares), calculada en Home. Mismo criterio que es_ahorro en categoria.
+	const subcols = db.exec({ sql: 'PRAGMA table_info(subcategoria)', rowMode: 'object', returnValue: 'resultRows' });
+	if (!subcols.some((c: any) => c.name === 'es_meta_ahorro')) {
+		db.exec('ALTER TABLE subcategoria ADD COLUMN es_meta_ahorro INTEGER NOT NULL DEFAULT 0');
+	}
+
 	// Columna modo_periodo en perfil (sueldo | calendario). Default 'sueldo'
 	// mantiene el comportamiento histórico para perfiles ya existentes.
 	const pcols = db.exec({ sql: 'PRAGMA table_info(perfil)', rowMode: 'object', returnValue: 'resultRows' });
@@ -280,6 +288,29 @@ async function init() {
 				db.exec({ sql: 'UPDATE categoria SET es_ahorro=1 WHERE id=?', bind: [yaExiste[0].id] });
 			} else {
 				db.exec("INSERT INTO categoria (perfil_id, nombre, es_ahorro) VALUES (1, 'Ahorro', 1)");
+			}
+		}
+
+		// Backfill de la subcategoría de Meta de ahorro (columna es_meta_ahorro).
+		// Idempotente: solo actúa si no hay ninguna subcategoría marcada
+		// es_meta_ahorro=1 para este perfil. A diferencia de la categoría Ahorro,
+		// NO se promueve ninguna subcategoría existente por uso (no se toca
+		// "Inversión" ni ninguna otra) — solo se reutiliza si YA existe una
+		// literalmente llamada "Meta ahorro" (choca con el UNIQUE perfil_id+nombre
+		// si no), si no, se crea nueva.
+		const rsma = db.exec({
+			sql: "SELECT COUNT(*) AS n FROM subcategoria WHERE perfil_id=1 AND es_meta_ahorro=1",
+			rowMode: 'object', returnValue: 'resultRows'
+		});
+		if (rsma[0].n === 0) {
+			const subYaExiste = db.exec({
+				sql: "SELECT id FROM subcategoria WHERE perfil_id=1 AND TRIM(nombre) = 'Meta ahorro' COLLATE NOCASE",
+				rowMode: 'object', returnValue: 'resultRows'
+			});
+			if (subYaExiste.length > 0) {
+				db.exec({ sql: 'UPDATE subcategoria SET es_meta_ahorro=1 WHERE id=?', bind: [subYaExiste[0].id] });
+			} else {
+				db.exec("INSERT INTO subcategoria (perfil_id, nombre, es_meta_ahorro) VALUES (1, 'Meta ahorro', 1)");
 			}
 		}
 	}

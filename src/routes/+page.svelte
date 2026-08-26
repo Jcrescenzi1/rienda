@@ -183,7 +183,7 @@
                      ) GROUP BY scid, categoria_id`
                   )
                 : Promise.resolve(null),
-            query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 AND activa=1'),
+            query('SELECT id, nombre, es_meta_ahorro FROM subcategoria WHERE perfil_id=1 AND activa=1'),
             query('SELECT id, nombre, es_ahorro FROM categoria WHERE perfil_id=1'),
             query("SELECT subcategoria_id, monto, auto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
             query(CUOTAS_MES, [n]),
@@ -207,6 +207,22 @@
         // (la más antigua conocida; no cambia con el auto-refresh).
         const dolarPrimero = dolarBase[0]?.valor ?? 1;
 
+        // R = ingresos regulares (Brief 1): tipo 'Sueldo' en Principal/Secundarios,
+        // en ARS (USD recurrente al MEP del día; USD puntual excluido, igual que
+        // ingresosMes). Excluye 'Otros', Extraordinarios ('Aciclico') y 'Desahorro'.
+        // Se calcula acá arriba (antes de presupMap/filas) porque la meta de
+        // ahorro derivada de este valor necesita existir como presupuesto real
+        // de la subcategoría "Meta ahorro" antes de armar filas/consolidado.
+        ingresosRegularesMes = ing.reduce((s: number, r: any) => {
+            if (r.tipo !== 'Sueldo') return s;
+            if (r.categoria !== 'Ingreso Principal' && r.categoria !== 'Ingresos Secundarios') return s;
+            if (r.moneda === 'USD' && !r.es_fijo) return s; // USD puntual: fuera del flujo ARS
+            return s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto);
+        }, 0);
+
+        // Umbral de ahorro sticky (meta). Sin valor guardado → default 0.10.
+        umbralAhorro = umbralRow?.[0]?.valor != null ? (parseFloat(umbralRow[0].valor) || 0.10) : 0.10;
+
         // categoría habitual por subcategoría (no depende del período -> se cachea)
         if (homeCatCache === null) {
             const hc: Record<string, number | null> = {};
@@ -229,6 +245,34 @@
         const presupMap: Record<number, number> = {};
         const autoMap: Record<number, boolean> = {};
         for (const p of presup) { presupMap[p.subcategoria_id] = p.monto; autoMap[p.subcategoria_id] = !!p.auto; }
+
+        // Meta de ahorro como presupuesto real de una subcategoría dedicada
+        // (es_meta_ahorro=1), para que "Total general" la sume sola, sin tocar
+        // ningún cálculo existente (Gasto real, Gasto total, umbral, fijos). El
+        // monto es el mismo que ya se mostraba pisado visualmente en la fila
+        // Ahorro del Consolidado: umbral% x ingresos regulares.
+        const subMetaAhorro = subs.find((s: any) => !!s.es_meta_ahorro);
+        if (subMetaAhorro) {
+            const metaAhorroScid = subMetaAhorro.id;
+            const metaAhorroDeseado = Math.round(
+                ingresosRegularesMes > 0 ? umbralAhorro * ingresosRegularesMes : 0
+            );
+            const filaActual = presup.find((p: any) => p.subcategoria_id === metaAhorroScid && !!p.auto);
+            const actualRedondeado = filaActual ? Math.round(filaActual.monto) : null;
+            // Diff antes de escribir (mismo patrón que recalcPresupuestoFijos en
+            // Suscripciones): no reescribe si no cambió, para no disparar el aviso
+            // de backup en cada carga de Home.
+            if (actualRedondeado !== metaAhorroDeseado) {
+                await query(
+                    "INSERT INTO presupuesto (perfil_id, subcategoria_id, periodo, monto, auto) VALUES (1, ?, 'default', ?, 1) ON CONFLICT(perfil_id, subcategoria_id, periodo) DO UPDATE SET monto=excluded.monto, auto=1",
+                    [metaAhorroScid, metaAhorroDeseado]
+                );
+            }
+            // Pisa en memoria para que se refleje en este mismo render, sin
+            // esperar una recarga (presup/presupMap ya se leyeron antes del write).
+            presupMap[metaAhorroScid] = metaAhorroDeseado;
+            autoMap[metaAhorroScid] = true;
+        }
 
         // Acumular por subcategoría, solo para los 3 períodos objetivo
         const key = (id: any) => (id == null ? 'null' : String(id));
@@ -258,10 +302,21 @@
             const k = key(p.subcategoria_id);
             acc[k] ??= { scid: p.subcategoria_id, n2: 0, n1: 0, real: 0 };
         }
+        // La subcategoría de meta de ahorro puede no tener gasto ni presupuesto
+        // previo (recién creada) -> se asegura su fila igual, para que aparezca
+        // en Detalle por subcategoría sin esperar un gasto.
+        if (subMetaAhorro) {
+            const k = key(subMetaAhorro.id);
+            acc[k] ??= { scid: subMetaAhorro.id, n2: 0, n1: 0, real: 0 };
+        }
 
         const filas = Object.values(acc).map((a: any) => {
+            const esMetaAhorro = subMetaAhorro != null && a.scid === subMetaAhorro.id;
             const presupVal = a.scid != null ? presupMap[a.scid] ?? 0 : 0;
-            const catId = homeCat[key(a.scid)];
+            // La subcategoría de meta de ahorro es fija: no depende de la
+            // inferencia de historial (homeCat) para caer en la categoría Ahorro
+            // ni de esAhorroCat — siempre se agrupa y suma como Ahorro.
+            const catId = esMetaAhorro ? (catAhorro?.id ?? homeCat[key(a.scid)]) : homeCat[key(a.scid)];
             return {
                 scid: a.scid,
                 nombre: a.scid == null ? '(sin subcategoría)' : nombreSub[a.scid] ?? '?',
@@ -272,7 +327,7 @@
                 // Categoría "habitual" de la subcategoría marcada como Ahorro: separa
                 // consumo real de plata apartada, sin tocar el resto de las métricas
                 // (esta fila sigue sumando igual a totales.real/consolidado).
-                esAhorro: catId != null && !!esAhorroCat[catId]
+                esAhorro: esMetaAhorro ? true : (catId != null && !!esAhorroCat[catId])
             };
         });
 
@@ -304,19 +359,6 @@
             0
         );
         ingresoUsdMes = ing.reduce((s: number, r: any) => (r.moneda === 'USD' && !r.es_fijo) ? s + r.monto : s, 0);
-
-        // R = ingresos regulares (Brief 1): tipo 'Sueldo' en Principal/Secundarios,
-        // en ARS (USD recurrente al MEP del día; USD puntual excluido, igual que
-        // ingresosMes). Excluye 'Otros', Extraordinarios ('Aciclico') y 'Desahorro'.
-        ingresosRegularesMes = ing.reduce((s: number, r: any) => {
-            if (r.tipo !== 'Sueldo') return s;
-            if (r.categoria !== 'Ingreso Principal' && r.categoria !== 'Ingresos Secundarios') return s;
-            if (r.moneda === 'USD' && !r.es_fijo) return s; // USD puntual: fuera del flujo ARS
-            return s + (r.moneda === 'USD' ? r.monto * (r.dolar_dia ?? dolarPrimero) : r.monto);
-        }, 0);
-
-        // Umbral de ahorro sticky (meta). Sin valor guardado → default 0.10.
-        umbralAhorro = umbralRow?.[0]?.valor != null ? (parseFloat(umbralRow[0].valor) || 0.10) : 0.10;
 
         // Reserva de crédito apartada para el mes visible (vacío = 0)
         reservaMes = resv[0]?.t ?? 0;
@@ -622,6 +664,8 @@
                         <td class="num">
                             {#if f.scid == null}
                                 —
+                            {:else if f.autoPresup && f.esAhorro}
+                                <span class="auto-presup" title="Definido por tu meta de ahorro. Se edita en Capacidad de ahorro, no acá.">{formatNum(f.presup, 0)} <em>recurrente</em></span>
                             {:else if f.autoPresup}
                                 <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup, 0)} <em>recurrente</em></span>
                             {:else}
