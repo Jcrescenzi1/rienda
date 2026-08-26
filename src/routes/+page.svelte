@@ -488,9 +488,19 @@
     // Semáforo de la categoría de ahorro: polaridad INVERTIDA vs una categoría de
     // gasto — verde si el ahorro real ALCANZA el target derivado, rojo si no llega,
     // neutro si no hay ingreso regular (no hay target y no se pinta rojo).
+    // Semáforo de ahorro: a diferencia del de gastos (techo, ver desvio()), la
+    // meta de ahorro es un piso — ahorrar de más nunca es malo, por eso no hay
+    // límite superior (>=90% ya es verde, y sigue siendo verde sin importar
+    // cuánto te pases para arriba). Cortes definidos con Julián: <50% de la
+    // meta = rojo, 50-90% = amarillo (intentaste, te quedaste corto), >=90% =
+    // verde. Sin ingreso regular cargado, no hay meta calculable -> 'none'.
     function claseAhorro(real: number): string {
         if (ingresosRegularesMes <= 0) return 'none';
-        return real >= metaAhorroMonto ? 'ok' : 'bad';
+        if (metaAhorroMonto <= 0) return 'none';
+        const pct = real / metaAhorroMonto;
+        if (pct >= 0.9) return 'ok';
+        if (pct >= 0.5) return 'warn';
+        return 'bad';
     }
     function tituloAhorro(real: number): string {
         if (ingresosRegularesMes <= 0) return 'Sin ingreso regular cargado — objetivo se edita en Capacidad de ahorro';
@@ -753,7 +763,11 @@
     table.consol th, table.consol td { padding: 7px 6px; }
     tr.fila-gasto { background: var(--surface-2); }
     tr.fila-ahorro { background: var(--surface-3); }
-    .consol-link { text-decoration: none; color: inherit; }
+    /* Azul + subrayado permanente (no solo hover): que se note a simple vista
+       que el nombre de categoría es un link a su configuración (ej. Ahorro ->
+       Capacidad de ahorro), sin afectar categorías sin vínculo (esas quedan
+       en <strong> plano, fuera de esta clase). */
+    .consol-link { text-decoration: underline; color: var(--accent); }
     .consol-link:hover strong { color: var(--accent); }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
