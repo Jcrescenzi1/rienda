@@ -4,7 +4,7 @@
 	import { setMeta } from '$lib/db/meta';
 	import { cargarModo, cargarCortes, crearAsignador, secuenciaPeriodos, type ModoPeriodo } from '$lib/periodo';
 	import { cargarIPC, fmtMoneda, type IPC } from '$lib/moneda';
-	import { mesActual, mesCorto } from '$lib/format';
+	import { mesActual, mesCorto, soloNum } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
 	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
@@ -14,7 +14,7 @@
 	let { nav }: { nav?: Snippet } = $props();
 
 	// Capacidad de ahorro: tasa de ahorro NETO / ingreso regular contra un objetivo
-	// editable, por MONEDA separada (ARS pesos reales, USD nominal, sin cruzar), a 6
+	// editable, por MONEDA separada (ARS pesos reales, USD nominal, sin cruzar), a 12
 	// períodos fijos. Hermana de Poder adquisitivo (marco fijo, sin toggle de moneda).
 	// Ahorro neto = ahorro bruto (categorías es_ahorro) − desahorro (categoría
 	// 'Desahorro'), neteado dentro de cada moneda. Depende del Brief 6.
@@ -35,6 +35,11 @@
 	// USD = clave propia. Default 0.10 (10%) para ambos.
 	let targetARS = $state(0.10);
 	let targetUSD = $state(0.10);
+
+	// Estado de edición inline de la tarjeta "Objetivo" (patrón .cardval/.cardedit),
+	// compartido por ambos bloques (ARS/USD) vía el snippet `bloque`.
+	let editObj = $state<'ARS' | 'USD' | null>(null);
+	let editObjVal = $state('');
 
 	onMount(async () => {
 		const [, cortes, ic, ah, des, reg, mARS, mUSD] = await Promise.all([
@@ -67,7 +72,7 @@
 
 	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
-	// Ventana FIJA: últimos 6 períodos del enumerador de la app (sin toggle).
+	// Ventana FIJA: últimos 12 períodos del enumerador de la app (sin toggle).
 	let periodosDato = $derived.by(() => {
 		const s = new Set<string>();
 		for (const g of ahorroRows) { const p = asignar(g.fecha); if (p) s.add(p); }
@@ -80,7 +85,7 @@
 			modo: modoPeriodo, cortePeriodos,
 			primerDato: periodosDato[0] ?? null, actual: mesActual(), anio: mesActual().slice(0, 4)
 		});
-		return seq.slice(-6);
+		return seq.slice(-12);
 	});
 
 	// Valor en la moneda pedida: ARS ajustado a pesos reales (IPC del mes del
@@ -114,7 +119,7 @@
 			else if (ratio >= 0.9) estado = 'ok';
 			else if (ratio >= 0.5) estado = 'warn';
 			else estado = 'bad';
-			return { periodo: p, sinDato: false, neto, ingReg, targetMonto, tasa, sinAhorro: ahBruto <= 0 && neto <= 0, estado };
+			return { periodo: p, sinDato: false, neto, ingReg, targetMonto, tasa, estado };
 		});
 	}
 
@@ -140,7 +145,7 @@
 	let resUSD = $derived(hayUSD ? resumen(serieUSD, targetUSD) : { m: 0, cumplidos: 0, tasaProm: 0, target: targetUSD });
 
 	// ===== Gráfico de barras (neto vs target, base cero, soporta negativo) =====
-	const W = 720, H = 300, P = { l: 56, r: 16, t: 18, b: 30 };
+	const W = 720, H = 450, P = { l: 56, r: 16, t: 18, b: 30 };
 	function chart(serie: ReturnType<typeof serieDe>) {
 		const withData = serie.filter((s) => !s.sinDato);
 		if (!withData.length) return null;
@@ -185,9 +190,6 @@
 		p = Math.max(0, Math.min(100, p)); targetUSD = p / 100; await setMeta('umbral_ahorro_usd', String(targetUSD));
 	}
 
-	// ¿Algún período con ingreso pero sin ahorro cargado? (nota "aún no cargaste ahorro")
-	let avisoSinAhorroARS = $derived(serieARS.some((s) => !s.sinDato && s.sinAhorro));
-	let avisoSinAhorroUSD = $derived(hayUSD && serieUSD.some((s) => !s.sinDato && s.sinAhorro));
 </script>
 
 <div class="titulo-guia">
@@ -205,22 +207,31 @@
 {:else if !ventana.length}
 	<p class="nota">Todavía no hay períodos con ingreso o ahorro cargado para mostrar.</p>
 {:else}
-	{#snippet bloque(titulo: string, mon: 'ARS' | 'USD', serie: ReturnType<typeof serieDe>, ch: ReturnType<typeof chart>, res: { m: number; cumplidos: number; tasaProm: number; target: number }, target: number, guardar: (v: string) => void, aviso: boolean)}
+	{#snippet bloque(titulo: string, mon: 'ARS' | 'USD', serie: ReturnType<typeof serieDe>, ch: ReturnType<typeof chart>, res: { m: number; cumplidos: number; tasaProm: number; target: number }, target: number, guardar: (v: string) => void)}
 		<div class="bloque">
 			<div class="bloque-head">
 				<h2>{titulo}</h2>
-				<label class="target" title="Objetivo de tasa de ahorro para {mon}">
-					Objetivo
-					<input type="number" min="0" max="100" step="1" value={Math.round(target * 100)} onchange={(e) => guardar(e.currentTarget.value)} />
-					<span>%</span>
-				</label>
 			</div>
+			<p class="nota">Expresado como % de tu ingreso regular.</p>
 			<div class="resumen">
 				<div class="card"><span>Meses cumplidos</span><strong>{res.cumplidos} de {res.m}</strong></div>
 				<div class="card"><span>Tasa promedio del rango</span><strong>{pctTasa(res.tasaProm)}</strong></div>
-				<div class="card"><span>Objetivo</span><strong>{pctTasa(target)}</strong></div>
+				<div class="card">
+					<span>% Objetivo</span>
+					{#if editObj === mon}
+						<div class="cardedit">
+							<input type="text" inputmode="decimal" use:soloNum bind:value={editObjVal} onkeydown={(e) => { if (e.key === 'Enter') { guardar(editObjVal); editObj = null; } }} />
+							<button aria-label="Guardar" class="okp" onclick={() => { guardar(editObjVal); editObj = null; }}>✓</button>
+							<button aria-label="Cancelar" class="cancp" onclick={() => (editObj = null)}>✕</button>
+						</div>
+					{:else}
+						<div class="cardval">
+							<strong>{pctTasa(target)}</strong>
+							<button aria-label="Editar" class="lapiz" onclick={() => { editObj = mon; editObjVal = String(Math.round(target * 100)); }} title="Editar objetivo para {mon}">✏</button>
+						</div>
+					{/if}
+				</div>
 			</div>
-			{#if aviso}<p class="alerta">Hay meses con ingreso pero sin ahorro cargado (tasa 0%).</p>{/if}
 			<div class="leyenda">
 				<span class="leg"><span class="sw ok"></span> ≥90% del objetivo</span>
 				<span class="leg"><span class="sw warn"></span> 50–90%</span>
@@ -258,10 +269,10 @@
 		</div>
 	{/snippet}
 
-	{@render bloque('Ahorro en pesos', 'ARS', serieARS, chartARS, resARS, targetARS, guardarTargetARS, avisoSinAhorroARS)}
+	{@render bloque('Ahorro en pesos', 'ARS', serieARS, chartARS, resARS, targetARS, guardarTargetARS)}
 
 	{#if hayUSD}
-		{@render bloque('Ahorro en dólares', 'USD', serieUSD, chartUSD, resUSD, targetUSD, guardarTargetUSD, avisoSinAhorroUSD)}
+		{@render bloque('Ahorro en dólares', 'USD', serieUSD, chartUSD, resUSD, targetUSD, guardarTargetUSD)}
 	{/if}
 
 	<NotaVisual objetivo="Cómo se calcula la tasa de ahorro">
@@ -275,9 +286,9 @@
 	h2 { font-size: 1.02rem; margin: 0; border-left: 3px solid var(--accent); padding-left: 12px; }
 	.bloque { margin-top: 22px; }
 	.bloque-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-	.target { display: inline-flex; align-items: baseline; gap: 5px; font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
-	.target input { width: 52px; text-align: right; padding: 3px 5px; font-size: 0.85rem; }
-	.alerta { font-size: 0.78rem; color: var(--warn); margin: 4px 0; }
+	.cardval { display: flex; align-items: center; gap: 6px; }
+	.cardedit { display: flex; align-items: center; gap: 4px; }
+	.cardedit input { width: 90px; padding: 3px 5px; font-size: 0.95rem; }
 	.leyenda { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 0.76rem; color: var(--text-dim); margin: 6px 0; }
 	.leg { display: inline-flex; align-items: center; gap: 5px; }
 	.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
@@ -286,9 +297,9 @@
 	.chart { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 	.grid { stroke: var(--border); stroke-width: 1; }
 	.zero { stroke: var(--text-dim); stroke-width: 1; }
-	.ylbl { font-size: 10px; fill: var(--text-dim); text-anchor: end; }
-	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
-	.vlbl { font-size: 10px; font-weight: 600; text-anchor: middle; }
+	.ylbl { font-size: 13px; fill: var(--text-dim); text-anchor: end; }
+	.xlbl { font-size: 13px; fill: var(--text-dim); text-anchor: middle; }
+	.vlbl { font-size: 13px; font-weight: 600; text-anchor: middle; }
 	.vlbl.ok { fill: var(--pos); } .vlbl.warn { fill: var(--warn); } .vlbl.bad { fill: var(--neg); }
 	.sdlbl { font-size: 9px; fill: var(--text-dim); text-anchor: middle; }
 	.bar.ok { fill: var(--pos); } .bar.warn { fill: var(--warn); } .bar.bad { fill: var(--neg); }
