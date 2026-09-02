@@ -6,26 +6,28 @@
 // broker). No hay plantilla estática ni CSVs de solo lectura: todo sale de la
 // base en el momento.
 // Reglas generales:
-//  - Las hojas vacías se saltean al importar: el usuario sube solo lo que quiere.
+//  - Las hojas vacías (o ausentes) se saltean al importar: el usuario sube solo lo que quiere.
 //  - Todo-o-nada por hoja: si una fila tiene error, esa hoja no se importa.
 //  - Categorías, subcategorías, tarjetas, cuentas y (en Activos) activos que no
 //    existan se crean solos. Renta y amortización es la excepción: el ticker
-//    tiene que existir de antes (ver importarRentaFilas).
+//    tiene que existir de antes (ver prepararRentaFilas).
+//
+// Auditoría previa a la carga (dos fases, sin `throw` para errores de
+// validación esperados — solo fallas técnicas reales siguen tirando excepción):
+//  - "Preparar": valida y chequea duplicados contra la base, NO escribe nada.
+//    Devuelve un diagnóstico por hoja + las filas ya validadas en memoria.
+//  - "Confirmar": toma lo que ya calculó "preparar" (no relee el archivo) y
+//    recién ahí inserta.
+// La UI (datos/+page.svelte + PopupAuditoria.svelte) le muestra al usuario el
+// diagnóstico completo antes de tocar la base, y decide si confirma según las
+// reglas de cada módulo (Finanzas: hoja por hoja independiente · Inversiones:
+// todo o nada, por la dependencia Activos → Renta).
 
 import { query, queryBatch } from './client';
 import { parseNum, formatNum, fechaISO } from '../format';
 
-export type ResultadoImport = { filas: number; creados: string[]; omitidas: number; cancelado?: boolean };
+export type ResultadoImport = { filas: number; creados: string[]; omitidas: number };
 
-// Si hay duplicadas, el usuario decide: importar solo las nuevas, o cancelar la hoja.
-// Devuelve true si hay que seguir adelante.
-function confirmarDuplicadas(hoja: string, criterio: string, omitidas: number, total: number, nuevas: number): boolean {
-	if (omitidas === 0 || nuevas === 0) return true; // nada que preguntar
-	return confirm(
-		`${hoja}: ${omitidas} de ${total} fila(s) ya parecen cargadas (${criterio}) y se omitirán.\n` +
-		`¿Importar las ${nuevas} restantes?`
-	);
-}
 type Fila = Record<string, string>;
 
 // Único punto de descarga de archivo (los dos módulos son .xlsx binarios).
@@ -36,6 +38,41 @@ export function descargarBlob(nombre: string, blob: Blob) {
 	a.download = nombre;
 	a.click();
 	URL.revokeObjectURL(url);
+}
+
+// ---------- Diagnóstico de auditoría (lo que ve la UI) ----------
+
+export type EstadoHoja = 'ok' | 'error' | 'no_encontrada';
+
+export type DiagnosticoHoja = {
+	hoja: string;
+	estado: EstadoHoja;
+	nuevas: number;
+	duplicadas: number;
+	numErrores: number;
+	mensajeError: string | null;
+};
+
+function diagnosticoOk(hoja: string, nuevas: number, duplicadas: number): DiagnosticoHoja {
+	return { hoja, estado: 'ok', nuevas, duplicadas, numErrores: 0, mensajeError: null };
+}
+
+function diagnosticoNoEncontrada(hoja: string): DiagnosticoHoja {
+	return { hoja, estado: 'no_encontrada', nuevas: 0, duplicadas: 0, numErrores: 0, mensajeError: null };
+}
+
+// Mismo texto que armaba lanzarErrores() antes de tirar la excepción (hasta 10
+// líneas + "y N más"), ahora como diagnóstico en vez de throw.
+function diagnosticoErrorValidacion(hoja: string, errores: string[]): DiagnosticoHoja {
+	const msj = errores.slice(0, 10).join('\n') + (errores.length > 10 ? `\n…y ${errores.length - 10} errores más.` : '');
+	return {
+		hoja,
+		estado: 'error',
+		nuevas: 0,
+		duplicadas: 0,
+		numErrores: errores.length,
+		mensajeError: 'No se importó nada de este bloque. Corregí y volvé a intentar:\n' + msj
+	};
 }
 
 // ---------- Helpers de validación ----------
@@ -55,12 +92,6 @@ function normPeriodo(s: string): string | null {
 	return null;
 }
 
-function lanzarErrores(errores: string[]) {
-	if (!errores.length) return;
-	const msj = errores.slice(0, 10).join('\n') + (errores.length > 10 ? `\n…y ${errores.length - 10} errores más.` : '');
-	throw new Error('No se importó nada de este bloque. Corregí y volvé a intentar:\n' + msj);
-}
-
 // get-or-create genérico por nombre. Devuelve mapa nombre(minúsculas) -> id.
 async function mapaPorNombre(tabla: string): Promise<Record<string, number>> {
 	const rows = (await query(`SELECT id, nombre FROM ${tabla} WHERE perfil_id=1`)) as any[];
@@ -69,18 +100,13 @@ async function mapaPorNombre(tabla: string): Promise<Record<string, number>> {
 	return m;
 }
 
-// ---------- Importar GASTOS ----------
+// ---------- GASTOS ----------
 
-export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImport> {
+type FilaOKGastos = { fecha: string; monto: number; moneda: string; cat: string; sub: string; detalle: string; medio: string; tarjeta: string; cuotas: number; mesInicio: string | null };
+
+export async function prepararGastosFilas(filas: Fila[]): Promise<{ diagnostico: DiagnosticoHoja; nuevos: FilaOKGastos[] }> {
 	const errores: string[] = [];
-	const creados: string[] = [];
-
-	const cats = await mapaPorNombre('categoria');
-	const subs = await mapaPorNombre('subcategoria');
-	const tarjetas = await mapaPorNombre('tarjeta');
-
-	type FilaOK = { fecha: string; monto: number; moneda: string; cat: string; sub: string; detalle: string; medio: string; tarjeta: string; cuotas: number; mesInicio: string | null };
-	const ok: FilaOK[] = [];
+	const ok: FilaOKGastos[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2; // número de línea en el archivo (1 = encabezado)
@@ -109,23 +135,30 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 		if (fecha && Number.isFinite(monto) && monto > 0)
 			ok.push({ fecha, monto, moneda, cat, sub: (f['subcategoria'] ?? '').trim(), detalle, medio, tarjeta, cuotas, mesInicio });
 	});
-	lanzarErrores(errores);
+
+	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Gastos', errores), nuevos: [] };
 
 	// Anti-duplicados: omite filas idénticas a gastos YA cargados en la base
 	// (misma fecha + monto + detalle). No compara entre filas del archivo:
 	// dos compras iguales el mismo día en tu planilla entran ambas.
 	const existentes = (await query('SELECT fecha, monto, detalle FROM gasto WHERE perfil_id=1')) as any[];
 	const setExist = new Set(existentes.map((g) => `${g.fecha}|${g.monto.toFixed(2)}|${g.detalle.toLowerCase()}`));
-	const total = ok.length;
 	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.monto.toFixed(2)}|${f.detalle.toLowerCase()}`));
-	const omitidas = total - nuevos.length;
-	if (!confirmarDuplicadas('Gastos', 'misma fecha, monto y detalle', omitidas, total, nuevos.length))
-		return { filas: 0, creados: [], omitidas, cancelado: true };
-	ok.length = 0;
-	ok.push(...nuevos);
+	const duplicadas = ok.length - nuevos.length;
+
+	return { diagnostico: diagnosticoOk('Gastos', nuevos.length, duplicadas), nuevos };
+}
+
+export async function confirmarGastosFilas(nuevos: FilaOKGastos[], duplicadas: number): Promise<ResultadoImport> {
+	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
+
+	const cats = await mapaPorNombre('categoria');
+	const subs = await mapaPorNombre('subcategoria');
+	const tarjetas = await mapaPorNombre('tarjeta');
+	const creados: string[] = [];
 
 	// Alta de catálogos faltantes (pocas filas: viajes individuales con RETURNING)
-	for (const f of ok) {
+	for (const f of nuevos) {
 		const ck = f.cat.toLowerCase();
 		if (!(ck in cats)) {
 			const r = (await query('INSERT INTO categoria (perfil_id, nombre) VALUES (1, ?) RETURNING id', [f.cat])) as any[];
@@ -149,7 +182,7 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 
 	// Lote: gastos + reglas del diccionario (detalle -> subcategoría, sin pisar las existentes)
 	const stmts: { sql: string; bind?: unknown[] }[] = [];
-	for (const f of ok) {
+	for (const f of nuevos) {
 		const scid = f.sub ? subs[f.sub.toLowerCase()] : null;
 		if (scid) stmts.push({ sql: 'INSERT OR IGNORE INTO mapeo_detalle (perfil_id, detalle, subcategoria_id) VALUES (1, ?, ?)', bind: [f.detalle, scid] });
 		if (f.medio === 'debito') {
@@ -165,17 +198,18 @@ export async function importarGastosFilas(filas: Fila[]): Promise<ResultadoImpor
 		}
 	}
 	await queryBatch(stmts);
-	return { filas: ok.length, creados, omitidas };
+	return { filas: nuevos.length, creados, omitidas: duplicadas };
 }
 
-// ---------- Importar INGRESOS ----------
+// ---------- INGRESOS ----------
 
 const CATS_INGRESO = ['Ingreso Principal', 'Ingresos Secundarios', 'Otros', 'Desahorro'];
 
-export async function importarIngresosFilas(filas: Fila[]): Promise<ResultadoImport> {
+type FilaOKIngresos = { fecha: string; monto: number; moneda: string; cat: string; tipo: string | null; detalle: string | null; periodo: string | null };
+
+export async function prepararIngresosFilas(filas: Fila[]): Promise<{ diagnostico: DiagnosticoHoja; nuevos: FilaOKIngresos[] }> {
 	const errores: string[] = [];
-	type FilaOK = { fecha: string; monto: number; moneda: string; cat: string; tipo: string | null; detalle: string | null; periodo: string | null };
-	const ok: FilaOK[] = [];
+	const ok: FilaOKIngresos[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2;
@@ -209,42 +243,51 @@ export async function importarIngresosFilas(filas: Fila[]): Promise<ResultadoImp
 			ok.push({ fecha, monto, moneda, cat, tipo, detalle: (f['detalle'] ?? '').trim() || null, periodo });
 		}
 	});
-	lanzarErrores(errores);
+
+	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Ingresos', errores), nuevos: [] };
 
 	// Anti-duplicados: omite filas idénticas a ingresos ya cargados
 	// (misma fecha + monto + categoría).
 	const existentes = (await query('SELECT fecha, monto, categoria FROM ingreso WHERE perfil_id=1')) as any[];
 	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.monto.toFixed(2)}|${r.categoria}`));
 	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.monto.toFixed(2)}|${f.cat}`));
-	const omitidas = ok.length - nuevos.length;
-	if (!confirmarDuplicadas('Ingresos', 'misma fecha, monto y categoría', omitidas, ok.length, nuevos.length))
-		return { filas: 0, creados: [], omitidas, cancelado: true };
+	const duplicadas = ok.length - nuevos.length;
 
+	return { diagnostico: diagnosticoOk('Ingresos', nuevos.length, duplicadas), nuevos };
+}
+
+export async function confirmarIngresosFilas(nuevos: FilaOKIngresos[], duplicadas: number): Promise<ResultadoImport> {
+	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 	const stmts = nuevos.map((f) => ({
 		sql: 'INSERT INTO ingreso (perfil_id,fecha,monto,moneda,categoria,tipo,detalle,periodo) VALUES (1,?,?,?,?,?,?,?)',
 		bind: [f.fecha, f.monto, f.moneda, f.cat, f.tipo, f.detalle, f.periodo]
 	}));
 	await queryBatch(stmts);
-	return { filas: nuevos.length, creados: [], omitidas };
+	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
 
-// ---------- Importar INVERSIONES ----------
+// ---------- ACTIVOS (compra/venta) ----------
 
 const TIPOS_ACTIVO = ['Bono', 'ON', 'FCI', 'Accion', 'CEDEAR', 'Indice'];
 const RENTAS = ['Fija', 'Mixta', 'Variable', 'Liquido'];
 
-export async function importarInversionesFilas(filas: Fila[]): Promise<ResultadoImport> {
+type FilaOKActivos = { fecha: string; operacion: string; ticker: string; nombre: string; tipo: string; renta: string; moneda: string; cuenta: string; unidades: number; monto: number; vd: number | null };
+
+// tickersNuevos: tickers que ESTA hoja va a crear si se confirma (post-filtro
+// de duplicados). Se lo pasamos a prepararRentaFilas para que los trate como
+// existentes al validar — si no, el chequeo de existencia de Renta fallaría
+// para un ticker que recién nace en la hoja Activos de este mismo archivo
+// (hoy funciona porque Activos se inserta antes que Renta; acá "preparar"
+// corre las dos hojas sin haber escrito nada todavía).
+export async function prepararActivosFilas(filas: Fila[]): Promise<{ diagnostico: DiagnosticoHoja; nuevos: FilaOKActivos[]; tickersNuevos: string[] }> {
 	const errores: string[] = [];
-	const creados: string[] = [];
 
-	// Activos existentes por ticker
-	const activos = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
 	const porTicker: Record<string, number> = {};
-	for (const a of activos) porTicker[a.ticker.toLowerCase()] = a.id;
-	const cuentas = await mapaPorNombre('cuenta_inversion');
+	for (const a of activosRows) porTicker[a.ticker.toLowerCase()] = a.id;
+	const declaradosNuevos = new Set<string>();
 
-	type FilaOK = { fecha: string; operacion: string; ticker: string; nombre: string; tipo: string; renta: string; moneda: string; cuenta: string; unidades: number; monto: number; vd: number | null };
-	const ok: FilaOK[] = [];
+	const ok: FilaOKActivos[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2;
@@ -275,10 +318,12 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 			if (moneda !== 'ARS' && moneda !== 'USD') errores.push(`Línea ${n}: ticker nuevo "${ticker}" necesita moneda ARS o USD.`);
 			// Lo registramos como "visto" para no exigir datos en las filas siguientes
 			porTicker[ticker.toLowerCase()] = -1;
+			declaradosNuevos.add(ticker.toLowerCase());
 		}
 		ok.push({ fecha: fecha ?? '', operacion: operacion ?? '', ticker, nombre: (f['nombre'] ?? '').trim() || ticker, tipo, renta, moneda, cuenta, unidades, monto, vd });
 	});
-	lanzarErrores(errores);
+
+	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Activos', errores), nuevos: [], tickersNuevos: [] };
 
 	// Anti-duplicados: omite filas idénticas a operaciones ya cargadas
 	// (misma fecha + operación + ticker + unidades).
@@ -286,22 +331,34 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 		'SELECT t.fecha, t.operacion, a.ticker, t.unidades FROM transaccion t JOIN activo a ON a.id = t.activo_id WHERE t.perfil_id=1'
 	)) as any[];
 	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.operacion}|${r.ticker.toLowerCase()}|${r.unidades.toFixed(4)}`));
-	const nuevosInv = ok.filter((f) => !setExist.has(`${f.fecha}|${f.operacion}|${f.ticker.toLowerCase()}|${f.unidades.toFixed(4)}`));
-	const omitidas = ok.length - nuevosInv.length;
-	if (!confirmarDuplicadas('Inversiones', 'misma fecha, operación, ticker y unidades', omitidas, ok.length, nuevosInv.length))
-		return { filas: 0, creados: [], omitidas, cancelado: true };
-	ok.length = 0;
-	ok.push(...nuevosInv);
+	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.operacion}|${f.ticker.toLowerCase()}|${f.unidades.toFixed(4)}`));
+	const duplicadas = ok.length - nuevos.length;
+
+	// Si TODAS las filas de un ticker declarado nuevo terminaron siendo
+	// duplicadas, ese ticker no se va a crear (mismo criterio que hoy).
+	const tickersNuevos = [...new Set(nuevos.filter((f) => declaradosNuevos.has(f.ticker.toLowerCase())).map((f) => f.ticker.toLowerCase()))];
+
+	return { diagnostico: diagnosticoOk('Activos', nuevos.length, duplicadas), nuevos, tickersNuevos };
+}
+
+export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas: number): Promise<ResultadoImport> {
+	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
+
+	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const porTicker: Record<string, number> = {};
+	for (const a of activosRows) porTicker[a.ticker.toLowerCase()] = a.id;
+	const cuentas = await mapaPorNombre('cuenta_inversion');
+	const creados: string[] = [];
 
 	// Alta de cuentas y activos nuevos
-	for (const f of ok) {
+	for (const f of nuevos) {
 		const ck = f.cuenta.toLowerCase();
 		if (!(ck in cuentas)) {
 			const r = (await query("INSERT INTO cuenta_inversion (perfil_id, nombre, tipo) VALUES (1, ?, 'broker') RETURNING id", [f.cuenta])) as any[];
 			cuentas[ck] = r[0].id; creados.push(`cuenta "${f.cuenta}"`);
 		}
 		const tk = f.ticker.toLowerCase();
-		if (porTicker[tk] === -1) {
+		if (!(tk in porTicker)) {
 			const r = (await query('INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda) VALUES (1,?,?,?,?,?) RETURNING id',
 				[f.ticker, f.nombre, f.tipo, f.renta, f.moneda])) as any[];
 			porTicker[tk] = r[0].id; creados.push(`activo "${f.ticker}"`);
@@ -309,7 +366,7 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 	}
 
 	// Lote de transacciones (histórico: sin efecto caja, la liquidez se ancla a mano)
-	const stmts = ok.map((f) => ({
+	const stmts = nuevos.map((f) => ({
 		sql: 'INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar) VALUES (1,?,?,?,?,?,?,?)',
 		bind: [porTicker[f.ticker.toLowerCase()], cuentas[f.cuenta.toLowerCase()], f.fecha, f.operacion, f.unidades, f.monto / f.unidades, f.vd]
 	}));
@@ -317,8 +374,8 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 
 	// Actualiza el precio de mercado de cada activo con su operación MÁS NUEVA,
 	// solo si es más nueva que la última actualización registrada.
-	const ultPorActivo: Record<string, FilaOK> = {};
-	for (const f of ok) {
+	const ultPorActivo: Record<string, FilaOKActivos> = {};
+	for (const f of nuevos) {
 		const k = f.ticker.toLowerCase();
 		if (!ultPorActivo[k] || f.fecha > ultPorActivo[k].fecha) ultPorActivo[k] = f;
 	}
@@ -331,25 +388,28 @@ export async function importarInversionesFilas(filas: Fila[]): Promise<Resultado
 		}
 	}
 
-	return { filas: ok.length, creados, omitidas };
+	return { filas: nuevos.length, creados, omitidas: duplicadas };
 }
 
-// ---------- Importar RENTA Y AMORTIZACIÓN ----------
+// ---------- RENTA Y AMORTIZACIÓN ----------
 
-// A diferencia de importarInversionesFilas, acá el ticker NO se crea solo: la
-// renta/amortización es un cobro sobre un activo que ya existe en la cartera
-// (nace de Compra/Venta). Un ticker que no matchea es un error de tipeo o un
-// activo que falta cargar antes — mejor cortar duro que inventar el activo con
-// datos que esta hoja ni siquiera trae completos (falta tipo).
-export async function importarRentaFilas(filas: Fila[]): Promise<ResultadoImport> {
+// A diferencia de Activos, acá el ticker NO se crea solo: la renta/amortización
+// es un cobro sobre un activo que ya existe en la cartera (nace de Compra/Venta).
+// Un ticker que no matchea es un error de tipeo o un activo que falta cargar
+// antes — mejor cortar duro que inventar el activo con datos que esta hoja ni
+// siquiera trae completos (falta tipo).
+// tickersPendientes: tickers que la hoja Activos de este mismo import va a
+// crear (ver prepararActivosFilas) — se tratan como existentes acá.
+type FilaOKRenta = { fecha: string; ticker: string; moneda: string; monto_renta: number; monto_amort: number; vd: number | null };
+
+export async function prepararRentaFilas(filas: Fila[], tickersPendientes: string[] = []): Promise<{ diagnostico: DiagnosticoHoja; nuevos: FilaOKRenta[] }> {
 	const errores: string[] = [];
 
-	const activos = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
-	const porTicker: Record<string, number> = {};
-	for (const a of activos) porTicker[a.ticker.toLowerCase()] = a.id;
+	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const existeTicker = new Set<string>(activosRows.map((a) => a.ticker.toLowerCase()));
+	for (const t of tickersPendientes) existeTicker.add(t);
 
-	type FilaOK = { fecha: string; ticker: string; moneda: string; monto_renta: number; monto_amort: number; vd: number | null };
-	const ok: FilaOK[] = [];
+	const ok: FilaOKRenta[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2;
@@ -362,18 +422,19 @@ export async function importarRentaFilas(filas: Fila[]): Promise<ResultadoImport
 
 		if (!fecha) errores.push(`Línea ${n}: fecha inválida "${f['fecha']}".`);
 		if (!ticker) errores.push(`Línea ${n}: falta el ticker.`);
-		else if (!(ticker.toLowerCase() in porTicker)) errores.push(`Línea ${n}: el ticker "${ticker}" no existe en tu catálogo de activos — cargalo primero en Mercado.`);
+		else if (!existeTicker.has(ticker.toLowerCase())) errores.push(`Línea ${n}: el ticker "${ticker}" no existe en tu catálogo de activos — cargalo primero en Mercado.`);
 		if (moneda !== 'ARS' && moneda !== 'USD') errores.push(`Línea ${n}: moneda "${f['moneda']}" (solo ARS o USD).`);
 		if (!Number.isFinite(renta) || renta < 0) errores.push(`Línea ${n}: monto_renta inválido "${f['monto_renta']}".`);
 		if (!Number.isFinite(amort) || amort < 0) errores.push(`Línea ${n}: monto_amort inválido "${f['monto_amort']}".`);
 		if (Number.isFinite(renta) && Number.isFinite(amort) && renta + amort <= 0) errores.push(`Línea ${n}: cargá al menos un monto (renta o amortización).`);
 		if (vd !== null && (!Number.isFinite(vd) || vd <= 0)) errores.push(`Línea ${n}: valor_dolar inválido "${f['valor_dolar']}".`);
 
-		if (fecha && ticker && ticker.toLowerCase() in porTicker && (moneda === 'ARS' || moneda === 'USD') &&
+		if (fecha && ticker && existeTicker.has(ticker.toLowerCase()) && (moneda === 'ARS' || moneda === 'USD') &&
 			Number.isFinite(renta) && renta >= 0 && Number.isFinite(amort) && amort >= 0 && renta + amort > 0)
 			ok.push({ fecha, ticker, moneda, monto_renta: renta, monto_amort: amort, vd });
 	});
-	lanzarErrores(errores);
+
+	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Renta y amortización', errores), nuevos: [] };
 
 	// Anti-duplicados: misma fecha + ticker + montos ya cargados.
 	const existentes = (await query(
@@ -381,19 +442,29 @@ export async function importarRentaFilas(filas: Fila[]): Promise<ResultadoImport
 	)) as any[];
 	const setExist = new Set(existentes.map((r) => `${r.fecha}|${r.ticker.toLowerCase()}|${r.monto_renta.toFixed(2)}|${r.monto_amort.toFixed(2)}`));
 	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.ticker.toLowerCase()}|${f.monto_renta.toFixed(2)}|${f.monto_amort.toFixed(2)}`));
-	const omitidas = ok.length - nuevos.length;
-	if (!confirmarDuplicadas('Renta y amortización', 'misma fecha, ticker y montos', omitidas, ok.length, nuevos.length))
-		return { filas: 0, creados: [], omitidas, cancelado: true };
+	const duplicadas = ok.length - nuevos.length;
+
+	return { diagnostico: diagnosticoOk('Renta y amortización', nuevos.length, duplicadas), nuevos };
+}
+
+export async function confirmarRentaFilas(nuevos: FilaOKRenta[], duplicadas: number): Promise<ResultadoImport> {
+	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
+
+	// Se relee acá (no en preparar): para cuando esto corre, si había un ticker
+	// nuevo en Activos, Activos ya se confirmó antes (orden Activos → Renta).
+	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const porTicker: Record<string, number> = {};
+	for (const a of activosRows) porTicker[a.ticker.toLowerCase()] = a.id;
 
 	const stmts = nuevos.map((f) => ({
 		sql: 'INSERT INTO renta_activo (perfil_id,activo_id,fecha,moneda,monto_renta,monto_amort,valor_dolar) VALUES (1,?,?,?,?,?,?)',
 		bind: [porTicker[f.ticker.toLowerCase()], f.fecha, f.moneda, f.monto_renta, f.monto_amort, f.vd]
 	}));
 	await queryBatch(stmts);
-	return { filas: nuevos.length, creados: [], omitidas };
+	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
 
-// ---------- Importar CAJA ----------
+// ---------- CAJA ----------
 
 const ACCIONES_CAJA = ['Ingreso', 'Retiro', 'Convertir'];
 
@@ -404,10 +475,11 @@ const ACCIONES_CAJA = ['Ingreso', 'Retiro', 'Convertir'];
 // detalle de qué grupo quedó a medias — insertar solo una pata dejaría una
 // conversión que no cierra (plata que "desaparece" de una moneda sin aparecer
 // en la otra).
-export async function importarCajaFilas(filas: Fila[]): Promise<ResultadoImport> {
+type FilaOKCaja = { fecha: string; accion: string; moneda: string; monto: number; grupo: string | null; nota: string | null };
+
+export async function prepararCajaFilas(filas: Fila[]): Promise<{ diagnostico: DiagnosticoHoja; nuevos: FilaOKCaja[] }> {
 	const errores: string[] = [];
-	type FilaOK = { fecha: string; accion: string; moneda: string; monto: number; grupo: string | null; nota: string | null };
-	const ok: FilaOK[] = [];
+	const ok: FilaOKCaja[] = [];
 
 	filas.forEach((f, i) => {
 		const n = i + 2;
@@ -427,7 +499,8 @@ export async function importarCajaFilas(filas: Fila[]): Promise<ResultadoImport>
 		if (fecha && ACCIONES_CAJA.includes(accion) && (moneda === 'ARS' || moneda === 'USD') && Number.isFinite(monto) && monto !== 0 && (accion !== 'Convertir' || grupo))
 			ok.push({ fecha, accion, moneda, monto, grupo, nota });
 	});
-	lanzarErrores(errores);
+
+	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Caja', errores), nuevos: [] };
 
 	// Anti-duplicados: misma fecha + acción + moneda + monto + grupo ya cargada
 	// (el grupo entra a la clave para no confundir dos conversiones distintas
@@ -437,13 +510,12 @@ export async function importarCajaFilas(filas: Fila[]): Promise<ResultadoImport>
 		`${r.fecha}|${r.accion}|${r.moneda}|${r.monto.toFixed(2)}|${r.grupo ?? ''}`;
 	const setExist = new Set(existentes.map(clave));
 	const nuevos = ok.filter((f) => !setExist.has(clave(f)));
-	const omitidas = ok.length - nuevos.length;
-	if (!confirmarDuplicadas('Caja', 'misma fecha, acción, moneda, monto y grupo', omitidas, ok.length, nuevos.length))
-		return { filas: 0, creados: [], omitidas, cancelado: true };
+	const duplicadas = ok.length - nuevos.length;
 
 	// Chequeo de pares: por cada grupo de una fila Convertir nueva, cuenta
 	// cuántas patas hay en total (ya guardadas en la base + las nuevas de este
-	// import). Si no da exactamente 2, esa conversión está incompleta.
+	// import). Si no da exactamente 2, esa conversión está incompleta —
+	// bloquea la hoja entera (era un throw, ahora es diagnóstico de error).
 	const gruposNuevos = [...new Set(nuevos.filter((f) => f.accion === 'Convertir' && f.grupo).map((f) => f.grupo as string))];
 	if (gruposNuevos.length) {
 		const enBase = (await query(
@@ -462,19 +534,34 @@ export async function importarCajaFilas(filas: Fila[]): Promise<ResultadoImport>
 			}
 		}
 		if (incompletos.length) {
-			throw new Error('No se importó la hoja Caja: hay conversiones incompletas.\n' + incompletos.join('\n'));
+			return {
+				diagnostico: {
+					hoja: 'Caja',
+					estado: 'error',
+					nuevas: 0,
+					duplicadas: 0,
+					numErrores: incompletos.length,
+					mensajeError: 'No se importó la hoja Caja: hay conversiones incompletas.\n' + incompletos.join('\n')
+				},
+				nuevos: []
+			};
 		}
 	}
 
+	return { diagnostico: diagnosticoOk('Caja', nuevos.length, duplicadas), nuevos };
+}
+
+export async function confirmarCajaFilas(nuevos: FilaOKCaja[], duplicadas: number): Promise<ResultadoImport> {
+	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 	const stmts = nuevos.map((f) => ({
 		sql: 'INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo,nota) VALUES (1,?,?,?,?,?,?)',
 		bind: [f.fecha, f.accion, f.moneda, f.monto, f.grupo, f.nota]
 	}));
 	await queryBatch(stmts);
-	return { filas: nuevos.length, creados: [], omitidas };
+	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
 
-// ---------- Importar EXCEL único (hojas Gastos / Ingresos / Inversiones) ----------
+// ---------- Excel: lectura común ----------
 
 // Normaliza una celda de Excel a string compatible con los validadores:
 // Date -> 'yyyy-mm-dd' · número -> coma decimal (formato AR) · resto -> texto.
@@ -485,9 +572,9 @@ function celdaATexto(v: any): string {
 	return String(v).trim();
 }
 
-// Una hoja de un workbook ya leído -> filas normalizadas (misma limpieza que
-// usaba el importador único de antes): claves en minúscula/trim, celdas a
-// texto, filas 100% vacías descartadas.
+// Una hoja de un workbook ya leído -> filas normalizadas: claves en
+// minúscula/trim, celdas a texto, filas 100% vacías descartadas. Si la hoja
+// no existe en el archivo, devuelve [] (mismo trato que "vino vacía").
 function hojaAFilas(XLSX: typeof import('xlsx'), wb: import('xlsx').WorkBook, nombre: string): Fila[] {
 	const ws = wb.Sheets[nombre];
 	if (!ws) return [];
@@ -501,69 +588,112 @@ function hojaAFilas(XLSX: typeof import('xlsx'), wb: import('xlsx').WorkBook, no
 		.filter((f) => Object.values(f).some((v) => v !== ''));
 }
 
-// Motor común de importación multi-hoja: cada módulo (Finanzas, Inversiones)
-// arma su propio .xlsx de carga/descarga con un subconjunto de hojas, pero el
-// recorrido — leer hoja, importar, resumir, cortar todo-o-nada por hoja con el
-// error de esa hoja nombrado — es el mismo para las dos.
-async function importarHojas(
-	file: File,
-	hojas: [string, (filas: Fila[]) => Promise<ResultadoImport>][],
-	nombreModulo: string
-): Promise<string> {
+// ---------- FINANZAS: preparar / confirmar ----------
+
+export type ReporteFinanzas = {
+	gastos: { diagnostico: DiagnosticoHoja; nuevos: FilaOKGastos[] };
+	ingresos: { diagnostico: DiagnosticoHoja; nuevos: FilaOKIngresos[] };
+};
+
+export async function prepararFinanzasXLSX(file: File): Promise<ReporteFinanzas> {
 	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
 	const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
 
+	const filasGastos = hojaAFilas(XLSX, wb, 'Gastos');
+	const filasIngresos = hojaAFilas(XLSX, wb, 'Ingresos');
+
+	const gastos = filasGastos.length ? await prepararGastosFilas(filasGastos) : { diagnostico: diagnosticoNoEncontrada('Gastos'), nuevos: [] };
+	const ingresos = filasIngresos.length ? await prepararIngresosFilas(filasIngresos) : { diagnostico: diagnosticoNoEncontrada('Ingresos'), nuevos: [] };
+
+	return { gastos, ingresos };
+}
+
+function formatResumen(nombre: string, res: ResultadoImport): string {
+	return `${nombre}: ${res.filas} fila(s)` +
+		(res.omitidas ? ` · ${res.omitidas} omitida(s) por duplicado` : '') +
+		(res.creados.length ? ` · creados: ${res.creados.join(', ')}` : '');
+}
+
+// Confirma cada hoja en estado 'ok' de forma independiente: si Gastos tiene
+// error e Ingresos no, Ingresos se carga igual.
+export async function confirmarFinanzasXLSX(reporte: ReporteFinanzas): Promise<string> {
 	const partes: string[] = [];
-	for (const [nombre, importar] of hojas) {
-		const filas = hojaAFilas(XLSX, wb, nombre);
-		if (!filas.length) continue;
-		try {
-			const res = await importar(filas);
-			if (res.cancelado) {
-				partes.push(`${nombre}: cancelada por vos (${res.omitidas} duplicadas detectadas)`);
-				continue;
-			}
-			partes.push(
-				`${nombre}: ${res.filas} fila(s)` +
-				(res.omitidas ? ` · ${res.omitidas} omitida(s) por duplicado` : '') +
-				(res.creados.length ? ` · creados: ${res.creados.join(', ')}` : '')
-			);
-		} catch (err: any) {
-			const previo = partes.length ? 'Ya importado: ' + partes.join(' | ') + '\n\n' : '';
-			throw new Error(previo + `Hoja ${nombre}: ` + (err?.message ?? String(err)));
-		}
+	if (reporte.gastos.diagnostico.estado === 'ok') {
+		const r = await confirmarGastosFilas(reporte.gastos.nuevos, reporte.gastos.diagnostico.duplicadas);
+		partes.push(formatResumen('Gastos', r));
 	}
-	if (!partes.length) throw new Error(`El Excel no tiene filas de datos en las hojas de ${nombreModulo}.`);
+	if (reporte.ingresos.diagnostico.estado === 'ok') {
+		const r = await confirmarIngresosFilas(reporte.ingresos.nuevos, reporte.ingresos.diagnostico.duplicadas);
+		partes.push(formatResumen('Ingresos', r));
+	}
 	return partes.join('\n');
 }
 
-export async function importarFinanzasXLSX(file: File): Promise<string> {
-	return importarHojas(
-		file,
-		[
-			['Gastos', importarGastosFilas],
-			['Ingresos', importarIngresosFilas]
-		],
-		'Finanzas (Gastos / Ingresos)'
-	);
+// ---------- INVERSIONES: preparar / confirmar ----------
+
+export type ReporteInversiones = {
+	activos: { diagnostico: DiagnosticoHoja; nuevos: FilaOKActivos[] };
+	renta: { diagnostico: DiagnosticoHoja; nuevos: FilaOKRenta[] };
+	caja: { diagnostico: DiagnosticoHoja; nuevos: FilaOKCaja[] };
+};
+
+// Preparar es secuencial (Activos → Renta) para poder pasarle a Renta los
+// tickers que Activos va a crear — ver el comentario en prepararActivosFilas.
+export async function prepararInversionesXLSX(file: File): Promise<ReporteInversiones> {
+	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
+	const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+
+	const filasActivos = hojaAFilas(XLSX, wb, 'Activos');
+	const filasRenta = hojaAFilas(XLSX, wb, 'Renta y amortización');
+	const filasCaja = hojaAFilas(XLSX, wb, 'Caja');
+
+	const prepActivos = filasActivos.length
+		? await prepararActivosFilas(filasActivos)
+		: { diagnostico: diagnosticoNoEncontrada('Activos'), nuevos: [] as FilaOKActivos[], tickersNuevos: [] as string[] };
+
+	const renta = filasRenta.length
+		? await prepararRentaFilas(filasRenta, prepActivos.tickersNuevos)
+		: { diagnostico: diagnosticoNoEncontrada('Renta y amortización'), nuevos: [] as FilaOKRenta[] };
+
+	const caja = filasCaja.length
+		? await prepararCajaFilas(filasCaja)
+		: { diagnostico: diagnosticoNoEncontrada('Caja'), nuevos: [] as FilaOKCaja[] };
+
+	return {
+		activos: { diagnostico: prepActivos.diagnostico, nuevos: prepActivos.nuevos },
+		renta,
+		caja
+	};
 }
 
-export async function importarInversionesXLSX(file: File): Promise<string> {
-	return importarHojas(
-		file,
-		[
-			['Activos', importarInversionesFilas],
-			['Renta y amortización', importarRentaFilas],
-			['Caja', importarCajaFilas]
-		],
-		'Inversiones (Activos / Renta y amortización / Caja)'
-	);
+// Todo o nada por archivo (dependencia Activos → Renta): si cualquier hoja
+// tiene estado 'error' no se confirma ninguna. Una hoja 'no_encontrada' (sin
+// datos) no bloquea a las demás. Si ninguna tiene error, se confirman en
+// orden Activos → Renta y amortización → Caja, igual que hoy.
+export async function confirmarInversionesXLSX(reporte: ReporteInversiones): Promise<string> {
+	const hayError = [reporte.activos, reporte.renta, reporte.caja].some((r) => r.diagnostico.estado === 'error');
+	if (hayError) return '';
+
+	const partes: string[] = [];
+	if (reporte.activos.diagnostico.estado === 'ok') {
+		const r = await confirmarActivosFilas(reporte.activos.nuevos, reporte.activos.diagnostico.duplicadas);
+		partes.push(formatResumen('Activos', r));
+	}
+	if (reporte.renta.diagnostico.estado === 'ok') {
+		const r = await confirmarRentaFilas(reporte.renta.nuevos, reporte.renta.diagnostico.duplicadas);
+		partes.push(formatResumen('Renta y amortización', r));
+	}
+	if (reporte.caja.diagnostico.estado === 'ok') {
+		const r = await confirmarCajaFilas(reporte.caja.nuevos, reporte.caja.diagnostico.duplicadas);
+		partes.push(formatResumen('Caja', r));
+	}
+	return partes.join('\n');
 }
 
 // Exporta TODO el flujo de Finanzas en un solo .xlsx de dos hojas (Gastos ·
 // Ingresos), poblado con la data actual: el mismo archivo sirve para bajar y
-// para volver a subir (importarFinanzasXLSX), así no hace falta mantener una
-// plantilla vacía aparte ni CSVs de solo lectura.
+// para volver a subir (prepararFinanzasXLSX/confirmarFinanzasXLSX), así no
+// hace falta mantener una plantilla vacía aparte ni CSVs de solo lectura.
 export async function exportarFinanzasXLSX(): Promise<Blob> {
 	const XLSX = await import('xlsx'); // carga diferida: solo pesa cuando se usa
 
@@ -637,8 +767,16 @@ export async function exportarInversionesXLSX(): Promise<Blob> {
 
 	// Hoja 3 — Caja: mov_caja directo, sin joins. Las conversiones son dos filas
 	// con el mismo grupo y se exportan tal cual (no se aparean ni se netean).
+	// Excluye acciones históricas que ya no tienen ruta de creación en la app
+	// (p.ej. "Ajuste", del lápiz que se sacó de Tenencia en montos, o "Apertura",
+	// de la migración única de saldos de liquidez): esos movimientos siguen
+	// contando en la base y en los cálculos, pero el importador nunca los
+	// soportó (ACCIONES_CAJA solo admite Ingreso/Retiro/Convertir), así que
+	// exportarlos solo generaba un error garantizado al volver a subir el
+	// mismo archivo sin tocar nada.
 	const caja = (await query(
-		'SELECT fecha, accion, moneda, monto, grupo, nota FROM mov_caja WHERE perfil_id = 1 ORDER BY fecha, id'
+		`SELECT fecha, accion, moneda, monto, grupo, nota FROM mov_caja WHERE perfil_id = 1 AND accion IN (${ACCIONES_CAJA.map(() => '?').join(',')}) ORDER BY fecha, id`,
+		ACCIONES_CAJA
 	)) as any[];
 	const hojaCaja = [
 		['fecha', 'accion', 'moneda', 'monto', 'grupo', 'nota'],

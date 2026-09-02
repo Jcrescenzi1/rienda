@@ -9,6 +9,7 @@
 	import { query } from '$lib/db/client';
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
+	import { ErrorValidacion } from '$lib/errores';
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -140,11 +141,15 @@
 			alert('Importación completa. La página se va a recargar.');
 			location.href = '/'; // salir del onboarding siempre en Cuenta Corriente
 		} catch (err: any) {
-			// Brief H / B3: detalle técnico solo a consola, nunca crudo en pantalla.
-			// Sigue siendo alert() nativo (no hay dónde mostrar UI inline acá antes
-			// de salir del onboarding), pero el contenido ya no expone el error crudo.
-			console.error(err);
-			alert('Ocurrió un error. Contactá al administrador.');
+			if (err instanceof ErrorValidacion) {
+				alert(err.message);
+			} else {
+				// Brief H / B3: detalle técnico solo a consola, nunca crudo en pantalla.
+				// Sigue siendo alert() nativo (no hay dónde mostrar UI inline acá antes
+				// de salir del onboarding), pero el contenido ya no expone el error crudo.
+				console.error(err);
+				alert('Ocurrió un error. Contactá al administrador.');
+			}
 		} finally {
 			input.value = '';
 		}

@@ -5,6 +5,7 @@
 import { query, queryBatch } from './client';
 import { hoyISO } from '../format';
 import { setMeta } from './meta';
+import { ErrorValidacion } from '../errores';
 
 // Tablas ordenadas de "padres" a "hijas" (segun foreign keys).
 // meta va al final: no tiene dependencias.
@@ -84,10 +85,10 @@ export async function leerFechasBackup(src: File | string): Promise<{ backup: an
 	try {
 		backup = JSON.parse(texto);
 	} catch {
-		throw new Error('El archivo no es un JSON valido.');
+		throw new ErrorValidacion('El archivo no es un JSON valido.');
 	}
 	if (backup?.app !== 'rienda' || !backup?.tablas) {
-		throw new Error('El archivo no es un backup valido de Rienda.');
+		throw new ErrorValidacion('El archivo no es un backup valido de Rienda.');
 	}
 
 	const metaRows: any[] = Array.isArray(backup.tablas.meta) ? backup.tablas.meta : [];
@@ -112,13 +113,13 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 	if (fileOrBackup instanceof File) {
 		const texto = await fileOrBackup.text();
 		try { backup = JSON.parse(texto); }
-		catch { throw new Error('El archivo no es un JSON valido.'); }
+		catch { throw new ErrorValidacion('El archivo no es un JSON valido.'); }
 	} else {
 		backup = fileOrBackup;
 	}
 
 	if (backup?.app !== 'rienda' || !backup?.tablas) {
-		throw new Error('El archivo no es un backup valido de Rienda.');
+		throw new ErrorValidacion('El archivo no es un backup valido de Rienda.');
 	}
 
 	const tablas = backup.tablas as Record<string, any[]>;

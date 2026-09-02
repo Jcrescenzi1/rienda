@@ -5,12 +5,15 @@
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 	import {
 		descargarBlob,
-		exportarFinanzasXLSX, importarFinanzasXLSX,
-		exportarInversionesXLSX, importarInversionesXLSX
+		exportarFinanzasXLSX, prepararFinanzasXLSX, confirmarFinanzasXLSX,
+		exportarInversionesXLSX, prepararInversionesXLSX, confirmarInversionesXLSX,
+		type DiagnosticoHoja, type ReporteFinanzas, type ReporteInversiones
 	} from '$lib/db/precarga';
 	import { hoyISO, fechaHoraCorta } from '$lib/format';
+	import { ErrorValidacion } from '$lib/errores';
 	import Guia from '$lib/Guia.svelte';
 	import InstalarApp from '$lib/InstalarApp.svelte';
+	import PopupAuditoria from '$lib/PopupAuditoria.svelte';
 
 	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, backup_aviso_hasta: null });
 	let cargando = $state(true);
@@ -81,7 +84,8 @@
 			backupPendiente = backup;
 			comparando = true;
 		} catch (err: any) {
-			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
+			if (err instanceof ErrorValidacion) alert(err.message);
+			else { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
 		} finally {
 			input.value = '';
 		}
@@ -96,7 +100,8 @@
 			alert('Importación completa. La página se va a recargar.');
 			location.reload();
 		} catch (err: any) {
-			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
+			if (err instanceof ErrorValidacion) alert(err.message);
+			else { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
 			cancelarImport();
 		}
 	}
@@ -114,7 +119,10 @@
 			const { backup, fechas } = await leerFechasBackup(texto);
 			fechasBackup = fechas; backupPendiente = backup; comparando = true;
 			window.scrollTo({ top: 0, behavior: 'smooth' });
-		} catch (err: any) { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
+		} catch (err: any) {
+			if (err instanceof ErrorValidacion) alert(err.message);
+			else { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
+		}
 	}
 
 	// ----- Planillas: un .xlsx por módulo, carga y descarga a la vez -----
@@ -122,6 +130,15 @@
 	let inversionesInput: HTMLInputElement | undefined = $state();
 	let importandoFinanzas = $state(false);
 	let importandoInversiones = $state(false);
+
+	// Popup de auditoría previa (Parte 1 del brief): "preparar" arma el
+	// diagnóstico sin tocar la base; "confirmar" recién ahí inserta.
+	let popupAbierto = $state(false);
+	let popupModulo = $state<'finanzas' | 'inversiones'>('finanzas');
+	let popupDiagnosticos = $state<DiagnosticoHoja[]>([]);
+	let reporteFinanzas: ReporteFinanzas | null = null;
+	let reporteInversiones: ReporteInversiones | null = null;
+	let confirmandoPopup = $state(false);
 
 	async function onExportarFinanzas() {
 		try {
@@ -135,8 +152,10 @@
 		if (!file) return;
 		importandoFinanzas = true;
 		try {
-			const resumen = await importarFinanzasXLSX(file);
-			alert('Importación completa ✅\n' + resumen);
+			reporteFinanzas = await prepararFinanzasXLSX(file);
+			popupDiagnosticos = [reporteFinanzas.gastos.diagnostico, reporteFinanzas.ingresos.diagnostico];
+			popupModulo = 'finanzas';
+			popupAbierto = true;
 		} catch (err: any) {
 			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
@@ -157,14 +176,43 @@
 		if (!file) return;
 		importandoInversiones = true;
 		try {
-			const resumen = await importarInversionesXLSX(file);
-			alert('Importación completa ✅\n' + resumen);
+			reporteInversiones = await prepararInversionesXLSX(file);
+			popupDiagnosticos = [reporteInversiones.activos.diagnostico, reporteInversiones.renta.diagnostico, reporteInversiones.caja.diagnostico];
+			popupModulo = 'inversiones';
+			popupAbierto = true;
 		} catch (err: any) {
 			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
 		} finally {
 			input.value = '';
 			importandoInversiones = false;
 		}
+	}
+
+	// Aceptar del popup: autobackup primero (misma red de seguridad que el
+	// restore de JSON), después confirma con lo que ya calculó "preparar"
+	// (no relee el archivo).
+	async function onAceptarPopup() {
+		confirmandoPopup = true;
+		try {
+			await crearAutobackup();
+			let resumen = '';
+			if (popupModulo === 'finanzas' && reporteFinanzas) resumen = await confirmarFinanzasXLSX(reporteFinanzas);
+			else if (popupModulo === 'inversiones' && reporteInversiones) resumen = await confirmarInversionesXLSX(reporteInversiones);
+			popupAbierto = false;
+			alert('Importación completa ✅\n' + resumen);
+		} catch (err: any) {
+			console.error(err); alert('Ocurrió un error. Contactá al administrador.');
+		} finally {
+			confirmandoPopup = false;
+			reporteFinanzas = null;
+			reporteInversiones = null;
+		}
+	}
+
+	function onCerrarPopup() {
+		popupAbierto = false;
+		reporteFinanzas = null;
+		reporteInversiones = null;
 	}
 
 	// ----- Borrado total -----
@@ -193,6 +241,15 @@
 		}
 	}
 </script>
+
+<PopupAuditoria
+	abierto={popupAbierto}
+	modulo={popupModulo}
+	diagnosticos={popupDiagnosticos}
+	procesando={confirmandoPopup}
+	onAceptar={onAceptarPopup}
+	onCerrar={onCerrarPopup}
+/>
 
 <div class="titulo-guia">
 	<h1>Tus datos</h1>
