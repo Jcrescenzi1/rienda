@@ -16,7 +16,7 @@
 	import InstalarApp from '$lib/InstalarApp.svelte';
 	import PopupAuditoria from '$lib/PopupAuditoria.svelte';
 
-	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, backup_aviso_hasta: null });
+	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null });
 	let cargando = $state(true);
 	let importInput: HTMLInputElement | undefined = $state();
 

@@ -8,7 +8,6 @@ export type Metadatos = {
 	ultima_edicion_finanzas: string | null;
 	ultima_edicion_inversiones: string | null;
 	ultima_exportacion: string | null;
-	backup_aviso_hasta: string | null; // "Más tarde" silencia el aviso hasta esta fecha
 };
 
 export async function leerMeta(): Promise<Metadatos> {
@@ -19,8 +18,7 @@ export async function leerMeta(): Promise<Metadatos> {
 		ultima_importacion: m['ultima_importacion'] ?? null,
 		ultima_edicion_finanzas: m['ultima_edicion_finanzas'] ?? null,
 		ultima_edicion_inversiones: m['ultima_edicion_inversiones'] ?? null,
-		ultima_exportacion: m['ultima_exportacion'] ?? null,
-		backup_aviso_hasta: m['backup_aviso_hasta'] ?? null
+		ultima_exportacion: m['ultima_exportacion'] ?? null
 	};
 }
 

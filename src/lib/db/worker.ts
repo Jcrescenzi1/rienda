@@ -339,16 +339,11 @@ async function init() {
 		`);
 	} catch { /* la limpieza no debe bloquear el arranque */ }
 
-	// Corte de la rearquitectura de inversiones (Bloques 3 y 4), UNA sola vez:
-	// (a) liquidez deja de tener ancla manual — el saldo de cada fila de
-	//     `liquidez` se migra a un movimiento de apertura en mov_caja (Bloque 3).
-	// (b) se fija la fecha de corte del modelo de valuación derivado (Bloque 4):
-	//     de ahí en adelante, las fotos (snapshot) se recalculan solas cuando se
-	//     edita/borra un movimiento viejo; antes de esa fecha, `snapshot` queda
-	//     como reserva fija — no se toca, no se recalcula.
-	// Las dos cosas se fechan a HOY (el día en que este código corre por primera
-	// vez en esta base) y comparten el mismo guard: sin él, cada arranque
-	// volvería a insertar el movimiento de apertura y duplicaría el saldo.
+	// Migración de liquidez (Bloque 3), UNA sola vez: el ancla manual desaparece
+	// — el saldo de cada fila de `liquidez` se migra a un movimiento de apertura
+	// en mov_caja, fechado a HOY (el día en que este código corre por primera
+	// vez en esta base). El guard (meta liquidez_migrada_v1) es necesario: sin
+	// él, cada arranque volvería a insertar el movimiento y duplicaría el saldo.
 	const migLiq = db.exec({
 		sql: "SELECT valor FROM meta WHERE clave='liquidez_migrada_v1'",
 		rowMode: 'object', returnValue: 'resultRows'
@@ -380,10 +375,6 @@ async function init() {
 			}
 		}
 		db.exec("INSERT INTO meta (clave, valor) VALUES ('liquidez_migrada_v1', '1')");
-		db.exec({
-			sql: "INSERT INTO meta (clave, valor) VALUES ('fecha_corte_rearquitectura', ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
-			bind: [hoy]
-		});
 	}
 
 	// Integridad referencial: la base rechaza datos huérfanos (un gasto apuntando
