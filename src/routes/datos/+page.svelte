@@ -11,6 +11,7 @@
 	} from '$lib/db/precarga';
 	import { hoyISO, fechaHoraCorta } from '$lib/format';
 	import { ErrorValidacion } from '$lib/errores';
+	import { fotosYaReparadas, repararFotosPPC } from '$lib/cartera';
 	import Guia from '$lib/Guia.svelte';
 	import InstalarApp from '$lib/InstalarApp.svelte';
 	import PopupAuditoria from '$lib/PopupAuditoria.svelte';
@@ -31,12 +32,37 @@
 	let borrando = $state(false);
 	let puedeBorrar = $derived(textoConfirm.trim().toUpperCase() === 'BORRAR');
 
+	// Bloque A — migración única: repara fotos guardadas con precio de compra en
+	// vez de precio de mercado (ver repararFotosPPC en cartera.ts). null mientras
+	// no se sabe todavía si hace falta (recién chequeado en cargar()), para no
+	// mostrar ni ocultar el botón de arranque.
+	let fotosReparadas = $state<boolean | null>(null);
+	let reparando = $state(false);
+	let progresoReparacion = $state({ hecho: 0, total: 0 });
+
 	async function cargar() {
 		meta = await leerMeta();
 		autobackups = await listarAutobackups();
+		fotosReparadas = await fotosYaReparadas();
 		cargando = false;
 	}
 	onMount(cargar);
+
+	async function onRepararFotos() {
+		reparando = true;
+		progresoReparacion = { hecho: 0, total: 0 };
+		try {
+			await repararFotosPPC((hecho, total) => { progresoReparacion = { hecho, total }; });
+			fotosReparadas = true;
+		} catch (e: any) {
+			// No se marca como completo: el flag solo se escribe al final del barrido
+			// entero (ver repararFotosPPC), así que un corte a mitad de camino queda
+			// bien reflejado — la próxima corrida retoma desde el principio.
+			console.error(e);
+			alert('Ocurrió un error reparando las fotos. Podés reintentar cuando quieras.');
+		}
+		reparando = false;
+	}
 
 	// Timestamp de sistema: delega en el helper único de format.ts (Brief H / A2+B2).
 	// OJO: cambio visible sancionado — antes mostraba el año ("28/07/2026 14:30"),
@@ -358,6 +384,22 @@
 			</div>
 		</div>
 	</details>
+
+	<!-- Bloque A: migración única de reparación. Solo se muestra si todavía hace
+	     falta (fotosReparadas === false); una vez corrida, desaparece sola. -->
+	{#if fotosReparadas === false}
+	<details class="sec" open>
+		<summary>Mantenimiento</summary>
+		<div class="sec-body">
+			<p class="nota">Reparación única de fotos históricas: algunas quedaron guardadas con el precio de <strong>compra</strong> en vez del precio de <strong>mercado</strong> (bug ya corregido). Recalcula todas las fotos existentes contra el histórico de precios. No cierres esta pestaña mientras corre.</p>
+			{#if reparando}
+				<p class="nota">Reparando… {progresoReparacion.hecho}/{progresoReparacion.total}</p>
+			{:else}
+				<button class="btn btn-primary" onclick={onRepararFotos}>Reparar fotos históricas</button>
+			{/if}
+		</div>
+	</details>
+	{/if}
 
 	<!-- Últimas 5 versiones (deshacer) -->
 	<details class="sec">

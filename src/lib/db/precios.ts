@@ -16,8 +16,9 @@ import { setMeta } from './meta';
 import { hoyISO } from '../format';
 import { BASE, ajustarEscala } from './data912';
 import { sqlUpsertPrecioHistorico } from './precios_historicos';
-import { calcularFoto, guardarSnapshot } from '../cartera';
+import { calcularFoto, guardarSnapshot, completarFotosFaltantes } from '../cartera';
 import { actualizarDolar } from './cotizaciones';
+import { ErrorValidacion, ErrorRed } from '../errores';
 
 const PANELES = ['arg_bonds', 'arg_corp', 'arg_cedears', 'arg_stocks', 'arg_notes'];
 
@@ -108,12 +109,12 @@ export async function actualizarPrecios(): Promise<string> {
 		"SELECT id, simbolo_cotizacion, tipo FROM activo WHERE perfil_id=1 AND simbolo_cotizacion IS NOT NULL AND TRIM(simbolo_cotizacion) <> ''"
 	)) as any[];
 	if (activos.length === 0) {
-		throw new Error('No hay activos con símbolo configurado. Cargalos en "Configurar tickers".');
+		throw new ErrorValidacion('No hay activos con símbolo configurado. Cargalos en "Configurar tickers".');
 	}
 
 	const { mapa, panelesOk, fechaPrecio } = await bajarMapaPrecios();
 	if (panelesOk === 0) {
-		throw new Error('No se pudo conectar con data912 (¿sin internet o bloqueo CORS?).');
+		throw new ErrorRed('No se pudo conectar con data912 (¿sin internet o bloqueo CORS?).');
 	}
 
 	// Sello de tiempo = la fecha del dato en la fuente (Last-Modified) si la hay;
@@ -390,6 +391,16 @@ export async function actualizarPreciosYFoto(): Promise<string> {
 	}
 	try {
 		const fecha = fechaCierreActual();
+		// Bloque A: completa las fotos de los días faltantes entre la última
+		// guardada y hoy (usando calcularValuacionEnFecha) ANTES de guardar la de
+		// hoy — si pasaron días sin refresco (app cerrada, sin conexión), una
+		// ventana de rendimiento no tenía contra qué comparar. Best-effort: no
+		// bloquea el guardado de la foto de hoy si falla.
+		try {
+			await completarFotosFaltantes(fecha);
+		} catch (e) {
+			console.error('[precios] no se pudieron completar las fotos de días faltantes:', e);
+		}
 		const foto = await calcularFoto();
 		const existente = (await query(
 			'SELECT valor_usd, flujo_usd, dolar, valor_ars FROM snapshot WHERE perfil_id=1 AND fecha=?',

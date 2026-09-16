@@ -25,6 +25,7 @@
 
 import { query, queryBatch } from './client';
 import { parseNum, formatNum, fechaISO } from '../format';
+import { invalidarFotosDesde, diagnosticoLiquidez } from '../cartera';
 
 export type ResultadoImport = { filas: number; creados: string[]; omitidas: number };
 
@@ -344,9 +345,10 @@ export async function prepararActivosFilas(filas: Fila[]): Promise<{ diagnostico
 export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas: number): Promise<ResultadoImport> {
 	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 
-	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
+	const activosRows = (await query('SELECT id, ticker, moneda FROM activo WHERE perfil_id=1')) as any[];
 	const porTicker: Record<string, number> = {};
-	for (const a of activosRows) porTicker[a.ticker.toLowerCase()] = a.id;
+	const monedaPorTicker: Record<string, string> = {};
+	for (const a of activosRows) { porTicker[a.ticker.toLowerCase()] = a.id; monedaPorTicker[a.ticker.toLowerCase()] = a.moneda; }
 	const cuentas = await mapaPorNombre('cuenta_inversion');
 	const creados: string[] = [];
 
@@ -361,14 +363,24 @@ export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas:
 		if (!(tk in porTicker)) {
 			const r = (await query('INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda) VALUES (1,?,?,?,?,?) RETURNING id',
 				[f.ticker, f.nombre, f.tipo, f.renta, f.moneda])) as any[];
-			porTicker[tk] = r[0].id; creados.push(`activo "${f.ticker}"`);
+			porTicker[tk] = r[0].id; monedaPorTicker[tk] = f.moneda; creados.push(`activo "${f.ticker}"`);
 		}
 	}
 
-	// Lote de transacciones (histórico: sin efecto caja, la liquidez se ancla a mano)
+	// Lote de transacciones. Bloque B: moneda_pago/monto_pago, igual que hace la
+	// carga manual, para que la caja registre el efecto de la compra/venta (antes
+	// quedaban NULL y la liquidez ignoraba el import: el mismo dinero se contaba
+	// dos veces, como efectivo y como tenencia). La planilla no distingue moneda
+	// de pago de moneda del activo (a diferencia de la carga manual, que sí
+	// permite pagar en otra moneda con conversión): monto_pago = monto_total de
+	// la fila, moneda_pago = la moneda REAL del activo (de la base — la columna
+	// "moneda" de la hoja solo se valida/exige para tickers nuevos).
 	const stmts = nuevos.map((f) => ({
-		sql: 'INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar) VALUES (1,?,?,?,?,?,?,?)',
-		bind: [porTicker[f.ticker.toLowerCase()], cuentas[f.cuenta.toLowerCase()], f.fecha, f.operacion, f.unidades, f.monto / f.unidades, f.vd]
+		sql: 'INSERT INTO transaccion (perfil_id,activo_id,cuenta_inversion_id,fecha,operacion,unidades,precio,valor_dolar,moneda_pago,monto_pago) VALUES (1,?,?,?,?,?,?,?,?,?)',
+		bind: [
+			porTicker[f.ticker.toLowerCase()], cuentas[f.cuenta.toLowerCase()], f.fecha, f.operacion, f.unidades,
+			f.monto / f.unidades, f.vd, monedaPorTicker[f.ticker.toLowerCase()], f.monto
+		]
 	}));
 	await queryBatch(stmts);
 
@@ -387,6 +399,11 @@ export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas:
 			await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [f.monto / f.unidades, f.fecha, id]);
 		}
 	}
+
+	// Bloque B: invalida las fotos desde la fecha más antigua que tocó este
+	// import (best-effort, no bloquea el resumen si falla).
+	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+	invalidarFotosDesde(fechaMin).catch(() => {});
 
 	return { filas: nuevos.length, creados, omitidas: duplicadas };
 }
@@ -461,6 +478,13 @@ export async function confirmarRentaFilas(nuevos: FilaOKRenta[], duplicadas: num
 		bind: [porTicker[f.ticker.toLowerCase()], f.fecha, f.moneda, f.monto_renta, f.monto_amort, f.vd]
 	}));
 	await queryBatch(stmts);
+
+	// Bloque B: la renta/amortización mueve caja (calcularLiquidez), igual que la
+	// carga manual (que sí invalida, ver carga-inversiones/+page.svelte) — por
+	// paridad, el import también invalida desde la fecha más antigua que tocó.
+	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+	invalidarFotosDesde(fechaMin).catch(() => {});
+
 	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
 
@@ -558,6 +582,11 @@ export async function confirmarCajaFilas(nuevos: FilaOKCaja[], duplicadas: numbe
 		bind: [f.fecha, f.accion, f.moneda, f.monto, f.grupo, f.nota]
 	}));
 	await queryBatch(stmts);
+
+	// Bloque B: invalida las fotos desde la fecha más antigua que tocó este import.
+	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+	invalidarFotosDesde(fechaMin).catch(() => {});
+
 	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
 
@@ -687,6 +716,20 @@ export async function confirmarInversionesXLSX(reporte: ReporteInversiones): Pro
 		const r = await confirmarCajaFilas(reporte.caja.nuevos, reporte.caja.diagnostico.duplicadas);
 		partes.push(formatResumen('Caja', r));
 	}
+
+	// Bloque B: si el import dejó alguna moneda en negativo, un resumen del
+	// mismo aviso que muestra Tenencia Actual — para que no haga falta ir a
+	// buscarlo, justo después de importar es cuando más conviene verlo.
+	try {
+		const diag = await diagnosticoLiquidez();
+		if (diag.length) {
+			const resumen = diag
+				.map((d) => `Liquidez ${d.moneda} negativa desde ${d.negativoDesde ?? '?'} (faltan ${Math.abs(d.saldo).toFixed(2)} ${d.moneda})`)
+				.join(' · ');
+			partes.push(`⚠ ${resumen} — probablemente haya un ingreso sin registrar.`);
+		}
+	} catch { /* el aviso es informativo, no bloquea el resumen del import */ }
+
 	return partes.join('\n');
 }
 

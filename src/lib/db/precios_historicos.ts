@@ -22,6 +22,12 @@
 
 import { query, queryBatch } from './client';
 import { BASE, ajustarEscala } from './data912';
+// Import circular con cartera.ts (que a su vez importa resolverPrecioEnFecha de
+// este archivo): funciona porque invalidarFotosDesde solo se usa DENTRO de una
+// función async, nunca en la evaluación del módulo — ESM resuelve el ciclo por
+// referencia en vivo. Se necesita acá porque backfillHistoricoActivo (abajo)
+// tiene que invalidar las fotos que dependían del histórico que acaba de traer.
+import { invalidarFotosDesde } from '../cartera';
 
 // Tipo de activo -> slug del endpoint histórico de data912. ON y FCI no están:
 // ON no tiene endpoint histórico propio (se loguea desde el panel en vivo, ver
@@ -172,6 +178,16 @@ export async function backfillHistoricoActivo(activoId: number): Promise<number 
 		bind: [activoId, p.fecha, p.precio, 'data912']
 	}));
 	await queryBatch(stmts);
+
+	// Bloque A: cualquier foto guardada desde la fecha más antigua de esta serie
+	// dependía del arrastre (o de la PPC) para este activo en esos días — ahora
+	// que hay histórico real, hay que recalcularlas. Sin esto, backfillear un
+	// activo viejo dejaba las fotos ya guardadas con el precio equivocado para
+	// siempre (de ahí la migración única de reparación, ver repararFotosPPC en
+	// cartera.ts). Best-effort: no bloquea el backfill si falla.
+	const fechaMin = serie.reduce((min, p) => (p.fecha < min ? p.fecha : min), serie[0].fecha);
+	invalidarFotosDesde(fechaMin).catch(() => {});
+
 	return serie.length;
 }
 

@@ -2,8 +2,9 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { fmtFecha, fechaISO, pesos, fechaHoraCorta, horaCorta } from '$lib/format';
-	import { calcularTenencia, calcularSerieTWR, rendimientoVentana } from '$lib/cartera';
+	import { calcularTenencia, calcularSerieTWR, rendimientoVentana, diagnosticoLiquidez, type EstadoLiquidez } from '$lib/cartera';
 	import { actualizarPreciosYFoto } from '$lib/db/precios';
+	import { ErrorRed, ErrorValidacion } from '$lib/errores';
 	import Guia from '$lib/Guia.svelte';
 	import NotaVisual from '$lib/NotaVisual.svelte';
 	import Skeleton from '$lib/Skeleton.svelte';
@@ -16,6 +17,10 @@
 	let dolar = $state(1);
 	let dolarFecha = $state<string | null>(null); // fecha de la cotización MEP usada
 	let dolarActualizadoEn = $state<string | null>(null); // hora de la última corrida de actualizarDolar()
+	// Bloque B: diagnóstico de liquidez negativa (solo trae las monedas que HOY
+	// están en negativo). El aviso queda hasta que se resuelve — no es un cartel
+	// que se desvanece, se recalcula cada vez que se recarga la pantalla.
+	let liquidezNeg = $state<EstadoLiquidez[]>([]);
 
 	// Rendimiento por ventana (Bloque 5): mismo TWR encadenado que Evolución de
 	// cartera (calcularSerieTWR/rendimientoVentana en cartera.ts), rebasado a
@@ -49,6 +54,8 @@
 		const mp = (await query("SELECT valor FROM meta WHERE clave='precios_actualizados_en'")) as any[];
 		preciosActualizadosEn = mp[0]?.valor ?? null;
 
+		liquidezNeg = await diagnosticoLiquidez();
+
 		// Rendimiento por ventana: mismo criterio de "mes/trimestre/año" que se usa
 		// como fecha calendario (restar meses a hoy), no un conteo de fotos.
 		const snapRows = (await query('SELECT fecha, valor_usd, flujo_usd FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
@@ -62,13 +69,16 @@
 		// % del total de mayor a menor. El desglose por renta ya lo muestra el
 		// gráfico de barras de arriba; acá interesa ver de un vistazo cuáles son las
 		// apuestas más grandes cruzando categorías.
+		// Bloque B: antes se descartaba el líquido en 0 o negativo (filter > 0) — con
+		// liquidez negativa permitida, esa fila tiene que seguir viéndose (en rojo,
+		// ver abajo) en vez de desaparecer del ranking. Solo se descarta el 0 exacto.
 		const liqRows = (['ARS', 'USD'] as const)
 			.map((mon) => {
 				const saldo = t.liqSaldos[mon] ?? 0;
 				const valUSD = mon === 'USD' ? saldo : saldo / dolar;
 				return { renta: 'Liquido', tipo: 'Caja', nombre: 'Líquido ' + mon, mercadoUSD: valUSD, exposicion: mon === 'USD' ? 'Dolar' : 'Peso' };
 			})
-			.filter((r) => r.mercadoUSD > 0);
+			.filter((r) => Math.abs(r.mercadoUSD) > 1e-6);
 		const filasMix = [
 			...cartera.map((h) => ({ renta: h.renta, tipo: h.tipo, nombre: h.nombre, mercadoUSD: h.mercadoUSD, exposicion: h.exposicion })),
 			...liqRows
@@ -82,7 +92,7 @@
 		detalleMix = filasMix.map((r) => {
 			const pct = t.totalUSD ? r.mercadoUSD / t.totalUSD : 0;
 			const esLiquidez = r.tipo === 'Caja' || r.renta === 'Liquido';
-			return { ...r, pct, concentrado: !esLiquidez && pct >= UMBRAL_CONCENTRACION };
+			return { ...r, pct, concentrado: !esLiquidez && pct >= UMBRAL_CONCENTRACION, negativo: r.mercadoUSD < 0 };
 		});
 
 		cargando = false;
@@ -93,8 +103,24 @@
 	// Actualiza precios desde data912 (botón manual). El auto al abrir vive en el layout.
 	async function onActualizarPrecios() {
 		actualizandoPrecios = true; preciosMsg = ''; preciosMsgErr = false;
-		try { preciosMsg = await actualizarPreciosYFoto(); await cargarTodo(); }
-		catch (e: any) { console.error(e); preciosMsgErr = true; preciosMsg = 'Ocurrió un error. Contactá al administrador.'; }
+		try {
+			preciosMsg = await actualizarPreciosYFoto();
+			await cargarTodo();
+		} catch (e: any) {
+			console.error(e);
+			preciosMsgErr = true;
+			// Bloque C: separa el caso esperado (no se pudo traer de la fuente — sin
+			// internet, bloqueo CORS, o falta configurar símbolos) del técnico real
+			// (falla de la base). Antes los dos caían en el mismo "Contactá al
+			// administrador", que para el primer caso no dice nada accionable.
+			if (e instanceof ErrorRed) {
+				preciosMsg = `No se pudieron traer los precios (último dato bueno: ${fechaHoraCorta(preciosActualizadosEn)}). Reintentá más tarde.`;
+			} else if (e instanceof ErrorValidacion) {
+				preciosMsg = e.message;
+			} else {
+				preciosMsg = 'Ocurrió un error. Contactá al administrador.';
+			}
+		}
 		actualizandoPrecios = false;
 	}
 
@@ -138,6 +164,19 @@
 	/>
 </div>
 
+{#if !cargando && liquidezNeg.length}
+	<!-- Bloque B: aviso persistente de liquidez negativa. Queda hasta que se
+	     resuelve (no se puede "cerrar"): la razón de no bloquear la carga es
+	     justamente que el usuario no tenga que inventar un ingreso para
+	     destrabarse, así que el aviso tiene que seguir ahí hasta que aparezca
+	     el movimiento que faltaba. -->
+	<div class="aviso-liquidez">
+		{#each liquidezNeg as l (l.moneda)}
+			<p>⚠ Liquidez en <strong>{l.moneda}</strong> negativa{l.negativoDesde ? ` desde el ${fmtFecha(l.negativoDesde)}` : ''}: faltan <strong>{money(Math.abs(l.saldo), l.moneda)}</strong>. Probablemente haya un ingreso sin registrar.</p>
+		{/each}
+	</div>
+{/if}
+
 {#if cargando}
 	<div class="topbar">
 		<Skeleton w="120px" h="36px" radius="6px" />
@@ -173,6 +212,9 @@
 		{#snippet leer()}Es <strong>TWR</strong>: descuenta el efecto de tus ingresos y retiros de plata, así que mide cómo rindió lo invertido y no cuánto creció el saldo. <strong>“Sin datos suficientes”</strong> significa que esa ventana todavía no tiene dos fotos de cartera.{/snippet}
 		{#snippet usar()}Compararlo contra un plazo fijo, la inflación o el dólar del mismo plazo, para saber si la estrategia valió la pena.{/snippet}
 	</NotaVisual>
+	{#if liquidezNeg.length}
+		<p class="aviso-rend-neg">⚠ Con liquidez negativa el denominador de la cartera está subestimado — estos rendimientos pueden no ser confiables.</p>
+	{/if}
 	
 	<h2>Tenencia por activo</h2>
 	
@@ -216,10 +258,14 @@
 					{#each exposicion.filas as f (f.clave)}
 						<div class="barrow"><span class="lbl">{f.label}</span>
 							<div class="track">
-								<div class="bar" style="width:{f.pct * 100}%; background:{f.color}">
-									{#if f.pct >= 0.16}<span class="pct" style="color:{contraste(f.color)}">{(f.pct * 100).toFixed(1)}%</span>{/if}
-								</div>
-								{#if f.pct < 0.16}<span class="pct-out">{(f.pct * 100).toFixed(1)}%</span>{/if}
+								{#if f.pct < 0}
+									<span class="pct-neg">{(f.pct * 100).toFixed(1)}%</span>
+								{:else}
+									<div class="bar" style="width:{Math.min(f.pct, 1) * 100}%; background:{f.color}">
+										{#if f.pct >= 0.16}<span class="pct" style="color:{contraste(f.color)}">{(f.pct * 100).toFixed(1)}%</span>{/if}
+									</div>
+									{#if f.pct < 0.16}<span class="pct-out">{(f.pct * 100).toFixed(1)}%</span>{/if}
+								{/if}
 							</div></div>
 					{/each}
 				</div>
@@ -230,13 +276,22 @@
 		<div class="graf">
 			<h3>Estructura de renta</h3>
 			<div class="bars">
+				<!-- Bloque B: liquidez negativa puede dejar el bucket 'Liquido' con pct
+				     negativo. No tiene sentido una barra de ancho negativo (y las demás
+				     filas, con el total reducido, pueden superar el 100% — width se
+				     clampea a 100% pero el % de texto muestra el valor real, sin
+				     normalizar sobre la suma de los positivos). -->
 				{#each buckets as b (b.renta)}
 					<div class="barrow"><span class="lbl">{b.renta}</span>
 						<div class="track">
-							<div class="bar" style="width:{b.pct * 100}%; background:{colorRenta[b.renta]}">
-								{#if b.pct >= 0.16}<span class="pct" style="color:{contraste(colorRenta[b.renta])}">{(b.pct * 100).toFixed(1)}%</span>{/if}
-							</div>
-							{#if b.pct < 0.16}<span class="pct-out">{(b.pct * 100).toFixed(1)}%</span>{/if}
+							{#if b.pct < 0}
+								<span class="pct-neg">{(b.pct * 100).toFixed(1)}%</span>
+							{:else}
+								<div class="bar" style="width:{Math.min(b.pct, 1) * 100}%; background:{colorRenta[b.renta]}">
+									{#if b.pct >= 0.16}<span class="pct" style="color:{contraste(colorRenta[b.renta])}">{(b.pct * 100).toFixed(1)}%</span>{/if}
+								</div>
+								{#if b.pct < 0.16}<span class="pct-out">{(b.pct * 100).toFixed(1)}%</span>{/if}
+							{/if}
 						</div></div>
 				{/each}
 			</div>
@@ -256,7 +311,7 @@
 		<thead><tr><th>Activo</th><th>Tipo</th><th>Renta</th><th>Exposición</th><th class="num">% del total</th></tr></thead>
 		<tbody>
 			{#each detalleMix as d (d.nombre)}
-				<tr class:concentrado={d.concentrado}>
+				<tr class:concentrado={d.concentrado} class:negativo={d.negativo}>
 					<td>{d.nombre}</td>
 					<td>{d.tipo}</td>
 					<td class="renta" style="color:{colorRenta[d.renta]}">{d.renta}</td>
@@ -362,4 +417,17 @@
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
 	.pos { color: var(--pos); }
 	.neg { color: var(--neg); }
+
+	/* Bloque B: aviso persistente de liquidez negativa */
+	.aviso-liquidez { display: flex; flex-direction: column; gap: 4px; border: 1px solid var(--neg); background: rgba(255, 90, 90, 0.08); border-radius: 8px; padding: 10px 14px; margin: 10px 0; }
+	.aviso-liquidez p { margin: 0; font-size: 0.85rem; color: var(--neg); line-height: 1.5; }
+	.aviso-liquidez strong { font-weight: 700; }
+	.aviso-rend-neg { font-size: 0.8rem; color: var(--neg); margin: 6px 0 0; }
+
+	/* Composición con liquidez negativa: barra reemplazada por el % en rojo (un
+	   ancho negativo no se puede dibujar); las filas positivas igual se clampean
+	   a 100% de ancho visual pero el texto muestra el % real, que puede superar
+	   el 100% — es la señal de que falta información, no un bug. */
+	.pct-neg { padding-left: 8px; font-size: 0.78rem; font-weight: 700; color: var(--neg); white-space: nowrap; }
+	table.mix tr.negativo td { color: var(--neg); font-weight: 600; }
 </style>

@@ -6,6 +6,7 @@
 import { query } from './db/client';
 import { resolverPrecioEnFecha } from './db/precios_historicos';
 import { cargarDolarSerie, dolarDeFecha } from './moneda';
+import { fechaISO } from './format';
 
 export type Lote = { u: number; pNat: number; pUSD: number };
 
@@ -231,43 +232,144 @@ export async function calcularValuacionEnFecha(fecha: string): Promise<{
 	return { dolar, valorUSD, valorARS: valorUSD * dolar };
 }
 
-// Bloque 4 — invalidación del caché de fotos: se llama después de cargar,
-// editar o borrar una transacción, movimiento de caja o renta/amortización con
-// fecha pasada. Recalcula (upsert in-place, MISMA fecha) todas las fotos ya
-// guardadas en snapshot desde max(fechaEditada, fecha de corte) en adelante —
-// nunca toca una foto anterior al corte (esa queda como reserva fija). No crea
-// fotos nuevas: solo corrige las que ya existían, con los datos que cambiaron.
-// flujo_usd se recalcula también (ventana entre la foto anterior — la que sea,
-// recalculada o vieja — y esta), por si el movimiento editado fue un
-// Ingreso/Retiro. No toca la fórmula del TWR (eso vive en /evolucion): esto
-// solo corrige los insumos que esa fórmula lee.
-export async function invalidarFotosDesde(fechaEditada: string): Promise<void> {
-	const corte = await fechaCorteRearquitectura();
-	if (!corte) return; // todavía no hay modelo derivado activo en esta base
-	const desde = fechaEditada > corte ? fechaEditada : corte;
+// Recalcula y guarda (upsert in-place, MISMA fecha) la foto de UNA fecha ya
+// existente en snapshot: valuación derivada (calcularValuacionEnFecha) +
+// flujo_usd (ventana entre la foto anterior — la que sea, recalculada o
+// vieja — y esta, por si en esa ventana hubo un Ingreso/Retiro). Pieza interna
+// compartida entre invalidarFotosDesde, completarFotosFaltantes y la
+// reparación única (repararFotosPPC) — así las tres calculan flujo_usd
+// exactamente igual, en vez de reimplementar la ventana cada vez.
+async function recalcularYGuardarFoto(fecha: string): Promise<void> {
+	const v = await calcularValuacionEnFecha(fecha);
 
+	const anterior = (await query(
+		'SELECT MAX(fecha) AS f FROM snapshot WHERE perfil_id=1 AND fecha < ?',
+		[fecha]
+	)) as any[];
+	const fechaAnterior = anterior[0]?.f ?? '2000-01-01';
+	const fl = (await query(
+		"SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ? AND fecha <= ?",
+		[v.dolar, fechaAnterior, fecha]
+	)) as any[];
+	const flujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
+
+	await guardarSnapshot(fecha, v.valorUSD, flujo, v.dolar, v.valorARS);
+}
+
+// Bloque 4/B — invalidación del caché de fotos: se llama después de cargar,
+// editar o borrar una transacción, movimiento de caja o renta/amortización con
+// fecha pasada. Recalcula todas las fotos ya guardadas en snapshot desde
+// fechaEditada en adelante. No crea fotos nuevas: solo corrige las que ya
+// existían, con los datos que cambiaron. No toca la fórmula del TWR (eso vive
+// en /evolucion): esto solo corrige los insumos que esa fórmula lee.
+//
+// Bloque B: ya NO se limita a fecha >= fecha_corte_rearquitectura. Esa fecha
+// de corte congelaba las fotos anteriores como "reserva fija" (modelo de
+// liquidez con ancla manual); con el ancla eliminada, toda foto es un caché
+// reconstruible y se recalcula si su fecha cae en el rango editado.
+export async function invalidarFotosDesde(fechaEditada: string): Promise<void> {
 	const fechas = (await query(
 		'SELECT fecha FROM snapshot WHERE perfil_id=1 AND fecha >= ? ORDER BY fecha ASC',
-		[desde]
+		[fechaEditada]
 	)) as any[];
-	if (fechas.length === 0) return;
+	for (const { fecha } of fechas) await recalcularYGuardarFoto(fecha);
+}
 
-	for (const { fecha } of fechas) {
-		const v = await calcularValuacionEnFecha(fecha);
+// Bloque A — completa las fotos de los días faltantes entre la última
+// guardada y `hastaExcluyendo` (sin incluirla: ese día se guarda aparte, con
+// el precio recién actualizado, más preciso que calcularValuacionEnFecha).
+// Sin esto, una ventana de rendimiento podía no tener contra qué comparar si
+// pasaron días sin que corriera el auto-refresh (± la app cerrada varios
+// días). Si todavía no hay NINGUNA foto guardada, no hay "faltantes" que
+// completar — la serie arranca con la próxima foto que se guarde. Devuelve
+// cuántos días completó.
+export async function completarFotosFaltantes(hastaExcluyendo: string): Promise<number> {
+	const ultima = (await query('SELECT MAX(fecha) AS f FROM snapshot WHERE perfil_id=1')) as any[];
+	const desde = ultima[0]?.f ?? null;
+	if (!desde) return 0;
 
-		const anterior = (await query(
-			'SELECT MAX(fecha) AS f FROM snapshot WHERE perfil_id=1 AND fecha < ?',
-			[fecha]
-		)) as any[];
-		const fechaAnterior = anterior[0]?.f ?? '2000-01-01';
-		const fl = (await query(
-			"SELECT COALESCE(SUM(CASE WHEN moneda='USD' THEN monto ELSE monto/? END),0) AS f FROM mov_caja WHERE perfil_id=1 AND accion IN ('Ingreso','Retiro') AND fecha > ? AND fecha <= ?",
-			[v.dolar, fechaAnterior, fecha]
-		)) as any[];
-		const flujo = Math.round((fl[0]?.f ?? 0) * 100) / 100;
-
-		await guardarSnapshot(fecha, v.valorUSD, flujo, v.dolar, v.valorARS);
+	let cursor = new Date(desde + 'T00:00:00');
+	cursor.setDate(cursor.getDate() + 1);
+	const limite = new Date(hastaExcluyendo + 'T00:00:00');
+	let n = 0;
+	while (cursor < limite) {
+		const f = fechaISO(cursor); // local, no UTC — mismo helper que hoyISO()
+		await recalcularYGuardarFoto(f);
+		n++;
+		cursor.setDate(cursor.getDate() + 1);
 	}
+	return n;
+}
+
+// Bloque A — migración única: repara las fotos ya guardadas que quedaron con
+// precio de COMPRA (PPC) en vez de precio de MERCADO, secuela del bug donde
+// backfillHistoricoActivo traía histórico nuevo sin invalidar las fotos que
+// dependían de él (ver ese archivo). Recalcula TODAS las fotos existentes vía
+// calcularValuacionEnFecha, ahora que el histórico de precios está más
+// completo. Se corre a mano desde Tus datos (no automática al arrancar, para
+// no trabar el inicio de la app con una base grande). El flag
+// 'fotos_reparadas_v1' se escribe RECIÉN AL FINAL, si el barrido completo
+// terminó sin tirar: así, si se corta a mitad de camino (la pestaña se cierra,
+// iOS mata la tab), la próxima vez la pantalla vuelve a ofrecer correrla en
+// vez de darla por hecha a medias.
+export async function fotosYaReparadas(): Promise<boolean> {
+	const r = (await query("SELECT valor FROM meta WHERE clave='fotos_reparadas_v1'")) as any[];
+	return r.length > 0;
+}
+
+const LOTE_REPARACION = 15; // fotos por lote, antes de ceder el hilo a la UI
+
+export async function repararFotosPPC(onProgreso?: (hecho: number, total: number) => void): Promise<void> {
+	const fechas = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha ASC')) as any[];
+	const total = fechas.length;
+	onProgreso?.(0, total);
+	for (let i = 0; i < fechas.length; i++) {
+		await recalcularYGuardarFoto(fechas[i].fecha);
+		onProgreso?.(i + 1, total);
+		// Cede el hilo entre lotes para que la UI pinte el progreso — clave en
+		// iOS, donde un loop largo sin ceder puede colgar Safari (ver incidente).
+		if ((i + 1) % LOTE_REPARACION === 0) await new Promise((r) => setTimeout(r, 0));
+	}
+	await query(
+		"INSERT INTO meta (clave, valor) VALUES ('fotos_reparadas_v1', ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+		[new Date().toISOString()]
+	);
+}
+
+// Bloque B — diagnóstico de liquidez negativa: para cada moneda con saldo HOY
+// negativo, arma el saldo corriendo día por día (mov_caja + efecto caja de
+// transacciones + renta/amortización, en orden cronológico) y busca desde qué
+// fecha quedó en negativo de forma corrida — la primera fecha después de la
+// cual el saldo nunca volvió a ser >= 0. Solo devuelve las monedas que HOY
+// están negativas (no bloquea nada, es solo para el aviso persistente).
+export type EstadoLiquidez = { moneda: 'ARS' | 'USD'; saldo: number; negativoDesde: string | null };
+
+export async function diagnosticoLiquidez(): Promise<EstadoLiquidez[]> {
+	const monedas: ('ARS' | 'USD')[] = ['ARS', 'USD'];
+	const out: EstadoLiquidez[] = [];
+	for (const moneda of monedas) {
+		const movc = (await query('SELECT fecha, monto FROM mov_caja WHERE perfil_id=1 AND moneda=?', [moneda])) as any[];
+		const tcash = (await query(
+			"SELECT fecha, CASE WHEN operacion='Venta' THEN monto_pago ELSE -monto_pago END AS monto FROM transaccion WHERE perfil_id=1 AND moneda_pago=? AND monto_pago IS NOT NULL",
+			[moneda]
+		)) as any[];
+		const rcash = (await query(
+			'SELECT fecha, (monto_renta + monto_amort) AS monto FROM renta_activo WHERE perfil_id=1 AND moneda=?',
+			[moneda]
+		)) as any[];
+		const porDia = new Map<string, number>();
+		for (const r of [...movc, ...tcash, ...rcash]) porDia.set(r.fecha, (porDia.get(r.fecha) ?? 0) + r.monto);
+		const dias = [...porDia.keys()].sort();
+		let saldo = 0;
+		let negativoDesde: string | null = null;
+		for (const d of dias) {
+			saldo += porDia.get(d)!;
+			if (saldo < -1e-6) { if (negativoDesde === null) negativoDesde = d; }
+			else negativoDesde = null; // volvió a 0/positivo: se resetea el conteo
+		}
+		if (saldo < -1e-6) out.push({ moneda, saldo, negativoDesde });
+	}
+	return out;
 }
 
 // ===== Bloques 5+6: tenencia agregada, compartida entre Tenencia Actual y
@@ -411,7 +513,14 @@ export async function calcularTenencia(): Promise<Tenencia> {
 
 	for (const h of hold) h.peso = tUSD ? h.mercadoUSD / tUSD : 0;
 	hold.sort((x, y) => y.mercadoUSD - x.mercadoUSD);
-	const buckets = Object.entries(buck).filter(([, v]) => v > 0).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
+	// Bloque B: antes se filtraba v > 0 (una categoría en cero no se dibuja). Con
+	// liquidez negativa permitida, el bucket 'Liquido' puede terminar negativo y
+	// tiene que seguir viéndose (en rojo, la UI lo resuelve) — solo se descarta
+	// el cero exacto. pct NO se normaliza sobre la suma de los positivos: usa
+	// tUSD tal cual (que ya está reducido por el negativo), así el total cierra
+	// en 100% y las demás filas pueden superar el 100% — es la señal de que
+	// falta información, no un bug.
+	const buckets = Object.entries(buck).filter(([, v]) => Math.abs(v) > 1e-6).map(([renta, v]) => ({ renta, v, pct: tUSD ? v / tUSD : 0 })).sort((a, b) => b.v - a.v);
 
 	const bDolar = liqSaldos.USD ?? 0, bPeso = (liqSaldos.ARS ?? 0) / dolar;
 	let expDolar = bDolar, expCer = 0, expPeso = bPeso;
@@ -455,11 +564,16 @@ export function calcularSerieTWR(rows: { fecha: string; valor_usd: number; flujo
 
 // TWR de la ventana [cutoffISO, hoy] sobre una serie ya indexada. null si no
 // hay al menos 2 fotos en la ventana ("sin datos suficientes", no un cero).
+// Si NINGUNA foto tiene fecha <= cutoffISO (la cartera es más nueva que la
+// ventana pedida, ej. "rendimiento anual" con 3 meses de historia), no hay
+// base de comparación para esa ventana — antes caía a serie[0] por defecto y
+// terminaba mostrando el retorno desde el inicio disfrazado de retorno anual.
 export function rendimientoVentana(serie: SnapConIdx[], cutoffISO: string): number | null {
 	if (!serie.length) return null;
-	let base = serie[0];
+	let base: SnapConIdx | null = null;
 	for (const s of serie) if (s.fecha <= cutoffISO) base = s;
-	const vsnaps = serie.filter((s) => s.fecha >= base.fecha);
+	if (base === null) return null;
+	const vsnaps = serie.filter((s) => s.fecha >= base!.fecha);
 	if (vsnaps.length < 2) return null;
 	return vsnaps[vsnaps.length - 1].idx / base.idx - 1;
 }
