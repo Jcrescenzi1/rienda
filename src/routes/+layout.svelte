@@ -4,12 +4,17 @@
 	import { onMount } from 'svelte';
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
+	import {
+		leerSenalPool, leerMarcaPerfil, escribirMarcaPerfil, leerEstadoStorage,
+		type SenalPool, type MarcaPerfil, type EstadoStorage
+	} from '$lib/db/senales';
 	import { actualizarCotizaciones, actualizarInflacionYHistorico } from '$lib/db/cotizaciones';
 	import { notif } from '$lib/notif.svelte';
 	import { query } from '$lib/db/client';
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
 	import { ErrorValidacion } from '$lib/errores';
+	import DiagnosticoTecnico from '$lib/DiagnosticoTecnico.svelte';
 
 	onNavigate((navigation) => {
 		if (!document.startViewTransition) return;
@@ -35,6 +40,8 @@
 	// / onRechazoNoAtrapado más abajo), porque un segundo reload en caliente no
 	// resuelve nada — hace falta el cierre real de la PWA.
 	let errorGlobalEscalado = $state(false);
+	// Error crudo del rechazo no atrapado (para el diagnóstico técnico copiable).
+	let errorGlobalCrudo = $state<unknown>(null);
 
 	// ===== Perfil / bienvenida =====
 	let perfilListo = $state(false);
@@ -45,12 +52,31 @@
 	// confundía con "no hay perfil creado" y mandaba a un usuario con datos
 	// reales a la pantalla de Bienvenida (onboarding desde cero).
 	let perfilError = $state(false);
+	// Señales de arranque (Blindaje iOS) — ver leerSenalesArranque().
+	let senalPool = $state<SenalPool>(null);
+	let marcaPerfil = $state<MarcaPerfil | null>(null);
+	let estadoStorage = $state<EstadoStorage>({ persistido: null, usage: null, quota: null });
+	// Error crudo (para el diagnóstico técnico copiable, Bloque 3).
+	let errorCrudo = $state<unknown>(null);
 	let nombreNuevo = $state('');
 	let modoNuevo = $state<ModoPeriodo>('calendario'); // preseleccionado (Capa 1)
 	let creando = $state(false);
 	let bienvenidaMsg = $state('');
 	let bienvenidaMsgErr = $state(false);
 	let importInputBienvenida: HTMLInputElement | undefined = $state();
+
+	// ===== Pantalla diferenciada de arranque (Blindaje iOS, Bloque 2) =====
+	// Clasifica las señales leídas en leerSenalesArranque(). null = sin señales
+	// concluyentes: se muestra la bienvenida de siempre, sin cambios.
+	type DiagArranque = 'borrado_total' | 'borrado_parcial' | 'pool_con_bytes';
+	let diagArranque = $derived.by((): DiagArranque | null => {
+		if (!senalPool) return null; // pool no se pudo leer: no concluyente
+		if (senalPool.existe && senalPool.bytes > 0) return 'pool_con_bytes';
+		if (!senalPool.existe) return marcaPerfil ? 'borrado_parcial' : 'borrado_total';
+		return null; // pool existe pero vacío: no concluyente
+	});
+	let forzarBienvenidaNormal = $state(false); // "Empezar de cero" / confirmación de crear igual
+	let confirmarCrearNuevo = $state(false);
 
 	// Stepper de bienvenida (Capa 1): 1 Filosofía · 2 Nombre · 3 Modo · 4 Data · 5 Cierre.
 	const TOTAL_PASOS = 5;
@@ -64,14 +90,38 @@
 		try {
 			perfilListo = await hayPerfil();
 			chequeando = false;
-			if (perfilListo) { autoCotizaciones(); autoPrecios(); } // en segundo plano, no bloquea la app
+			if (perfilListo) {
+				escribirMarcaPerfil(); // refresca ultimo_arranque_ok (Blindaje iOS)
+				autoCotizaciones(); autoPrecios(); // en segundo plano, no bloquea la app
+			}
 		} catch (e) {
 			// La consulta falló (worker colgado, timeout, etc.): NO sabemos si hay
 			// perfil o no, así que no tocamos perfilListo ni mostramos onboarding.
 			console.error(e);
+			errorCrudo = e; // para el diagnóstico técnico copiable (Bloque 3)
 			chequeando = false;
 			perfilError = true;
 		}
+	}
+
+	// Señales de arranque (Blindaje iOS), leídas ANTES de abrir la base — best
+	// effort, nunca bloquean ni rompen el arranque si algo falla. El pedido de
+	// almacenamiento persistente vivía suelto en onMount; se sumó acá para que
+	// su resultado (antes descartado) quede reflejado en estadoStorage.
+	async function leerSenalesArranque() {
+		senalPool = await leerSenalPool();
+		marcaPerfil = leerMarcaPerfil();
+		let concedido: boolean | null = null;
+		try {
+			concedido = (await navigator.storage?.persist?.()) ?? null;
+		} catch { /* no soportado */ }
+		estadoStorage = await leerEstadoStorage();
+		if (concedido !== null) estadoStorage = { ...estadoStorage, persistido: concedido };
+	}
+
+	async function iniciarArranque() {
+		await leerSenalesArranque();
+		await chequearPerfil();
 	}
 
 	// Resync pesado (histórico completo de dólar + inflación, ArgentinaDatos) si
@@ -212,6 +262,7 @@
 	// pantalla era ni qué estaba cargando.
 	function onRechazoNoAtrapado(e: PromiseRejectionEvent) {
 		console.error(e.reason);
+		errorGlobalCrudo = e.reason;
 		// Escalada: si el Reintentar de este banner ya se tocó hace <60s (mismo
 		// contexto de navegación) y volvió a colgarse, un segundo reload no va a
 		// arreglar nada — se oculta el botón y queda solo la instrucción real
@@ -237,16 +288,16 @@
 	}
 
 	onMount(() => {
-		chequearPerfil();
+		iniciarArranque();
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
 		}
-		// Pide almacenamiento persistente: sin esto, el navegador puede desalojar
-		// el OPFS bajo presión de espacio. Crítico en iOS, donde Safari borra los
-		// datos creados por script tras 7 días sin abrir la app (las apps agregadas
-		// a la pantalla de inicio quedan exentas). Best-effort: si no está soportado
-		// o lo rechaza, la app sigue igual.
-		try { navigator.storage?.persist?.(); } catch { /* no soportado */ }
+		// El pedido de almacenamiento persistente (navigator.storage.persist()) se
+		// movió a leerSenalesArranque(): sin esto, el navegador puede desalojar el
+		// OPFS bajo presión de espacio. Crítico en iOS, donde Safari borra los datos
+		// creados por script tras 7 días sin abrir la app (apps agregadas a la
+		// pantalla de inicio quedan exentas). Best-effort. Su resultado ahora queda
+		// reflejado en estadoStorage en vez de descartarse.
 		// La captura de beforeinstallprompt / standalone vive en pwa.svelte.ts (a
 		// nivel módulo, se evalúa temprano vía el import de InstalarApp).
 		window.addEventListener('scroll', alScrollear, { passive: true });
@@ -269,6 +320,7 @@
 			{/if}
 			<button class="banner-global-cerrar" onclick={() => (errorGlobal = '')} aria-label="Cerrar aviso">✕</button>
 		</div>
+		<DiagnosticoTecnico pantalla="Banner global (promesa no atrapada)" {senalPool} {marcaPerfil} {estadoStorage} errorCrudo={errorGlobalCrudo} abierto={false} />
 	</div>
 {/if}
 
@@ -280,52 +332,87 @@
 			<h2 class="bq">No pudimos verificar tu perfil</h2>
 			<p>Puede ser un problema pasajero de la base local. Tus datos no se tocaron.</p>
 			<button class="crear" onclick={chequearPerfil}>Reintentar</button>
+			<DiagnosticoTecnico pantalla="No pudimos verificar tu perfil" {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={false} />
 		</div>
 	</div>
 {:else if !perfilListo}
-	<!-- Bienvenida -->
-	<div class="bienvenida">
-		<div class="bcard">
-			<div class="bdots" aria-hidden="true">
-				{#each Array.from({ length: TOTAL_PASOS }) as _, i}<span class="bdot" class:on={i + 1 === paso}></span>{/each}
-			</div>
-
-			{#if paso === 1}
-				<h1>Tomá el control de tu plata, a tu manera.</h1>
-			{:else if paso === 2}
-				<h2 class="bq">¿Cómo te llamás?</h2>
-				<input class="bin" bind:value={nombreNuevo} placeholder="Tu nombre" onkeydown={(e) => e.key === 'Enter' && siguiente()} />
-			{:else if paso === 3}
-				<h2 class="bq">¿Cuándo arranca tu mes financiero?</h2>
-				<div class="modo-btns">
-					<button type="button" class:activo={modoNuevo === 'calendario'} onclick={() => (modoNuevo = 'calendario')}>📅 Del 1 al 30 — calendario</button>
-					<button type="button" class:activo={modoNuevo === 'sueldo'} onclick={() => (modoNuevo = 'sueldo')}>💸 El día que cobrás — sueldo</button>
-				</div>
-				<p class="bsub">Lo cambiás cuando quieras en Configuración.</p>
-			{:else if paso === 4}
-				<p class="bp">Tus datos viven solo en este teléfono. Conviene instalar la app:</p>
-				<InstalarApp compacto mostrarInstalada dismissible={false} />
-			{:else}
-				<p class="bp">Listo. Cargá un gasto y arrancá. Lo demás aparece cuando lo quieras.</p>
-			{/if}
-
-			<div class="bnav">
-				{#if paso > 1}<button class="bback" onclick={atras}>Atrás</button>{/if}
-				{#if paso < TOTAL_PASOS}
-					<button class="crear" onclick={siguiente} disabled={!puedeAvanzar}>Siguiente</button>
+	{#if diagArranque && !forzarBienvenidaNormal}
+		<!-- Pantalla diferenciada de arranque (Blindaje iOS, Bloque 2) -->
+		<div class="bienvenida">
+			<div class="bcard">
+				{#if diagArranque === 'pool_con_bytes'}
+					<h2 class="bq">Encontramos tu base pero no pudimos leerla</h2>
+					<p>No crees un perfil nuevo todavía.</p>
+					<div class="bnav">
+						<button class="crear" onclick={chequearPerfil}>Reintentar</button>
+					</div>
+					{#if !confirmarCrearNuevo}
+						<button type="button" class="bback" onclick={() => (confirmarCrearNuevo = true)}>Crear perfil nuevo</button>
+					{:else}
+						<p class="bmsg err"><span class="err-x">✗</span> Si creás un perfil nuevo no vamos a poder recuperar la base anterior desde acá. ¿Confirmás?</p>
+						<div class="bnav">
+							<button class="bback" onclick={() => (confirmarCrearNuevo = false)}>Cancelar</button>
+							<button class="crear" onclick={() => (forzarBienvenidaNormal = true)}>Sí, crear de todos modos</button>
+						</div>
+					{/if}
+					<DiagnosticoTecnico pantalla="Arranque: pool con bytes, no se pudo leer" {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={true} />
 				{:else}
-					<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim()}>{creando ? 'Creando…' : 'Empezar'}</button>
+					<h2 class="bq">El sistema borró los datos de Rienda de este teléfono.</h2>
+					<p>Esto lo hace iOS, no la app.{#if diagArranque === 'borrado_parcial'} Parece un borrado parcial: encontramos una marca de que tuviste un perfil, pero no la base.{/if}</p>
+					<div class="bnav">
+						<button class="crear" onclick={() => importInputBienvenida?.click()}>⬆ Importar copia</button>
+					</div>
+					<button type="button" class="bback" onclick={() => (forzarBienvenidaNormal = true)}>Empezar de cero</button>
+					<input type="file" accept=".json,.txt,text/plain,application/json" bind:this={importInputBienvenida} onchange={onImportarBienvenida} style="display:none" />
+					<DiagnosticoTecnico pantalla={diagArranque === 'borrado_parcial' ? 'Arranque: borrado parcial' : 'Arranque: borrado total'} {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={false} />
 				{/if}
 			</div>
-			{#if bienvenidaMsg}<p class="bmsg" class:err={bienvenidaMsgErr}>{#if bienvenidaMsgErr}<span class="err-x">✗</span> {/if}{bienvenidaMsg}</p>{/if}
-
-			{#if paso === 1}
-				<div class="separador"><span>o</span></div>
-				<button class="importar-b" onclick={() => importInputBienvenida?.click()}>⬆ Ya tengo una copia de seguridad</button>
-				<input type="file" accept="application/json" bind:this={importInputBienvenida} onchange={onImportarBienvenida} style="display:none" />
-			{/if}
 		</div>
-	</div>
+	{:else}
+		<!-- Bienvenida -->
+		<div class="bienvenida">
+			<div class="bcard">
+				<div class="bdots" aria-hidden="true">
+					{#each Array.from({ length: TOTAL_PASOS }) as _, i}<span class="bdot" class:on={i + 1 === paso}></span>{/each}
+				</div>
+
+				{#if paso === 1}
+					<h1>Tomá el control de tu plata, a tu manera.</h1>
+				{:else if paso === 2}
+					<h2 class="bq">¿Cómo te llamás?</h2>
+					<input class="bin" bind:value={nombreNuevo} placeholder="Tu nombre" onkeydown={(e) => e.key === 'Enter' && siguiente()} />
+				{:else if paso === 3}
+					<h2 class="bq">¿Cuándo arranca tu mes financiero?</h2>
+					<div class="modo-btns">
+						<button type="button" class:activo={modoNuevo === 'calendario'} onclick={() => (modoNuevo = 'calendario')}>📅 Del 1 al 30 — calendario</button>
+						<button type="button" class:activo={modoNuevo === 'sueldo'} onclick={() => (modoNuevo = 'sueldo')}>💸 El día que cobrás — sueldo</button>
+					</div>
+					<p class="bsub">Lo cambiás cuando quieras en Configuración.</p>
+				{:else if paso === 4}
+					<p class="bp">Tus datos viven solo en este teléfono. Conviene instalar la app:</p>
+					<InstalarApp compacto mostrarInstalada dismissible={false} />
+				{:else}
+					<p class="bp">Listo. Cargá un gasto y arrancá. Lo demás aparece cuando lo quieras.</p>
+				{/if}
+
+				<div class="bnav">
+					{#if paso > 1}<button class="bback" onclick={atras}>Atrás</button>{/if}
+					{#if paso < TOTAL_PASOS}
+						<button class="crear" onclick={siguiente} disabled={!puedeAvanzar}>Siguiente</button>
+					{:else}
+						<button class="crear" onclick={onCrearPerfil} disabled={creando || !nombreNuevo.trim()}>{creando ? 'Creando…' : 'Empezar'}</button>
+					{/if}
+				</div>
+				{#if bienvenidaMsg}<p class="bmsg" class:err={bienvenidaMsgErr}>{#if bienvenidaMsgErr}<span class="err-x">✗</span> {/if}{bienvenidaMsg}</p>{/if}
+
+				{#if paso === 1}
+					<div class="separador"><span>o</span></div>
+					<button class="importar-b" onclick={() => importInputBienvenida?.click()}>⬆ Ya tengo una copia de seguridad</button>
+					<input type="file" accept=".json,.txt,text/plain,application/json" bind:this={importInputBienvenida} onchange={onImportarBienvenida} style="display:none" />
+				{/if}
+			</div>
+		</div>
+	{/if}
 {:else}
 	<!-- App normal -->
 	<div class="topacc">

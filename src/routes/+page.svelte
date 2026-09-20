@@ -2,7 +2,9 @@
     import { onMount } from 'svelte';
     import { query } from '$lib/db/client';
     import { addMonths, cargarModo, cargarCortes, crearAsignador, type ModoPeriodo } from '$lib/periodo';
-    import { mesActual, parseNum, formatNum, soloNum, pesos, mesCorto } from '$lib/format';
+    import { mesActual, parseNum, formatNum, soloNum, pesos, mesCorto, diasEntre, hoyISO } from '$lib/format';
+    import { leerMeta } from '$lib/db/meta';
+    import { exportarDatos } from '$lib/db/backup';
     import Guia from '$lib/Guia.svelte';
     import CountUp from '$lib/CountUp.svelte';
     import Skeleton from '$lib/Skeleton.svelte';
@@ -460,7 +462,42 @@
         try { (mesInput as any)?.showPicker(); } catch { mesInput?.focus(); }
     }
 
-    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarHaloIngreso(); cargarNombre(); });
+    // ===== Aviso de copia de seguridad en Home (Blindaje iOS, Bloque 5) =====
+    // Umbral propio para este aviso visual (distinto del de /datos, que es a 30
+    // días, y del badge de notificaciones, que dispara a los 7): amarillo a los
+    // 3 días sin copia, rojo a los 7. null (nunca exportó) se trata como rojo,
+    // mismo criterio que ya usa /datos para "copiaVieja".
+    let diasCopia = $state<number | null>(null);
+    let compartiendoCopia = $state(false);
+    const nivelAvisoCopia = $derived.by((): 'rojo' | 'amarillo' | null => {
+        if (diasCopia === null) return 'rojo';
+        if (diasCopia >= 7) return 'rojo';
+        if (diasCopia >= 3) return 'amarillo';
+        return null;
+    });
+
+    async function cargarAvisoCopia() {
+        try {
+            const m = await leerMeta();
+            diasCopia = m.ultima_exportacion ? diasEntre(m.ultima_exportacion, hoyISO()) : null;
+        } catch {
+            /* silencioso: si falla, no se muestra aviso (no molesta) */
+        }
+    }
+
+    async function onCompartirCopia() {
+        compartiendoCopia = true;
+        try {
+            await exportarDatos();
+            diasCopia = 0;
+        } catch (e) {
+            console.error(e);
+        } finally {
+            compartiendoCopia = false;
+        }
+    }
+
+    onMount(async () => { await resolverPeriodoInicial(); cargar(); cargarHaloIngreso(); cargarNombre(); cargarAvisoCopia(); });
     // Alias locales al helper único de format.ts (mismo comportamiento de antes,
     // ya no reimplementado acá — ver Brief H / A1).
     const peso = pesos;
@@ -549,6 +586,13 @@
         Gastos del <strong>{rango}</strong> (el período lo abre la fecha real de tu sueldo).
     {/if}
 </p>
+
+{#if nivelAvisoCopia}
+    <div class="aviso-copia {nivelAvisoCopia}">
+        <span>{nivelAvisoCopia === 'rojo' ? '⚠️ ' : ''}{diasCopia === null ? 'Todavía no hiciste una copia de seguridad.' : `Hace ${diasCopia} día(s) que no hacés una copia de seguridad.`}</span>
+        <button class="btn btn-secondary" disabled={compartiendoCopia} onclick={onCompartirCopia}>{compartiendoCopia ? 'Compartiendo…' : '⬆ Compartir copia'}</button>
+    </div>
+{/if}
 
 {#if cargando}
     <div class="disponible sk-panel">
@@ -833,4 +877,13 @@
     .disp-linea-btn { width: 100%; background: none; border: none; padding: 7px 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
     .disp-linea.disp-linea-btn { padding-left: 0; }
     .flecha-mini { color: var(--text-dim); font-size: 0.75rem; width: 12px; display: inline-block; margin-right: 8px; letter-spacing: 0; }
+
+    /* ===== Aviso de copia de seguridad (Blindaje iOS, Bloque 5) ===== */
+    .aviso-copia {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+        border: 1px solid var(--border); background: var(--surface); border-radius: 8px;
+        padding: 10px 12px; margin: 0 0 12px; font-size: 0.85rem;
+    }
+    .aviso-copia.amarillo { border-color: var(--warn); color: var(--warn); }
+    .aviso-copia.rojo { border-color: var(--neg); color: var(--neg); }
 </style>

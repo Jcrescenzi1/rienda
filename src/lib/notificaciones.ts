@@ -57,12 +57,12 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 		reglas.push({ tipo: 'mep', texto: 'El tipo de cambio nunca se actualizó.', accion: 'cotiz' });
 	}
 
-	// Regla 2 — Copia: más de 14 días desde la última exportación.
+	// Regla 2 — Copia: más de 7 días desde la última exportación (Blindaje iOS).
 	const m = await leerMeta();
 	const ultExp = m.ultima_exportacion;
 	if (ultExp) {
 		const d = diasEntre(ultExp, hoy);
-		if (d > 14) reglas.push({ tipo: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
+		if (d > 7) reglas.push({ tipo: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
 	} else if (!enPrimeraSemana) {
 		reglas.push({ tipo: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
 	}

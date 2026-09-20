@@ -53,18 +53,39 @@ export async function serializarBackup(): Promise<{ obj: any; json: string }> {
 }
 
 // ---------- EXPORTAR ----------
+// Nombre .txt / MIME text/plain (no .json/application-json): Chromium bloquea
+// Web Share con esa extension+MIME, los chequea por separado. El contenido
+// JSON no cambia — leerFechasBackup ya parsea por contenido, no por extension.
 export async function exportarDatos(): Promise<void> {
 	const { json } = await serializarBackup();
-	const blob = new Blob([json], { type: 'application/json' });
-	const url = URL.createObjectURL(blob);
+	const nombre = `rienda-backup-${hoyISO()}.txt`;
+	const blob = new Blob([json], { type: 'text/plain' });
 
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = `rienda-backup-${hoyISO()}.json`;
-	a.click();
-	URL.revokeObjectURL(url);
+	// Comparte desde el gesto del usuario si el navegador soporta compartir
+	// archivos; si no, o si falla, cae a la descarga de siempre.
+	let compartido = false;
+	try {
+		const file = new File([blob], nombre, { type: 'text/plain' });
+		if (navigator.canShare?.({ files: [file] })) {
+			await navigator.share({ files: [file] });
+			compartido = true;
+		}
+	} catch (e: any) {
+		if (e?.name === 'AbortError') { compartido = true; } // el usuario cancelo el share sheet: no es error
+		else console.warn('[backup] no se pudo compartir, cae a descarga:', e);
+	}
 
-	// Registra cuando se exporto (para el recordatorio de backup en el home)
+	if (!compartido) {
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url;
+		a.download = nombre;
+		a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	// Registra cuando se exporto (para el recordatorio de backup), tanto por
+	// share como por descarga.
 	await setMeta('ultima_exportacion', new Date().toISOString());
 }
 

@@ -5,6 +5,7 @@ import { query } from './client';
 import { SEED_BASE } from './seed';
 import { SEED_MACRO } from './seed_macro';
 import type { ModoPeriodo } from '../periodo';
+import { escribirMarcaPerfil } from './senales';
 
 // ¿Ya existe un perfil creado?
 export async function hayPerfil(): Promise<boolean> {
@@ -31,4 +32,5 @@ export async function crearPerfil(nombre: string, modoPeriodo: ModoPeriodo = 'ca
 	if (SEED_MACRO && SEED_MACRO.trim()) {
 		await query(SEED_MACRO); // dólar/inflación de arranque (trae su propia transacción)
 	}
+	escribirMarcaPerfil(); // marca de localStorage para el diagnóstico de arranque (Blindaje iOS)
 }

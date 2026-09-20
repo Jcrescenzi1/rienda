@@ -3,6 +3,7 @@
 	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
 	import { crearAutobackup, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
+	import { leerEstadoStorage, formatBytesMB, type EstadoStorage } from '$lib/db/senales';
 	import {
 		descargarBlob,
 		exportarFinanzasXLSX, prepararFinanzasXLSX, confirmarFinanzasXLSX,
@@ -40,10 +41,17 @@
 	let reparando = $state(false);
 	let progresoReparacion = $state({ hecho: 0, total: 0 });
 
+	// Estado de almacenamiento (Blindaje iOS, Bloque 5): persistencia + espacio
+	// usado, tomados de las mismas señales que lee el arranque (Bloque 1). Se
+	// recalcula acá (llamada liviana de la Storage API, no toca la base) en vez
+	// de heredar el valor leído al arrancar la app.
+	let estadoStorage = $state<EstadoStorage>({ persistido: null, usage: null, quota: null });
+
 	async function cargar() {
 		meta = await leerMeta();
 		autobackups = await listarAutobackups();
 		fotosReparadas = await fotosYaReparadas();
+		estadoStorage = await leerEstadoStorage();
 		cargando = false;
 	}
 	onMount(cargar);
@@ -293,6 +301,7 @@
 	<div class="estado" class:vieja={copiaVieja}>
 		<span class="est-main">{copiaVieja ? '⚠️ ' : ''}{textoCopia}.</span>
 		{#if copiaVieja}<span class="est-sub">Tus datos viven solo en este teléfono — descargá la copia JSON abajo (tu único respaldo total).</span>{/if}
+		<span class="est-sub">Almacenamiento persistente: {estadoStorage.persistido === null ? 'desconocido' : estadoStorage.persistido ? 'sí' : 'no'} · Espacio usado: {formatBytesMB(estadoStorage.usage)}{estadoStorage.quota !== null ? ` de ${formatBytesMB(estadoStorage.quota)}` : ''}</span>
 	</div>
 
 	<!-- Comparación antes de restaurar (cuando elegiste una copia) -->
@@ -345,7 +354,7 @@
 			<div class="acc">
 				<button class="btn btn-primary" onclick={onExportar}>⬇ Descargar copia (JSON)</button>
 				<button class="btn btn-secondary" onclick={() => importInput?.click()}>⬆ Restaurar copia</button>
-				<input type="file" accept="application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
+				<input type="file" accept=".json,.txt,text/plain,application/json" bind:this={importInput} onchange={onElegirArchivo} style="display:none" />
 			</div>
 			<details class="subsec">
 				<summary>Detalle de fechas</summary>
