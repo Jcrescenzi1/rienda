@@ -14,6 +14,7 @@
 	import { query } from '$lib/db/client';
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
+	import { esIOS } from '$lib/pwa.svelte';
 	import { ErrorValidacion } from '$lib/errores';
 	import { compartirOdescargarTexto } from '$lib/db/backup';
 	import DiagnosticoTecnico from '$lib/DiagnosticoTecnico.svelte';
@@ -38,9 +39,9 @@
 	// única vía de recuperación real.
 	let errorGlobal = $state('');
 	// true si el Reintentar del banner ya se probó hace <60s en este mismo
-	// arranque y volvió a colgarse: ahí se oculta el botón (ver onReintentarBanner
+	// arranque y volvió a colgarse: ahí se oculta el botón (ver reintentarConReload
 	// / onRechazoNoAtrapado más abajo), porque un segundo reload en caliente no
-	// resuelve nada — hace falta el cierre real de la PWA.
+	// resuelve nada — hace falta el cierre real de la PWA (Brief 0).
 	let errorGlobalEscalado = $state(false);
 	// Error crudo del rechazo no atrapado (para el diagnóstico técnico copiable).
 	let errorGlobalCrudo = $state<unknown>(null);
@@ -54,6 +55,9 @@
 	// confundía con "no hay perfil creado" y mandaba a un usuario con datos
 	// reales a la pantalla de Bienvenida (onboarding desde cero).
 	let perfilError = $state(false);
+	// Escalada (Brief 0): si ya se reintentó hace <60s en esta pantalla y volvió
+	// a fallar, se oculta Reintentar y se muestra la instrucción de cerrar la app.
+	let perfilErrorEscalado = $state(false);
 	// Señales de arranque (Blindaje iOS) — ver leerSenalesArranque().
 	let senalPool = $state<SenalPool>(null);
 	let marcaPerfil = $state<MarcaPerfil | null>(null);
@@ -79,13 +83,30 @@
 	});
 	let forzarBienvenidaNormal = $state(false); // "Empezar de cero" / confirmación de crear igual
 	let confirmarCrearNuevo = $state(false);
+	let confirmandoCrearNuevo = $state(false); // Brief 0: deshabilita el botón mientras espera el reload
+
+	// Brief 0 — Bloque 4: crear perfil nuevo desde el caso B ya no pasa por
+	// forzarBienvenidaNormal directo (sería crear en el mismo documento donde
+	// la base no abría, con el mismo riesgo de lock que Reintentar). Pasa por
+	// el mismo reload: se guarda la confirmación en sessionStorage, se recarga,
+	// y onMount la lee y la consume para saltar directo al stepper.
+	async function onCrearNuevoConfirmado() {
+		confirmandoCrearNuevo = true;
+		try { sessionStorage.setItem('forzar_bienvenida', '1'); } catch { /* no soportado */ }
+		await new Promise((r) => setTimeout(r, 1000));
+		location.reload();
+	}
 
 	// Copia de rescate (Blindaje iOS, Brief 2): en el caso "pool con bytes, no
 	// se pudo leer", los autobackups viven en un directorio OPFS aparte y se
 	// pueden listar/leer SIN abrir la base rota. null = todavía no se buscó.
 	let autobackupsRescate = $state<AutobackupItem[] | null>(null);
+	// Escalada (Brief 0): misma idea que perfilErrorEscalado, clave propia para
+	// no interferir con la del banner ni la de perfilError.
+	let poolBytesEscalado = $state(false);
 	$effect(() => {
 		if (diagArranque === 'pool_con_bytes' && autobackupsRescate === null) {
+			poolBytesEscalado = reciente('poolbytes_reintento_ts');
 			listarAutobackups().then((items) => { autobackupsRescate = items; });
 		}
 	});
@@ -124,6 +145,7 @@
 			errorCrudo = e; // para el diagnóstico técnico copiable (Bloque 3)
 			chequeando = false;
 			perfilError = true;
+			perfilErrorEscalado = reciente('perfilerror_reintento_ts'); // Brief 0
 		}
 	}
 
@@ -142,6 +164,12 @@
 		if (concedido !== null) estadoStorage = { ...estadoStorage, persistido: concedido };
 	}
 
+	// Orden de arranque (Brief 0): leerSenalesArranque() (incluye leerSenalPool(),
+	// que abre archivos del directorio 'rienda-pool' con getFile()) tiene que
+	// terminar ANTES del primer query() de chequearPerfil() — es la misma
+	// carpeta que el SAHPool necesita montar, y aunque getFile() es lectura y
+	// no debería tomar locks, no conviene competir por ella. El await
+	// secuencial de acá abajo es la garantía: no correrlos en paralelo.
 	async function iniciarArranque() {
 		await leerSenalesArranque();
 		await chequearPerfil();
@@ -279,6 +307,40 @@
 	let enEvolGastos = $derived(actual === '/evolucion-finanzas' && (tabQS === null || tabQS === 'gastos' || tabQS === 'categorias' || tabQS === 'capacidad'));
 	let enEvolIngresos = $derived(actual === '/evolucion-finanzas' && (tabQS === 'ingresos' || tabQS === 'poder'));
 
+	// ===== Escalada y reload unificados (Brief 0) =====
+	// Mismo patrón para las 3 pantallas de falla (banner global, perfilError,
+	// caso B de pool con bytes), cada una con su propia clave de sessionStorage
+	// para no pisarse entre sí (un reintento del banner no debe ocultar el
+	// botón de la pantalla de perfil, ni al revés).
+	function reciente(clave: string): boolean {
+		try {
+			const ts = sessionStorage.getItem(clave);
+			return ts != null && Date.now() - Number(ts) < 60000;
+		} catch {
+			return false; // sessionStorage no disponible: no escala, se comporta como antes
+		}
+	}
+
+	// Guarda el timestamp de este intento (para que la próxima falla en la
+	// misma pantalla pueda escalar) y recarga tras el margen — le da tiempo al
+	// navegador de liberar el worker/lock viejo antes de que el documento nuevo
+	// abra otro. Un reload no mata procesos colgados del documento anterior,
+	// por eso el escalón siguiente sigue siendo cerrar la app, no un segundo reload.
+	async function reintentarConReload(clave: string, margenMs: number) {
+		try { sessionStorage.setItem(clave, String(Date.now())); } catch { /* no soportado */ }
+		await new Promise((r) => setTimeout(r, margenMs));
+		location.reload();
+	}
+
+	// El reload ya no alcanzó: hay que cerrar la app de verdad. Pasos concretos
+	// en iOS (sin gesto de recarga ni barra de direcciones en standalone); el
+	// texto genérico de siempre en el resto.
+	function textoCerrarApp(): string {
+		return esIOS()
+			? 'Cerrá la app por completo: deslizá desde abajo, mantené, deslizá la tarjeta de Rienda hacia arriba y volvé a abrir desde el ícono.'
+			: 'Cerrá la app por completo (no solo minimizarla) y volvé a abrirla.';
+	}
+
 	// Red global: cualquier promesa rechazada que nadie atrapó en toda la app
 	// cae acá. No parsea el error ni distingue causas a propósito — un solo
 	// texto genérico, porque no hay forma confiable de saber desde acá qué
@@ -286,31 +348,24 @@
 	function onRechazoNoAtrapado(e: PromiseRejectionEvent) {
 		console.error(e.reason);
 		errorGlobalCrudo = e.reason;
-		// Escalada: si el Reintentar de este banner ya se tocó hace <60s (mismo
-		// contexto de navegación) y volvió a colgarse, un segundo reload no va a
-		// arreglar nada — se oculta el botón y queda solo la instrucción real
-		// (cerrar la PWA de verdad). sessionStorage se resetea solo al cerrar la
-		// PWA y reabrirla, así que la próxima sesión real vuelve a ofrecer Reintentar.
-		let reciente = false;
-		try {
-			const ts = sessionStorage.getItem('banner_reintento_ts');
-			reciente = ts != null && Date.now() - Number(ts) < 60000;
-		} catch { /* sessionStorage no disponible: no escala, se comporta como antes */ }
-		errorGlobalEscalado = reciente;
+		// sessionStorage se resetea solo al cerrar la PWA y reabrirla, así que la
+		// próxima sesión real vuelve a ofrecer Reintentar.
+		errorGlobalEscalado = reciente('banner_reintento_ts');
 		errorGlobal = 'Algo se colgó cargando datos. Cerrá la app por completo (no solo minimizarla) y volvé a abrirla.';
 	}
 
-	async function onReintentarBanner() {
-		// Mismo margen que onActualizarCotiz(): le da tiempo al navegador de
-		// liberar el handle del worker viejo antes de que el reload cree uno
-		// nuevo. Guarda el timestamp para que onRechazoNoAtrapado pueda escalar
-		// si este reload no soluciona nada y se cuelga de nuevo.
-		try { sessionStorage.setItem('banner_reintento_ts', String(Date.now())); } catch { /* no soportado */ }
-		await new Promise((r) => setTimeout(r, 400));
-		location.reload();
-	}
-
 	onMount(() => {
+		// Brief 0 — Bloque 4: si venimos de "Sí, crear de todos modos" (reload
+		// desde el caso B), la clave se lee y se consume ACA, antes de
+		// iniciarArranque(), para que este arranque salte directo al stepper de
+		// bienvenida sin importar cómo clasifiquen las señales. Se borra al leer
+		// para que un reload posterior no la fuerce de nuevo.
+		try {
+			if (sessionStorage.getItem('forzar_bienvenida')) {
+				sessionStorage.removeItem('forzar_bienvenida');
+				forzarBienvenidaNormal = true;
+			}
+		} catch { /* sessionStorage no disponible: se comporta como si no se hubiera confirmado */ }
 		iniciarArranque();
 		if (!dev && 'serviceWorker' in navigator) {
 			navigator.serviceWorker.register('/service-worker.js');
@@ -339,7 +394,9 @@
 		<p>{errorGlobal}</p>
 		<div class="banner-global-acciones">
 			{#if !errorGlobalEscalado}
-				<button class="crear" onclick={onReintentarBanner}>Reintentar</button>
+				<button class="crear" onclick={() => reintentarConReload('banner_reintento_ts', 400)}>Reintentar</button>
+			{:else}
+				<p class="bmsg err"><span class="err-x">✗</span> {textoCerrarApp()}</p>
 			{/if}
 			<button class="banner-global-cerrar" onclick={() => (errorGlobal = '')} aria-label="Cerrar aviso">✕</button>
 		</div>
@@ -354,7 +411,11 @@
 		<div class="bcard">
 			<h2 class="bq">No pudimos verificar tu perfil</h2>
 			<p>Puede ser un problema pasajero de la base local. Tus datos no se tocaron.</p>
-			<button class="crear" onclick={chequearPerfil}>Reintentar</button>
+			{#if !perfilErrorEscalado}
+				<button class="crear" onclick={() => reintentarConReload('perfilerror_reintento_ts', 1000)}>Reintentar</button>
+			{:else}
+				<p class="bmsg err"><span class="err-x">✗</span> {textoCerrarApp()}</p>
+			{/if}
 			<DiagnosticoTecnico pantalla="No pudimos verificar tu perfil" {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={false} />
 		</div>
 	</div>
@@ -378,16 +439,20 @@
 							<button class="crear" onclick={onDescargarRescate}>⬇ Descargar/compartir copia de rescate</button>
 						</div>
 					{/if}
-					<div class="bnav">
-						<button class="crear" onclick={chequearPerfil}>Reintentar</button>
-					</div>
+					{#if !poolBytesEscalado}
+						<div class="bnav">
+							<button class="crear" onclick={() => reintentarConReload('poolbytes_reintento_ts', 1000)}>Reintentar</button>
+						</div>
+					{:else}
+						<p class="bmsg err"><span class="err-x">✗</span> {textoCerrarApp()}</p>
+					{/if}
 					{#if !confirmarCrearNuevo}
 						<button type="button" class="bback" onclick={() => (confirmarCrearNuevo = true)}>Crear perfil nuevo</button>
 					{:else}
 						<p class="bmsg err"><span class="err-x">✗</span> Si creás un perfil nuevo no vamos a poder recuperar la base anterior desde acá. ¿Confirmás?</p>
 						<div class="bnav">
-							<button class="bback" onclick={() => (confirmarCrearNuevo = false)}>Cancelar</button>
-							<button class="crear" onclick={() => (forzarBienvenidaNormal = true)}>Sí, crear de todos modos</button>
+							<button class="bback" onclick={() => (confirmarCrearNuevo = false)} disabled={confirmandoCrearNuevo}>Cancelar</button>
+							<button class="crear" onclick={onCrearNuevoConfirmado} disabled={confirmandoCrearNuevo}>{confirmandoCrearNuevo ? 'Recargando…' : 'Sí, crear de todos modos'}</button>
 						</div>
 					{/if}
 					<DiagnosticoTecnico pantalla="Arranque: pool con bytes, no se pudo leer" {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={true} />

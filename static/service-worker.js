@@ -6,7 +6,7 @@
 // esquema, el worker de la DB o algo breaking. skipWaiting + clients.claim hacen
 // que la version nueva tome control en el primer open (no una sesion tarde).
 
-const CACHE = 'rienda-cache-v85';
+const CACHE = 'rienda-cache-v86';
 
 self.addEventListener('install', () => {
 	self.skipWaiting();
