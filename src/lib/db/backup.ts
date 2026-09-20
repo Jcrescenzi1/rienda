@@ -52,17 +52,18 @@ export async function serializarBackup(): Promise<{ obj: any; json: string }> {
 	return { obj, json: JSON.stringify(obj, null, 2) };
 }
 
-// ---------- EXPORTAR ----------
+// ---------- COMPARTIR / DESCARGAR (comun a export manual y autobackups) ----------
 // Nombre .txt / MIME text/plain (no .json/application-json): Chromium bloquea
 // Web Share con esa extension+MIME, los chequea por separado. El contenido
-// JSON no cambia — leerFechasBackup ya parsea por contenido, no por extension.
-export async function exportarDatos(): Promise<void> {
-	const { json } = await serializarBackup();
-	const nombre = `rienda-backup-${hoyISO()}.txt`;
-	const blob = new Blob([json], { type: 'text/plain' });
+// (JSON) no cambia — leerFechasBackup ya parsea por contenido, no por
+// extension. Intenta compartir desde el gesto del usuario si el navegador
+// soporta compartir archivos; si no, o si falla, cae a la descarga de
+// siempre. Usada por exportarDatos() (Brief 1) y por cada autobackup listado
+// en /datos y por la copia de rescate de la pantalla de falla (Brief 2).
+export async function compartirOdescargarTexto(contenido: string, nombreBase: string): Promise<void> {
+	const nombre = `${nombreBase}.txt`;
+	const blob = new Blob([contenido], { type: 'text/plain' });
 
-	// Comparte desde el gesto del usuario si el navegador soporta compartir
-	// archivos; si no, o si falla, cae a la descarga de siempre.
 	let compartido = false;
 	try {
 		const file = new File([blob], nombre, { type: 'text/plain' });
@@ -83,7 +84,12 @@ export async function exportarDatos(): Promise<void> {
 		a.click();
 		URL.revokeObjectURL(url);
 	}
+}
 
+// ---------- EXPORTAR ----------
+export async function exportarDatos(): Promise<void> {
+	const { json } = await serializarBackup();
+	await compartirOdescargarTexto(json, `rienda-backup-${hoyISO()}`);
 	// Registra cuando se exporto (para el recordatorio de backup), tanto por
 	// share como por descarga.
 	await setMeta('ultima_exportacion', new Date().toISOString());

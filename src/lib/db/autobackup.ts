@@ -1,17 +1,24 @@
 // src/lib/db/autobackup.ts
-// Copias automaticas rotativas en OPFS (mismo dispositivo). Red de seguridad
-// ante operaciones que pisan datos (import-reemplaza, reset): se crea una copia
-// ANTES de pisar y se guardan las ultimas 5 (FIFO).
+// Copias automaticas rotativas en OPFS (mismo dispositivo). Se crean ANTES de
+// pisar datos (import-reemplaza, reset) y, desde Blindaje iOS (Brief 2), una
+// vez por dia en el arranque si todavia no hay copia de hoy — se guardan las
+// ultimas 7 (FIFO). Cada corrida registra su resultado en meta
+// (autobackup_ultimo_ok / autobackup_ultimo_error, ver crearAutobackup()).
 //
 // LIMITE EXPLICITO: estas copias viven en el mismo OPFS/dispositivo. NO protegen
 // contra eviction del navegador, "limpiar datos de navegacion" ni perdida del
-// equipo. Cubren solo el peor caso autoinfligido (pisar todo con import/reset).
-// La durabilidad off-device es una decision de arquitectura aparte.
+// equipo. Cubren el peor caso autoinfligido (pisar todo con import/reset) y,
+// con la copia diaria, la inactividad prolongada del usuario tipico. La
+// durabilidad off-device es una decision de arquitectura aparte.
 
 import { serializarBackup } from './backup';
+import { leerMeta, setMeta } from './meta';
+import { hoyISO } from '../format';
 
 const DIR = 'autobackups';
-const MAX = 5;
+// Blindaje iOS (Brief 2): 5→7. Con copias diarias sumadas a las previas a
+// import/reset, 5 slots se llenaban en menos de una semana.
+const MAX = 7;
 
 async function carpeta(create = false): Promise<any> {
 	const root: any = await (navigator as any).storage.getDirectory();
@@ -33,7 +40,11 @@ function fechaLegible(nombre: string): string {
 
 export type AutobackupItem = { nombre: string; fecha: string; size: number };
 
-// Crea una copia y poda a las ultimas MAX. Best-effort: nunca tira la operacion.
+// Crea una copia y poda a las ultimas MAX. Best-effort: nunca tira la operacion
+// en curso. Registra el resultado en meta (Blindaje iOS, Brief 2): exito en
+// autobackup_ultimo_ok, fallo en autobackup_ultimo_error (JSON con fecha y
+// mensaje) — es la unica forma de enterarse si esto viene fallando en
+// silencio, ya que antes solo quedaba un console.warn.
 export async function crearAutobackup(): Promise<void> {
 	try {
 		const { json } = await serializarBackup();
@@ -43,8 +54,32 @@ export async function crearAutobackup(): Promise<void> {
 		await w.write(json);
 		await w.close();
 		await podar(dir);
+		await setMeta('autobackup_ultimo_ok', new Date().toISOString());
 	} catch (e) {
 		console.warn('[autobackup] no se pudo crear la copia automatica:', e);
+		try {
+			await setMeta('autobackup_ultimo_error', JSON.stringify({
+				fecha: new Date().toISOString(),
+				mensaje: e instanceof Error ? e.message : String(e)
+			}));
+		} catch {
+			/* setMeta tambien fallo (base inaccesible): no hay donde registrar el error */
+		}
+	}
+}
+
+// Copia diaria (Blindaje iOS, Brief 2): se llama en cada arranque con perfil
+// cargado bien (ver +layout.svelte -> chequearPerfil()). Fire-and-forget, no
+// bloquea la UI ni muestra nada. Compara solo la FECHA (YYYY-MM-DD) de
+// autobackup_ultimo_ok contra hoy — la hora exacta no importa, alcanza con
+// una copia por dia.
+export async function autobackupDiarioSiHaceFalta(): Promise<void> {
+	try {
+		const meta = await leerMeta();
+		if (meta.autobackup_ultimo_ok?.slice(0, 10) === hoyISO()) return; // ya hay copia de hoy
+		await crearAutobackup();
+	} catch (e) {
+		console.warn('[autobackup] no se pudo chequear/crear la copia diaria:', e);
 	}
 }
 

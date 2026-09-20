@@ -159,7 +159,7 @@
 	</button>
 	{#if abierta === 'backups'}
 		<div class="acc-body">
-			<p>Todo vive solo en este dispositivo (sin nube). Por eso conviene <strong>instalar la app</strong> y hacer <strong>backup</strong> cada tanto desde Importar/Exportar. Rienda también guarda copias automáticas antes de operaciones riesgosas (importar/reset), pero esas viven en el mismo dispositivo: no reemplazan a un backup tuyo.</p>
+			<p>Todo vive solo en este dispositivo (sin nube). Por eso conviene <strong>instalar la app</strong> y hacer <strong>backup</strong> cada tanto desde Importar/Exportar (podés descargarlo o compartirlo directamente). Rienda también guarda copias automáticas una vez por día y antes de operaciones riesgosas (importar/reset), pero esas viven en el mismo dispositivo: no reemplazan a un backup tuyo.</p>
 		</div>
 	{/if}
 </section>

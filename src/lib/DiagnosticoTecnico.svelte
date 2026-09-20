@@ -4,8 +4,11 @@
 	// cortas, legible en WhatsApp. Usado en 3 lugares: la pantalla diferenciada
 	// de arranque, "No pudimos verificar tu perfil" y el banner rojo global.
 	// Lo que no se pudo leer va como "desconocido"; nunca rompe el armado.
+	// Brief 2: suma el estado del autobackup (última corrida OK/error, peso
+	// total del directorio) a las señales del Brief 1.
 	import { Toast } from './toast.svelte';
 	import { leerMeta } from './db/meta';
+	import { listarAutobackups } from './db/autobackup';
 	import { formatBytesMB, type SenalPool, type MarcaPerfil, type EstadoStorage } from './db/senales';
 
 	let { pantalla, senalPool, marcaPerfil, estadoStorage, errorCrudo = null, abierto = false }: {
@@ -23,11 +26,32 @@
 	// y se completan solos si responden. Nunca bloquean el render del bloque.
 	let ultimaExportacion = $state('desconocido');
 	let cacheSW = $state('desconocido');
+	// Blindaje iOS (Brief 2): estado del autobackup diario/previo a operaciones.
+	let autobackupUltimoOk = $state('desconocido');
+	let autobackupUltimoError = $state('desconocido');
+	let pesoAutobackups = $state('desconocido');
 
 	$effect(() => {
 		leerMeta()
-			.then((m) => { ultimaExportacion = m.ultima_exportacion ?? 'sin dato'; })
-			.catch(() => { ultimaExportacion = 'desconocido'; });
+			.then((m) => {
+				ultimaExportacion = m.ultima_exportacion ?? 'sin dato';
+				autobackupUltimoOk = m.autobackup_ultimo_ok ?? 'nunca';
+				autobackupUltimoError = m.autobackup_ultimo_error ?? 'ninguno';
+			})
+			.catch(() => {
+				ultimaExportacion = 'desconocido';
+				autobackupUltimoOk = 'desconocido';
+				autobackupUltimoError = 'desconocido';
+			});
+	});
+
+	$effect(() => {
+		listarAutobackups()
+			.then((items) => {
+				const total = items.reduce((acc, it) => acc + it.size, 0);
+				pesoAutobackups = `${formatBytesMB(total)} (${items.length} copia(s))`;
+			})
+			.catch(() => { /* desconocido, ya es el default */ });
 	});
 
 	$effect(() => {
@@ -71,7 +95,10 @@
 			`Cache SW: ${cacheSW}`,
 			`Standalone: ${esStandalone() ? 'sí' : 'no'}`,
 			`User agent: ${navigator.userAgent}`,
-			`Última exportación: ${ultimaExportacion}`
+			`Última exportación: ${ultimaExportacion}`,
+			`Autobackup último OK: ${autobackupUltimoOk}`,
+			`Autobackup último error: ${autobackupUltimoError}`,
+			`Peso total autobackups: ${pesoAutobackups}`
 		];
 		const err = textoError();
 		if (err) lineas.push(`Error: ${err}`);

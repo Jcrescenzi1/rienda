@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, type FechasBackup } from '$lib/db/backup';
+	import { exportarDatos, importarDatos, leerFechasBackup, resetearBase, compartirOdescargarTexto, type FechasBackup } from '$lib/db/backup';
 	import { crearAutobackup, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import { leerMeta, setMeta, type Metadatos } from '$lib/db/meta';
 	import { leerEstadoStorage, formatBytesMB, type EstadoStorage } from '$lib/db/senales';
@@ -17,7 +17,7 @@
 	import InstalarApp from '$lib/InstalarApp.svelte';
 	import PopupAuditoria from '$lib/PopupAuditoria.svelte';
 
-	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null });
+	let meta = $state<Metadatos>({ ultima_importacion: null, ultima_edicion_finanzas: null, ultima_edicion_inversiones: null, ultima_exportacion: null, autobackup_ultimo_ok: null, autobackup_ultimo_error: null });
 	let cargando = $state(true);
 	let importInput: HTMLInputElement | undefined = $state();
 
@@ -89,6 +89,10 @@
 	}
 	const diasCopia = $derived(diasDesde(meta.ultima_exportacion));
 	const copiaVieja = $derived(diasCopia === null || diasCopia > 30);
+	// Blindaje iOS (Brief 2): aviso si hace más de 2 días que no hay autobackup
+	// (o nunca hubo). Umbral propio, distinto del de la copia manual (30 días).
+	const diasAutobackup = $derived(diasDesde(meta.autobackup_ultimo_ok));
+	const autobackupViejo = $derived(diasAutobackup === null || diasAutobackup > 2);
 	const textoCopia = $derived(
 		diasCopia === null ? 'Todavía no descargaste ninguna copia'
 		: diasCopia === 0 ? 'Última copia: hoy'
@@ -156,6 +160,19 @@
 		} catch (err: any) {
 			if (err instanceof ErrorValidacion) alert(err.message);
 			else { console.error(err); alert('Ocurrió un error. Contactá al administrador.'); }
+		}
+	}
+
+	// Descargar/compartir una copia automatica puntual (Blindaje iOS, Brief 2):
+	// mismo mecanismo que exportarDatos() (.txt/text-plain, share con fallback
+	// a descarga). El nombre real ya trae el prefijo+fecha correctos.
+	async function onDescargarAuto(nombre: string) {
+		try {
+			const texto = await leerAutobackup(nombre);
+			await compartirOdescargarTexto(texto, nombre.replace(/\.json$/, ''));
+		} catch (err) {
+			console.error(err);
+			alert('Ocurrió un error. Contactá al administrador.');
 		}
 	}
 
@@ -410,23 +427,26 @@
 	</details>
 	{/if}
 
-	<!-- Últimas 5 versiones (deshacer) -->
+	<!-- Últimas 7 versiones (deshacer) -->
 	<details class="sec">
-		<summary>Últimas 5 versiones</summary>
+		<summary>Últimas 7 versiones</summary>
 		<div class="sec-body">
-			<p class="nota">Función deshacer: la app guarda sola tus últimas 5 versiones antes de cada cambio grande. ¿Te equivocaste? Volvé a cualquiera de las 5. ⚠️ Viven en este teléfono. Para no perder tus datos, descargá la copia JSON (arriba).</p>
+			<p class="nota">Función deshacer: la app guarda sola tus últimas 7 versiones — antes de cada cambio grande y una vez por día (Blindaje iOS). ¿Te equivocaste? Volvé a cualquiera, o descargala/compartila para guardarla fuera del teléfono. ⚠️ Viven en este teléfono. Para no perder tus datos, descargá la copia JSON (arriba).</p>
+			<p class="nota">{#if meta.autobackup_ultimo_ok}Última copia automática: {fmt(meta.autobackup_ultimo_ok)}.{:else}Todavía no se generó ninguna copia automática.{/if}</p>
+			{#if autobackupViejo}<p class="aviso rojo">⚠ Hace más de 2 días que no hay copia automática.</p>{/if}
 			{#if autobackups.length}
 				<ul class="autolist">
 					{#each autobackups as a (a.nombre)}
 						<li>
 							<span class="auto-fecha">{a.fecha}</span>
 							<span class="auto-size">{(a.size / 1024).toFixed(0)} KB</span>
+							<button class="btn btn-secondary" onclick={() => onDescargarAuto(a.nombre)}>⬇ Descargar/compartir</button>
 							<button class="btn btn-secondary" onclick={() => restaurarAuto(a.nombre)}>Volver a esta</button>
 						</li>
 					{/each}
 				</ul>
 			{:else}
-				<p class="nota">Todavía no hay versiones guardadas (se crean al importar o al borrar).</p>
+				<p class="nota">Todavía no hay versiones guardadas (se crean al importar, al borrar, o automáticamente una vez por día).</p>
 			{/if}
 		</div>
 	</details>

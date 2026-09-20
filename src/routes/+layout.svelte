@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { dev } from '$app/environment';
 	import { hayPerfil, crearPerfil } from '$lib/db/perfil';
+	import { autobackupDiarioSiHaceFalta, listarAutobackups, leerAutobackup, type AutobackupItem } from '$lib/db/autobackup';
 	import {
 		leerSenalPool, leerMarcaPerfil, escribirMarcaPerfil, leerEstadoStorage,
 		type SenalPool, type MarcaPerfil, type EstadoStorage
@@ -14,6 +15,7 @@
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
 	import { ErrorValidacion } from '$lib/errores';
+	import { compartirOdescargarTexto } from '$lib/db/backup';
 	import DiagnosticoTecnico from '$lib/DiagnosticoTecnico.svelte';
 
 	onNavigate((navigation) => {
@@ -78,6 +80,26 @@
 	let forzarBienvenidaNormal = $state(false); // "Empezar de cero" / confirmación de crear igual
 	let confirmarCrearNuevo = $state(false);
 
+	// Copia de rescate (Blindaje iOS, Brief 2): en el caso "pool con bytes, no
+	// se pudo leer", los autobackups viven en un directorio OPFS aparte y se
+	// pueden listar/leer SIN abrir la base rota. null = todavía no se buscó.
+	let autobackupsRescate = $state<AutobackupItem[] | null>(null);
+	$effect(() => {
+		if (diagArranque === 'pool_con_bytes' && autobackupsRescate === null) {
+			listarAutobackups().then((items) => { autobackupsRescate = items; });
+		}
+	});
+	async function onDescargarRescate() {
+		if (!autobackupsRescate?.length) return;
+		try {
+			const mas = autobackupsRescate[0]; // listarAutobackups() ya ordena mas nueva primero
+			const texto = await leerAutobackup(mas.nombre);
+			await compartirOdescargarTexto(texto, mas.nombre.replace(/\.json$/, ''));
+		} catch (e) {
+			console.error(e);
+		}
+	}
+
 	// Stepper de bienvenida (Capa 1): 1 Filosofía · 2 Nombre · 3 Modo · 4 Data · 5 Cierre.
 	const TOTAL_PASOS = 5;
 	let paso = $state(1);
@@ -93,6 +115,7 @@
 			if (perfilListo) {
 				escribirMarcaPerfil(); // refresca ultimo_arranque_ok (Blindaje iOS)
 				autoCotizaciones(); autoPrecios(); // en segundo plano, no bloquea la app
+				autobackupDiarioSiHaceFalta(); // copia diaria si hace falta (Blindaje iOS, Brief 2), fire-and-forget
 			}
 		} catch (e) {
 			// La consulta falló (worker colgado, timeout, etc.): NO sabemos si hay
@@ -343,6 +366,18 @@
 				{#if diagArranque === 'pool_con_bytes'}
 					<h2 class="bq">Encontramos tu base pero no pudimos leerla</h2>
 					<p>No crees un perfil nuevo todavía.</p>
+					<!-- Copia de rescate (Blindaje iOS, Brief 2): arriba de Reintentar, que
+					     puede terminar creando una base nueva al lado y empeorar la cosa. -->
+					{#if autobackupsRescate === null}
+						<!-- buscando copias locales, no bloquea nada -->
+					{:else if autobackupsRescate.length === 0}
+						<p class="bmsg err"><span class="err-x">✗</span> No hay copias locales disponibles.</p>
+					{:else}
+						<p class="bp">Última copia local: {autobackupsRescate[0].fecha}.</p>
+						<div class="bnav">
+							<button class="crear" onclick={onDescargarRescate}>⬇ Descargar/compartir copia de rescate</button>
+						</div>
+					{/if}
 					<div class="bnav">
 						<button class="crear" onclick={chequearPerfil}>Reintentar</button>
 					</div>
