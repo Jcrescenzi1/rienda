@@ -21,9 +21,12 @@
 	async function cargar() {
 		const rows = (await query('SELECT fecha, valor_usd, flujo_usd, valor_ars, dolar FROM snapshot WHERE perfil_id=1 ORDER BY fecha')) as any[];
 		let idx = 100; let prev: number | null = null;
+		// Blindaje espejo del de calcularSerieTWR en cartera.ts (mismo bug,
+		// mismo fix): un día en $0 ya no deja el índice en cero para siempre,
+		// solo queda sin señal hasta que vuelve a haber un dato real.
 		snaps = rows.map((s) => {
 			let r = 0;
-			if (prev !== null && prev > 0) { r = (s.valor_usd - s.flujo_usd) / prev - 1; idx *= 1 + r; }
+			if (prev !== null && prev > 0 && s.valor_usd > 0) { r = (s.valor_usd - s.flujo_usd) / prev - 1; idx *= 1 + r; }
 			prev = s.valor_usd;
 			return { ...s, ret: r, idx };
 		});

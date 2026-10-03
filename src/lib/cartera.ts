@@ -301,6 +301,21 @@ export async function completarFotosFaltantes(hastaExcluyendo: string): Promise<
 	return n;
 }
 
+// Primera fecha con un movimiento REAL en la cuenta (transacción, movimiento
+// de caja o renta/amortización) — antes de esa fecha no hay nada que calcular,
+// cualquier foto ahí es un artefacto, nunca un valor real de cartera. null si
+// todavía no hay ningún movimiento cargado.
+async function fechaPrimerMovimiento(): Promise<string | null> {
+	const r = (await query(
+		`SELECT MIN(f) AS f FROM (
+			SELECT MIN(fecha) AS f FROM transaccion WHERE perfil_id=1
+			UNION ALL SELECT MIN(fecha) FROM mov_caja WHERE perfil_id=1
+			UNION ALL SELECT MIN(fecha) FROM renta_activo WHERE perfil_id=1
+		)`
+	)) as any[];
+	return r[0]?.f ?? null;
+}
+
 // Bloque A — migración única: repara las fotos ya guardadas que quedaron con
 // precio de COMPRA (PPC) en vez de precio de MERCADO, secuela del bug donde
 // backfillHistoricoActivo traía histórico nuevo sin invalidar las fotos que
@@ -308,18 +323,34 @@ export async function completarFotosFaltantes(hastaExcluyendo: string): Promise<
 // calcularValuacionEnFecha, ahora que el histórico de precios está más
 // completo. Se corre a mano desde Tus datos (no automática al arrancar, para
 // no trabar el inicio de la app con una base grande). El flag
-// 'fotos_reparadas_v1' se escribe RECIÉN AL FINAL, si el barrido completo
+// 'fotos_reparadas_v2' se escribe RECIÉN AL FINAL, si el barrido completo
 // terminó sin tirar: así, si se corta a mitad de camino (la pestaña se cierra,
 // iOS mata la tab), la próxima vez la pantalla vuelve a ofrecer correrla en
 // vez de darla por hecha a medias.
+//
+// v2 (fix post-incidente): la v1 recalculaba TODAS las fotos sin filtrar por
+// fecha. Si había fotos guardadas con fecha ANTERIOR al primer movimiento real
+// (sobrantes del modelo viejo de ancla manual), calcularValuacionEnFecha no
+// tiene nada que calcular ahí y devuelve $0 — pisando un valor que antes era
+// real y rompiendo para siempre la cadena de rendimiento (ver calcularSerieTWR:
+// una base en 0 no se recupera). v2 borra esas fotos fantasma en vez de
+// recalcularlas, y sube el flag de versión para que a quien ya corrió v1 se le
+// vuelva a ofrecer el botón una vez.
 export async function fotosYaReparadas(): Promise<boolean> {
-	const r = (await query("SELECT valor FROM meta WHERE clave='fotos_reparadas_v1'")) as any[];
+	const r = (await query("SELECT valor FROM meta WHERE clave='fotos_reparadas_v2'")) as any[];
 	return r.length > 0;
 }
 
 const LOTE_REPARACION = 15; // fotos por lote, antes de ceder el hilo a la UI
 
 export async function repararFotosPPC(onProgreso?: (hecho: number, total: number) => void): Promise<void> {
+	const primerMov = await fechaPrimerMovimiento();
+	if (primerMov) {
+		// Fotos de antes de que existiera cualquier movimiento real: no son un
+		// valor histórico, son un artefacto. Se borran, no se recalculan.
+		await query('DELETE FROM snapshot WHERE perfil_id=1 AND fecha < ?', [primerMov]);
+	}
+
 	const fechas = (await query('SELECT fecha FROM snapshot WHERE perfil_id=1 ORDER BY fecha ASC')) as any[];
 	const total = fechas.length;
 	onProgreso?.(0, total);
@@ -331,7 +362,7 @@ export async function repararFotosPPC(onProgreso?: (hecho: number, total: number
 		if ((i + 1) % LOTE_REPARACION === 0) await new Promise((r) => setTimeout(r, 0));
 	}
 	await query(
-		"INSERT INTO meta (clave, valor) VALUES ('fotos_reparadas_v1', ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
+		"INSERT INTO meta (clave, valor) VALUES ('fotos_reparadas_v2', ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor",
 		[new Date().toISOString()]
 	);
 }
@@ -551,12 +582,24 @@ export async function calcularTenencia(): Promise<Tenencia> {
 export type SnapConIdx = { fecha: string; valor_usd: number; flujo_usd: number; ret: number; idx: number };
 
 // Encadena el índice TWR (base 100) sobre fotos YA ordenadas ascendente por fecha.
+//
+// Blindaje (post-incidente "Anual -100%"): el chequeo `prev > 0` ya evitaba
+// dividir por una base en cero (el día ANTERIOR en $0). Faltaba el caso
+// simétrico — el día ACTUAL en $0 (p. ej. una foto con dato faltante o un
+// gap de liquidez histórica) — que hacía `idx *= 0` y dejaba el índice en
+// cero PARA SIEMPRE: cero multiplicado por cualquier retorno futuro sigue
+// siendo cero, así que un solo día podrido rompía todo el historial de ahí
+// en más. Ahora también se exige `s.valor_usd > 0` para aplicar el paso: un
+// día en (o cerca de) cero no actualiza el índice, solo queda "sin señal" —
+// ni cuenta como caída al entrar, ni como suba al salir — y la cadena sigue
+// desde el último valor bueno apenas vuelve a haber un dato real. Mismo
+// criterio en ambos sentidos, sin inventar un piso/umbral arbitrario.
 export function calcularSerieTWR(rows: { fecha: string; valor_usd: number; flujo_usd: number }[]): SnapConIdx[] {
 	let idx = 100;
 	let prev: number | null = null;
 	return rows.map((s) => {
 		let r = 0;
-		if (prev !== null && prev > 0) { r = (s.valor_usd - s.flujo_usd) / prev - 1; idx *= 1 + r; }
+		if (prev !== null && prev > 0 && s.valor_usd > 0) { r = (s.valor_usd - s.flujo_usd) / prev - 1; idx *= 1 + r; }
 		prev = s.valor_usd;
 		return { ...s, ret: r, idx };
 	});
