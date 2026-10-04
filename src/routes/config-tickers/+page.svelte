@@ -9,6 +9,7 @@
 		type Especie
 	} from '$lib/db/precios';
 	import { backfillHistoricoActivo, tieneHistoricoData912 } from '$lib/db/precios_historicos';
+	import { avisoSimboloMoneda } from '$lib/db/escala';
 	import { Toast } from '$lib/toast.svelte';
 	import { unidades } from '$lib/format';
 	import Guia from '$lib/Guia.svelte';
@@ -59,7 +60,15 @@
 	// símbolo que usa el auto-refresh de precios (ver guardar(): simbolo se
 	// deriva del ticker en cada guardado).
 	let fSimboloCotizacion = $state<string | null>(null);
-	const tickerReadonly = $derived(editId !== null && fSimboloCotizacion != null);
+	// Activo en edición con transacciones o rentas cargadas: moneda, tipo y símbolo
+	// (que se deriva del ticker) quedan de solo lectura. Cambiarlos reinterpretaría
+	// todo el histórico ya cargado (precios, FIFO, valuación).
+	let editTieneOps = $state(false);
+	const tickerReadonly = $derived(editId !== null && (fSimboloCotizacion != null || editTieneOps));
+	// Aviso (no bloquea) si el símbolo no coincide con la moneda. FCI no tiene símbolo.
+	const avisoSimbolo = $derived(
+		fTipo === 'FCI' ? null : avisoSimboloMoneda(fTicker, fMoneda)
+	);
 
 	// Activo dibujado en el gráfico fijo de arriba.
 	let graficoId = $state<string>('');
@@ -139,9 +148,22 @@
 		editId = null;
 		fTicker = ''; fNombre = ''; fTipo = 'Accion'; fRenta = 'Variable';
 		fMoneda = 'ARS'; fExposicion = 'Peso'; fExpoTocada = false; fSimboloCotizacion = null;
+		editTieneOps = false;
 	}
 
-	function editar(a: any) {
+	async function editar(a: any) {
+		editTieneOps = false;
+		try {
+			const r = (await query(
+				'SELECT (SELECT COUNT(*) FROM transaccion WHERE perfil_id=1 AND activo_id=?) + (SELECT COUNT(*) FROM renta_activo WHERE perfil_id=1 AND activo_id=?) AS n',
+				[a.id, a.id]
+			)) as any[];
+			editTieneOps = (r[0]?.n ?? 0) > 0;
+		} catch (e) {
+			console.error('[mercado] no se pudo verificar si el activo tiene operaciones:', e);
+			// Ante la duda, se bloquea: es el lado seguro.
+			editTieneOps = true;
+		}
 		editId = a.id;
 		fTicker = a.ticker;
 		fNombre = a.nombre;
@@ -158,12 +180,17 @@
 
 	async function guardar() {
 		toast.limpiar();
-		const ticker = fTicker.trim().toUpperCase();
+		// Con operaciones/rentas cargadas, ticker/tipo/moneda salen de lo guardado,
+		// no del formulario (defensa extra además de los controles bloqueados).
+		const orig = editId && editTieneOps ? activos.find((x) => x.id === editId) : null;
+		const ticker = (orig ? String(orig.ticker) : fTicker).trim().toUpperCase();
+		const tipoGuardar = orig ? String(orig.tipo) : fTipo;
+		const monedaGuardar = orig ? String(orig.moneda) : fMoneda;
 		const nombre = fNombre.trim();
 		// Símbolo autosync determinístico: los FCI no cotizan en data912 (símbolo
 		// vacío); el resto usa su propio ticker. Se recalcula en cada guardado, así
 		// que cambiar el tipo a/desde FCI actualiza el símbolo solo.
-		const simbolo = fTipo === 'FCI' ? null : ticker;
+		const simbolo = tipoGuardar === 'FCI' ? null : ticker;
 		if (!ticker) return toast.error('Falta el ticker');
 		if (!nombre) return toast.error('Falta el nombre');
 		try {
@@ -177,7 +204,7 @@
 			if (editId) {
 				await query(
 					'UPDATE activo SET ticker=?, nombre=?, tipo=?, renta=?, moneda=?, exposicion=?, simbolo_cotizacion=? WHERE id=? AND perfil_id=1',
-					[ticker, nombre, fTipo, fRenta, fMoneda, fExposicion, simbolo, editId]
+					[ticker, nombre, tipoGuardar, fRenta, monedaGuardar, fExposicion, simbolo, editId]
 				);
 				activoId = editId;
 				toast.exito('Activo actualizado ✅');
@@ -186,7 +213,7 @@
 				// carguen movimientos. precio_actual queda null hasta la 1ª cotización.
 				const r = (await query(
 					'INSERT INTO activo (perfil_id,ticker,nombre,tipo,renta,moneda,exposicion,simbolo_cotizacion) VALUES (1,?,?,?,?,?,?,?) RETURNING id',
-					[ticker, nombre, fTipo, fRenta, fMoneda, fExposicion, simbolo]
+					[ticker, nombre, tipoGuardar, fRenta, monedaGuardar, fExposicion, simbolo]
 				)) as any[];
 				activoId = r[0].id;
 				toast.exito('Activo creado ✅');
@@ -198,7 +225,7 @@
 			// histórico de cientos de activos del catálogo. Fire-and-forget: no
 			// bloquea el guardado ni el toast; si falla, la cadena de respaldo sigue
 			// funcionando igual.
-			if (simbolo && tieneHistoricoData912(fTipo)) {
+			if (simbolo && tieneHistoricoData912(tipoGuardar)) {
 				backfillHistoricoActivo(activoId).catch(() => {});
 			}
 			resetForm(); // el panel NO se cierra: permite crear varios seguidos
@@ -270,21 +297,24 @@
 		{#if editId}<p class="editando">✏ Editando {fTicker} · <button class="link" onclick={resetForm}>cancelar</button></p>{/if}
 		<label>Ticker
 			<input bind:value={fTicker} placeholder="Ej: GD35, AL30, AAPL" class="up" class:readonly={tickerReadonly} readonly={tickerReadonly} />
-			{#if tickerReadonly}<span class="hint">Bloqueado: ya tiene símbolo de cotización resuelto ({fSimboloCotizacion}).</span>{/if}
+			{#if tickerReadonly}<span class="hint">{editTieneOps ? 'Bloqueado: el activo tiene operaciones o rentas cargadas; cambiarlo reinterpretaría el histórico.' : `Bloqueado: ya tiene símbolo de cotización resuelto (${fSimboloCotizacion}).`}</span>{/if}
 		</label>
 		<label>Nombre<input bind:value={fNombre} placeholder="Nombre del activo" /></label>
 		<label>Tipo
-			<select bind:value={fTipo}>{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}</select>
+			<select bind:value={fTipo} disabled={editTieneOps}>{#each TIPOS_ACTIVO as t}<option value={t}>{t}</option>{/each}</select>
+			{#if editTieneOps}<span class="hint">Bloqueado: el activo tiene operaciones o rentas cargadas.</span>{/if}
 		</label>
 		<label>Renta
 			<select bind:value={fRenta}>{#each RENTAS as r}<option value={r}>{r}</option>{/each}</select>
 		</label>
 		<label>Moneda de cotización
-			<select bind:value={fMoneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
+			<select bind:value={fMoneda} disabled={editTieneOps}><option value="ARS">ARS</option><option value="USD">USD</option></select>
+			{#if editTieneOps}<span class="hint">Bloqueado: el activo tiene operaciones o rentas cargadas.</span>{/if}
 		</label>
 		<label>Exposición
 			<select bind:value={fExposicion} onchange={() => (fExpoTocada = true)}>{#each EXPOSICIONES as e}<option value={e}>{e}</option>{/each}</select>
 		</label>
+		{#if avisoSimbolo}<p class="aviso-sync">⚠ {avisoSimbolo}</p>{/if}
 		<button class="btn btn-primary" onclick={guardar}>{editId ? 'Actualizar activo' : 'Guardar activo'}</button>
 		{#if toast.texto}<p class="msg" class:err={toast.esError}>{#if toast.esError}<span class="err-x">✗</span> {/if}{toast.texto}</p>{/if}
 	</div>

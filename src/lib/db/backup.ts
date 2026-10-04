@@ -6,6 +6,7 @@ import { query, queryBatch } from './client';
 import { hoyISO } from '../format';
 import { setMeta } from './meta';
 import { ErrorValidacion } from '../errores';
+import { marcarFotosPendientesDesde } from '../cartera';
 
 // Tablas ordenadas de "padres" a "hijas" (segun foreign keys).
 // meta va al final: no tiene dependencias.
@@ -176,6 +177,34 @@ export async function importarDatos(fileOrBackup: File | any): Promise<void> {
 		throw new Error('Fallo la importacion, no se modifico nada: ' + (err?.message ?? err));
 	} finally {
 		await query('PRAGMA foreign_keys=ON');
+	}
+
+	// Post-restauración (la base ya quedó importada; un fallo acá no debe mostrarse
+	// como "falló la importación"):
+	try {
+		// Fecha de última copia: serializarBackup arma el JSON ANTES de que
+		// exportarDatos actualice ultima_exportacion, así que la copia trae el valor
+		// de la exportación ANTERIOR. Sin esto, exportar y restaurar esa misma copia
+		// avisaba "hace N días que no hacés una copia". Se queda con el más reciente
+		// entre lo que trae la copia y su exportado_en (ISO: compara como texto).
+		const metaFilas: any[] = Array.isArray(tablas.meta) ? tablas.meta : [];
+		const traida = metaFilas.find((r) => r?.clave === 'ultima_exportacion')?.valor ?? null;
+		const candidatos = [traida, backup.exportado_en].filter((v): v is string => typeof v === 'string' && v.length > 0);
+		if (candidatos.length) await setMeta('ultima_exportacion', candidatos.sort().pop()!);
+
+		// Las fotos de la copia pueden no coincidir con el cálculo actual: se marca
+		// recalcular desde la primera fecha con movimiento. El recálculo lo retoma la
+		// app al arrancar (ver retomarFotosPendientes en cartera.ts).
+		let primera: string | null = null;
+		for (const t of ['transaccion', 'mov_caja', 'renta_activo']) {
+			for (const fila of Array.isArray(tablas[t]) ? tablas[t] : []) {
+				const f = typeof fila?.fecha === 'string' ? fila.fecha.slice(0, 10) : null;
+				if (f && (primera == null || f < primera)) primera = f;
+			}
+		}
+		if (primera) await marcarFotosPendientesDesde(primera);
+	} catch (e) {
+		console.error('[backup] no se pudo completar el post-proceso de la restauración:', e);
 	}
 }
 

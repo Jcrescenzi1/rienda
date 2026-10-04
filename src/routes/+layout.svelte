@@ -11,6 +11,8 @@
 	} from '$lib/db/senales';
 	import { actualizarCotizaciones, actualizarInflacionYHistorico } from '$lib/db/cotizaciones';
 	import { notif } from '$lib/notif.svelte';
+	import { fotosProgreso } from '$lib/fotos.svelte';
+	import { retomarFotosPendientes } from '$lib/cartera';
 	import { query } from '$lib/db/client';
 	import type { ModoPeriodo } from '$lib/periodo';
 	import InstalarApp from '$lib/InstalarApp.svelte';
@@ -137,6 +139,7 @@
 				escribirMarcaPerfil(); // refresca ultimo_arranque_ok (Blindaje iOS)
 				autoCotizaciones(); autoPrecios(); // en segundo plano, no bloquea la app
 				autobackupDiarioSiHaceFalta(); // copia diaria si hace falta (Blindaje iOS, Brief 2), fire-and-forget
+				retomarFotosPendientes().catch((e) => console.error('[fotos] no se pudo retomar el recálculo:', e)); // marca fotos_pendientes_desde, fire-and-forget
 			}
 		} catch (e) {
 			// La consulta falló (worker colgado, timeout, etc.): NO sabemos si hay
@@ -404,6 +407,10 @@
 	</div>
 {/if}
 
+{#if fotosProgreso.activo}
+	<div class="banner-fotos" role="status">Recalculando historial… {fotosProgreso.hecho}/{fotosProgreso.total}</div>
+{/if}
+
 {#if chequeando}
 	<div class="cargando-app"><p>Cargando…</p></div>
 {:else if perfilError}
@@ -457,8 +464,8 @@
 					{/if}
 					<DiagnosticoTecnico pantalla="Arranque: pool con bytes, no se pudo leer" {senalPool} {marcaPerfil} {estadoStorage} {errorCrudo} abierto={true} />
 				{:else}
-					<h2 class="bq">El sistema borró los datos de Rienda de este teléfono.</h2>
-					<p>Esto lo hace iOS, no la app.{#if diagArranque === 'borrado_parcial'} Parece un borrado parcial: encontramos una marca de que tuviste un perfil, pero no la base.{/if}</p>
+					<h2 class="bq">El navegador borró los datos de Rienda en este dispositivo.</h2>
+					<p>No lo hizo la app.{#if diagArranque === 'borrado_parcial'} Parece un borrado parcial: encontramos una marca de que tuviste un perfil, pero no la base.{/if}</p>
 					<div class="bnav">
 						<button class="crear" onclick={() => importInputBienvenida?.click()}>⬆ Importar copia</button>
 					</div>
@@ -876,6 +883,11 @@
 		display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
 		background: #2a1414; border-bottom: 1px solid var(--neg);
 		color: var(--text); padding: 10px 16px; font-size: 0.88rem;
+	}
+	.banner-fotos {
+		position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 900;
+		background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+		color: var(--text); padding: 8px 14px; border-radius: 8px; font-size: 0.82rem;
 	}
 	.banner-global-err .err-x { color: var(--neg); font-size: 1.2em; line-height: 1; }
 	.banner-global-err p { margin: 0; flex: 1; min-width: 200px; }

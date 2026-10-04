@@ -7,6 +7,7 @@ import { query } from './db/client';
 import { resolverPrecioEnFecha } from './db/precios_historicos';
 import { cargarDolarSerie, dolarDeFecha } from './moneda';
 import { fechaISO } from './format';
+import { fotosProgreso } from './fotos.svelte';
 
 export type Lote = { u: number; pNat: number; pUSD: number };
 
@@ -267,12 +268,79 @@ async function recalcularYGuardarFoto(fecha: string): Promise<void> {
 // de corte congelaba las fotos anteriores como "reserva fija" (modelo de
 // liquidez con ancla manual); con el ancla eliminada, toda foto es un caché
 // reconstruible y se recalcula si su fecha cae en el rango editado.
+//
+// Marca de pendiente (meta 'fotos_pendientes_desde'): antes de recalcular se
+// guarda la fecha más antigua que quedó por recalcular (mínimo entre la marca
+// actual y la fecha editada) y recién se borra cuando el barrido terminó sin
+// error. Si la pestaña se cierra o iOS la mata a mitad de camino, la marca
+// queda y retomarFotosPendientes() la retoma al arrancar. Se recalcula siempre
+// desde la marca (no solo desde fechaEditada), así una corrida interrumpida
+// anterior también queda cubierta.
+const CLAVE_FOTOS_PENDIENTES = 'fotos_pendientes_desde';
+const LOTE_FOTOS = 15; // fotos por lote antes de ceder el hilo a la UI
+// Por debajo de este total no vale la pena mostrar el indicador (parpadearía en
+// cada carga de una operación reciente).
+export const MIN_FOTOS_INDICADOR = LOTE_FOTOS;
+
+async function leerMarcaFotos(): Promise<string | null> {
+	const r = (await query('SELECT valor FROM meta WHERE clave=?', [CLAVE_FOTOS_PENDIENTES])) as any[];
+	return r[0]?.valor ?? null;
+}
+
+// Fija la marca en min(valor actual, f). Devuelve la marca resultante. La usan
+// invalidarFotosDesde y los importadores (JSON / Excel).
+export async function marcarFotosPendientesDesde(f: string): Promise<string> {
+	const actual = await leerMarcaFotos();
+	const min = actual && actual < f ? actual : f;
+	if (min !== actual) {
+		await query(
+			'INSERT INTO meta (clave, valor) VALUES (?, ?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor',
+			[CLAVE_FOTOS_PENDIENTES, min]
+		);
+	}
+	return min;
+}
+
 export async function invalidarFotosDesde(fechaEditada: string): Promise<void> {
+	const desde = await marcarFotosPendientesDesde(fechaEditada);
 	const fechas = (await query(
 		'SELECT fecha FROM snapshot WHERE perfil_id=1 AND fecha >= ? ORDER BY fecha ASC',
-		[fechaEditada]
+		[desde]
 	)) as any[];
-	for (const { fecha } of fechas) await recalcularYGuardarFoto(fecha);
+	const mostrar = fechas.length >= MIN_FOTOS_INDICADOR;
+	if (mostrar) fotosProgreso.iniciar(fechas.length);
+	try {
+		for (let i = 0; i < fechas.length; i++) {
+			await recalcularYGuardarFoto(fechas[i].fecha);
+			if (mostrar) fotosProgreso.avanzar();
+			// Cede el hilo entre lotes (iOS: un loop largo sin ceder puede colgar Safari).
+			if ((i + 1) % LOTE_FOTOS === 0) await new Promise((r) => setTimeout(r, 0));
+		}
+	} finally {
+		if (mostrar) fotosProgreso.terminar();
+	}
+	// Terminó sin error: se borra la marca, salvo que mientras tanto haya entrado
+	// una fecha anterior a la que acabamos de cubrir (otra edición/importación).
+	const marca = await leerMarcaFotos();
+	if (marca != null && marca >= desde) {
+		await query('DELETE FROM meta WHERE clave=?', [CLAVE_FOTOS_PENDIENTES]);
+	}
+}
+
+// Al arrancar la app (después de abrir la base, sin bloquear el inicio): si quedó
+// una marca de pendiente, retoma el recálculo desde esa fecha. Idempotente y sin
+// reentrada.
+let retomandoFotos = false;
+export async function retomarFotosPendientes(): Promise<void> {
+	if (retomandoFotos) return;
+	const marca = await leerMarcaFotos();
+	if (!marca) return;
+	retomandoFotos = true;
+	try {
+		await invalidarFotosDesde(marca);
+	} finally {
+		retomandoFotos = false;
+	}
 }
 
 // Bloque A — completa las fotos de los días faltantes entre la última

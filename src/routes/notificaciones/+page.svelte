@@ -7,6 +7,7 @@
 	import { pwa, instalarApp } from '$lib/pwa.svelte';
 	import { goto } from '$app/navigation';
 	import { actualizarCotizaciones } from '$lib/db/cotizaciones';
+	import { descartarAvisoEscala } from '$lib/db/escala';
 
 	let cargando = $state(true);
 	let n = $state<Notificaciones>({ pagos: [], cobros: [], reglas: [], badge: 0 });
@@ -59,6 +60,12 @@
 		await notif.refrescar();
 	});
 
+	async function descartarEscala(clave: string) {
+		await descartarAvisoEscala(clave);
+		n = await cargarNotificaciones();
+		await notif.refrescar();
+	}
+
 	async function actualizarCotiz() {
 		actualizando = true;
 		try {
@@ -106,8 +113,13 @@
 		</section>
 	{/if}
 
-	{#each n.reglas as r (r.tipo)}
-		{#if r.accion === 'cotiz'}
+	{#each n.reglas as r (r.clave)}
+		{#if r.tipo === 'escala'}
+			<div class="fila fila-aviso">
+				<span>{r.texto}</span>
+				<button class="descartar" onclick={() => descartarEscala(r.avisoClave!)} aria-label="Descartar aviso" title="Descartar">✓</button>
+			</div>
+		{:else if r.accion === 'cotiz'}
 			<button class="fila" onclick={actualizarCotiz} disabled={actualizando}>
 				<span>{actualizando ? 'Actualizando…' : r.texto}</span><span class="chevron">›</span>
 			</button>
@@ -187,6 +199,10 @@
 		padding: 12px 14px; margin: 0 0 10px; text-decoration: none;
 	}
 	.fila:hover { border-color: var(--accent); }
+	.fila-aviso { cursor: default; font-size: 0.9rem; border-left-color: var(--warn); }
+	.fila-aviso:hover { border-color: var(--border); border-left-color: var(--warn); }
+	.descartar { background: none; border: 1px solid var(--border); color: var(--text-dim); border-radius: 6px; padding: 4px 9px; font-size: 0.82rem; cursor: pointer; flex-shrink: 0; }
+	.descartar:hover { color: var(--pos); border-color: var(--pos); }
 	.fila:disabled { opacity: 0.6; cursor: default; }
 	.chevron { color: var(--text-dim); font-size: 1.1rem; flex-shrink: 0; }
 </style>

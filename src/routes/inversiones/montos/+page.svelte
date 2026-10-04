@@ -97,8 +97,10 @@
 		if (editId == null || !Number.isFinite(p) || p <= 0) { editId = null; return; }
 		const id = editId;
 		try {
-			await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, new Date().toISOString(), id]);
+			// El upsert va primero: incluye el control de escala, que compara contra
+			// el precio_actual anterior y no contra el que se está por guardar.
 			await upsertPrecioHistorico(id, hoyISO(), p, 'manual');
+			await query('UPDATE activo SET precio_actual=?, precio_actualizado_en=? WHERE id=? AND perfil_id=1', [p, new Date().toISOString(), id]);
 			invalidarFotosDesde(hoyISO()).catch(() => {});
 			editId = null; editPrecio = '';
 			await cargarTodo();

@@ -25,7 +25,8 @@
 
 import { query, queryBatch } from './client';
 import { parseNum, formatNum, fechaISO } from '../format';
-import { invalidarFotosDesde, diagnosticoLiquidez } from '../cartera';
+import { invalidarFotosDesde, marcarFotosPendientesDesde, diagnosticoLiquidez } from '../cartera';
+import { avisoSimboloMoneda } from './escala';
 
 export type ResultadoImport = { filas: number; creados: string[]; omitidas: number };
 
@@ -52,6 +53,9 @@ export type DiagnosticoHoja = {
 	duplicadas: number;
 	numErrores: number;
 	mensajeError: string | null;
+	// Avisos que NO bloquean (ej. símbolo vs moneda de un ticker nuevo): se muestran
+	// en el popup, pero no cambian el estado de la hoja.
+	avisos?: string[];
 };
 
 function diagnosticoOk(hoja: string, nuevas: number, duplicadas: number): DiagnosticoHoja {
@@ -74,6 +78,13 @@ function diagnosticoErrorValidacion(hoja: string, errores: string[]): Diagnostic
 		numErrores: errores.length,
 		mensajeError: 'No se importó nada de este bloque. Corregí y volvé a intentar:\n' + msj
 	};
+}
+
+// Adjunta avisos no bloqueantes a un diagnóstico (hasta 10 líneas + "y N más").
+function conAvisos(d: DiagnosticoHoja, avisos: string[]): DiagnosticoHoja {
+	if (!avisos.length) return d;
+	d.avisos = avisos.slice(0, 10).concat(avisos.length > 10 ? [`…y ${avisos.length - 10} avisos más.`] : []);
+	return d;
 }
 
 // ---------- Helpers de validación ----------
@@ -272,7 +283,7 @@ export async function confirmarIngresosFilas(nuevos: FilaOKIngresos[], duplicada
 const TIPOS_ACTIVO = ['Bono', 'ON', 'FCI', 'Accion', 'CEDEAR', 'Indice'];
 const RENTAS = ['Fija', 'Mixta', 'Variable', 'Liquido'];
 
-type FilaOKActivos = { fecha: string; operacion: string; ticker: string; nombre: string; tipo: string; renta: string; moneda: string; cuenta: string; unidades: number; monto: number; vd: number | null };
+type FilaOKActivos = { linea: number; fecha: string; operacion: string; ticker: string; nombre: string; tipo: string; renta: string; moneda: string; cuenta: string; unidades: number; monto: number; vd: number | null };
 
 // tickersNuevos: tickers que ESTA hoja va a crear si se confirma (post-filtro
 // de duplicados). Se lo pasamos a prepararRentaFilas para que los trate como
@@ -286,6 +297,11 @@ export async function prepararActivosFilas(filas: Fila[]): Promise<{ diagnostico
 	const activosRows = (await query('SELECT id, ticker FROM activo WHERE perfil_id=1')) as any[];
 	const porTicker: Record<string, number> = {};
 	for (const a of activosRows) porTicker[a.ticker.toLowerCase()] = a.id;
+	// Tickers que YA existen en la base (antes de declarar nuevos de este archivo),
+	// con su escritura original, para sugerir el existente ante un ticker parecido.
+	const originalPorLower: Record<string, string> = {};
+	for (const a of activosRows) originalPorLower[a.ticker.toLowerCase()] = a.ticker;
+	const avisos: string[] = [];
 	const declaradosNuevos = new Set<string>();
 
 	const ok: FilaOKActivos[] = [];
@@ -317,14 +333,30 @@ export async function prepararActivosFilas(filas: Fila[]): Promise<{ diagnostico
 			if (!TIPOS_ACTIVO.includes(tipo)) errores.push(`Línea ${n}: ticker nuevo "${ticker}" necesita tipo válido (${TIPOS_ACTIVO.join('/')}).`);
 			if (!RENTAS.includes(renta)) errores.push(`Línea ${n}: ticker nuevo "${ticker}" necesita renta válida (${RENTAS.join('/')}).`);
 			if (moneda !== 'ARS' && moneda !== 'USD') errores.push(`Línea ${n}: ticker nuevo "${ticker}" necesita moneda ARS o USD.`);
+			// Ticker parecido: la misma especie con/sin sufijo D (o distinta
+			// capitalización) ya existe en la base. Casi seguro es un tipeo o la
+			// otra especie del mismo instrumento: se corta y se sugiere el existente
+			// en vez de crear un activo duplicado. Si de verdad es otro activo
+			// (ej. YPF vs YPFD), se crea antes en Mercado y deja de ser "nuevo".
+			const tl = ticker.toLowerCase();
+			const variantes = [tl.endsWith('d') ? tl.slice(0, -1) : null, tl + 'd'].filter((v): v is string => !!v);
+			const parecido = variantes.map((v) => originalPorLower[v]).find((v) => !!v);
+			if (parecido) {
+				errores.push(`Línea ${n}: el ticker "${ticker}" no existe, pero sí "${parecido}" (misma especie con/sin sufijo D). Usá "${parecido}" en lugar de crear un activo nuevo; si de verdad es otro activo, creálo antes en Mercado.`);
+			}
+			// Símbolo vs moneda (mismo control que Mercado). Solo aviso, no bloquea.
+			if (tipo !== 'FCI' && (moneda === 'ARS' || moneda === 'USD')) {
+				const av = avisoSimboloMoneda(ticker, moneda);
+				if (av) avisos.push(`Línea ${n}: ${av}`);
+			}
 			// Lo registramos como "visto" para no exigir datos en las filas siguientes
 			porTicker[ticker.toLowerCase()] = -1;
 			declaradosNuevos.add(ticker.toLowerCase());
 		}
-		ok.push({ fecha: fecha ?? '', operacion: operacion ?? '', ticker, nombre: (f['nombre'] ?? '').trim() || ticker, tipo, renta, moneda, cuenta, unidades, monto, vd });
+		ok.push({ linea: n, fecha: fecha ?? '', operacion: operacion ?? '', ticker, nombre: (f['nombre'] ?? '').trim() || ticker, tipo, renta, moneda, cuenta, unidades, monto, vd });
 	});
 
-	if (errores.length) return { diagnostico: diagnosticoErrorValidacion('Activos', errores), nuevos: [], tickersNuevos: [] };
+	if (errores.length) return { diagnostico: conAvisos(diagnosticoErrorValidacion('Activos', errores), avisos), nuevos: [], tickersNuevos: [] };
 
 	// Anti-duplicados: omite filas idénticas a operaciones ya cargadas
 	// (misma fecha + operación + ticker + unidades).
@@ -335,14 +367,44 @@ export async function prepararActivosFilas(filas: Fila[]): Promise<{ diagnostico
 	const nuevos = ok.filter((f) => !setExist.has(`${f.fecha}|${f.operacion}|${f.ticker.toLowerCase()}|${f.unidades.toFixed(4)}`));
 	const duplicadas = ok.length - nuevos.length;
 
+	// Venta sin tenencia: se recorren en orden de fecha las operaciones ya
+	// cargadas MÁS las filas nuevas de este archivo (las duplicadas no se van a
+	// insertar, así que no cuentan). Si una venta del archivo deja las unidades en
+	// negativo, es un error de validación: la hoja no se importa (todo-o-nada,
+	// igual que hoy). Dentro de una misma fecha, las compras van antes que las
+	// ventas. Solo se marcan las filas del archivo; lo ya cargado no se juzga.
+	{
+		type Ev = { fecha: string; compra: boolean; ticker: string; unidades: number; linea: number | null };
+		const eventos: Ev[] = [
+			...existentes.map((r): Ev => ({ fecha: r.fecha, compra: r.operacion === 'Compra', ticker: String(r.ticker).toLowerCase(), unidades: r.unidades, linea: null })),
+			...nuevos.map((f): Ev => ({ fecha: f.fecha, compra: f.operacion === 'Compra', ticker: f.ticker.toLowerCase(), unidades: f.unidades, linea: f.linea }))
+		];
+		eventos.sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.compra === b.compra ? 0 : a.compra ? -1 : 1));
+		const neto: Record<string, number> = {};
+		const porLinea: { linea: number; msg: string }[] = [];
+		for (const e of eventos) {
+			neto[e.ticker] = (neto[e.ticker] ?? 0) + (e.compra ? e.unidades : -e.unidades);
+			if (!e.compra && e.linea !== null && neto[e.ticker] < -1e-6) {
+				const orig = nuevos.find((f) => f.linea === e.linea)!;
+				porLinea.push({ linea: e.linea, msg: `Línea ${e.linea}: venta de ${orig.ticker} del ${e.fecha} sin tenencia suficiente (faltan ${formatNum(-neto[e.ticker], 4)} unidades).` });
+			}
+		}
+		if (porLinea.length) {
+			porLinea.sort((a, b) => a.linea - b.linea);
+			return { diagnostico: conAvisos(diagnosticoErrorValidacion('Activos', porLinea.map((p) => p.msg)), avisos), nuevos: [], tickersNuevos: [] };
+		}
+	}
+
 	// Si TODAS las filas de un ticker declarado nuevo terminaron siendo
 	// duplicadas, ese ticker no se va a crear (mismo criterio que hoy).
 	const tickersNuevos = [...new Set(nuevos.filter((f) => declaradosNuevos.has(f.ticker.toLowerCase())).map((f) => f.ticker.toLowerCase()))];
 
-	return { diagnostico: diagnosticoOk('Activos', nuevos.length, duplicadas), nuevos, tickersNuevos };
+	return { diagnostico: conAvisos(diagnosticoOk('Activos', nuevos.length, duplicadas), avisos), nuevos, tickersNuevos };
 }
 
-export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas: number): Promise<ResultadoImport> {
+// invalidar=false: lo usa el orquestador de Inversiones, que invalida UNA sola vez
+// al final (ver confirmarInversionesXLSX) para no pisar la marca de pendiente.
+export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas: number, invalidar = true): Promise<ResultadoImport> {
 	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 
 	const activosRows = (await query('SELECT id, ticker, moneda FROM activo WHERE perfil_id=1')) as any[];
@@ -402,8 +464,10 @@ export async function confirmarActivosFilas(nuevos: FilaOKActivos[], duplicadas:
 
 	// Bloque B: invalida las fotos desde la fecha más antigua que tocó este
 	// import (best-effort, no bloquea el resumen si falla).
-	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
-	invalidarFotosDesde(fechaMin).catch(() => {});
+	if (invalidar) {
+		const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+		invalidarFotosDesde(fechaMin).catch(() => {});
+	}
 
 	return { filas: nuevos.length, creados, omitidas: duplicadas };
 }
@@ -464,7 +528,7 @@ export async function prepararRentaFilas(filas: Fila[], tickersPendientes: strin
 	return { diagnostico: diagnosticoOk('Renta y amortización', nuevos.length, duplicadas), nuevos };
 }
 
-export async function confirmarRentaFilas(nuevos: FilaOKRenta[], duplicadas: number): Promise<ResultadoImport> {
+export async function confirmarRentaFilas(nuevos: FilaOKRenta[], duplicadas: number, invalidar = true): Promise<ResultadoImport> {
 	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 
 	// Se relee acá (no en preparar): para cuando esto corre, si había un ticker
@@ -482,8 +546,10 @@ export async function confirmarRentaFilas(nuevos: FilaOKRenta[], duplicadas: num
 	// Bloque B: la renta/amortización mueve caja (calcularLiquidez), igual que la
 	// carga manual (que sí invalida, ver carga-inversiones/+page.svelte) — por
 	// paridad, el import también invalida desde la fecha más antigua que tocó.
-	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
-	invalidarFotosDesde(fechaMin).catch(() => {});
+	if (invalidar) {
+		const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+		invalidarFotosDesde(fechaMin).catch(() => {});
+	}
 
 	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
@@ -575,7 +641,7 @@ export async function prepararCajaFilas(filas: Fila[]): Promise<{ diagnostico: D
 	return { diagnostico: diagnosticoOk('Caja', nuevos.length, duplicadas), nuevos };
 }
 
-export async function confirmarCajaFilas(nuevos: FilaOKCaja[], duplicadas: number): Promise<ResultadoImport> {
+export async function confirmarCajaFilas(nuevos: FilaOKCaja[], duplicadas: number, invalidar = true): Promise<ResultadoImport> {
 	if (!nuevos.length) return { filas: 0, creados: [], omitidas: duplicadas };
 	const stmts = nuevos.map((f) => ({
 		sql: 'INSERT INTO mov_caja (perfil_id,fecha,accion,moneda,monto,grupo,nota) VALUES (1,?,?,?,?,?,?)',
@@ -584,8 +650,10 @@ export async function confirmarCajaFilas(nuevos: FilaOKCaja[], duplicadas: numbe
 	await queryBatch(stmts);
 
 	// Bloque B: invalida las fotos desde la fecha más antigua que tocó este import.
-	const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
-	invalidarFotosDesde(fechaMin).catch(() => {});
+	if (invalidar) {
+		const fechaMin = nuevos.reduce((min, f) => (f.fecha < min ? f.fecha : min), nuevos[0].fecha);
+		invalidarFotosDesde(fechaMin).catch(() => {});
+	}
 
 	return { filas: nuevos.length, creados: [], omitidas: duplicadas };
 }
@@ -703,19 +771,33 @@ export async function confirmarInversionesXLSX(reporte: ReporteInversiones): Pro
 	const hayError = [reporte.activos, reporte.renta, reporte.caja].some((r) => r.diagnostico.estado === 'error');
 	if (hayError) return '';
 
+	// Marca de fotos pendientes: fecha mínima de TODO lo que se va a cargar, fijada
+	// ANTES de escribir (si la pestaña muere a mitad del import, al arrancar la app
+	// retoma el recálculo). Las tres confirmaciones no invalidan por su cuenta:
+	// hay una sola corrida al final, así la marca no se borra antes de tiempo.
+	const fechas: string[] = [];
+	if (reporte.activos.diagnostico.estado === 'ok') fechas.push(...reporte.activos.nuevos.map((f) => f.fecha));
+	if (reporte.renta.diagnostico.estado === 'ok') fechas.push(...reporte.renta.nuevos.map((f) => f.fecha));
+	if (reporte.caja.diagnostico.estado === 'ok') fechas.push(...reporte.caja.nuevos.map((f) => f.fecha));
+	const fechaMinArchivo = fechas.length ? fechas.reduce((m, f) => (f < m ? f : m)) : null;
+	if (fechaMinArchivo) await marcarFotosPendientesDesde(fechaMinArchivo);
+
 	const partes: string[] = [];
 	if (reporte.activos.diagnostico.estado === 'ok') {
-		const r = await confirmarActivosFilas(reporte.activos.nuevos, reporte.activos.diagnostico.duplicadas);
+		const r = await confirmarActivosFilas(reporte.activos.nuevos, reporte.activos.diagnostico.duplicadas, false);
 		partes.push(formatResumen('Activos', r));
 	}
 	if (reporte.renta.diagnostico.estado === 'ok') {
-		const r = await confirmarRentaFilas(reporte.renta.nuevos, reporte.renta.diagnostico.duplicadas);
+		const r = await confirmarRentaFilas(reporte.renta.nuevos, reporte.renta.diagnostico.duplicadas, false);
 		partes.push(formatResumen('Renta y amortización', r));
 	}
 	if (reporte.caja.diagnostico.estado === 'ok') {
-		const r = await confirmarCajaFilas(reporte.caja.nuevos, reporte.caja.diagnostico.duplicadas);
+		const r = await confirmarCajaFilas(reporte.caja.nuevos, reporte.caja.diagnostico.duplicadas, false);
 		partes.push(formatResumen('Caja', r));
 	}
+
+	// Una sola invalidación (best-effort, con indicador de progreso en el layout).
+	if (fechaMinArchivo) invalidarFotosDesde(fechaMinArchivo).catch(() => {});
 
 	// Bloque B: si el import dejó alguna moneda en negativo, un resumen del
 	// mismo aviso que muestra Tenencia Actual — para que no haga falta ir a

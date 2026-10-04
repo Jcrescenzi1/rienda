@@ -5,11 +5,16 @@
 
 import { query, queryBatch } from './db/client';
 import { leerMeta } from './db/meta';
-import { hoyISO, diasEntre, mesActual } from './format';
+import { hoyISO, diasEntre, mesActual, unidades } from './format';
+import { leerAvisosEscala } from './db/escala';
 import { proximaOcurrencia, addDias, periodoActivoCC, periodoRegla, cargarModo } from './periodo';
 
 export type LineaRegla = {
-	tipo: 'mep' | 'copia';
+	tipo: 'mep' | 'copia' | 'escala';
+	// Identifica la regla dentro de la lista (hay una 'escala' por activo y fecha).
+	clave: string;
+	// Solo 'escala': clave del aviso persistido, para descartarlo.
+	avisoClave?: string;
 	texto: string;
 	href?: string; // navegación (copia)
 	accion?: 'cotiz'; // acción inline (MEP: actualizar tipo de cambio)
@@ -52,9 +57,9 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 	const cotFecha = cot[0]?.fecha ?? null;
 	if (cotFecha) {
 		const d = diasEntre(cotFecha, hoy);
-		if (d > 7) reglas.push({ tipo: 'mep', texto: `El tipo de cambio no se actualiza hace ${d} días.`, accion: 'cotiz' });
+		if (d > 7) reglas.push({ tipo: 'mep', clave: 'mep', texto: `El tipo de cambio no se actualiza hace ${d} días.`, accion: 'cotiz' });
 	} else if (!enPrimeraSemana) {
-		reglas.push({ tipo: 'mep', texto: 'El tipo de cambio nunca se actualizó.', accion: 'cotiz' });
+		reglas.push({ tipo: 'mep', clave: 'mep', texto: 'El tipo de cambio nunca se actualizó.', accion: 'cotiz' });
 	}
 
 	// Regla 2 — Copia: más de 7 días desde la última exportación (Blindaje iOS).
@@ -62,9 +67,20 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 	const ultExp = m.ultima_exportacion;
 	if (ultExp) {
 		const d = diasEntre(ultExp, hoy);
-		if (d > 7) reglas.push({ tipo: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
+		if (d > 7) reglas.push({ tipo: 'copia', clave: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
 	} else if (!enPrimeraSemana) {
-		reglas.push({ tipo: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
+		reglas.push({ tipo: 'copia', clave: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
+	}
+
+	// Regla 2b — Saltos de escala de precio (ver db/escala.ts): persistente hasta
+	// que el usuario descarta cada aviso. No bloquea ni corrige nada.
+	for (const a of await leerAvisosEscala()) {
+		reglas.push({
+			tipo: 'escala',
+			clave: 'escala:' + a.clave,
+			avisoClave: a.clave,
+			texto: `Precio con salto de escala: ${a.ticker} el ${a.fecha} pasó de ${unidades(a.anterior, 2)} a ${unidades(a.nuevo, 2)}. Revisá moneda y símbolo.`
+		});
 	}
 
 	// (Ex-Regla 3 — "sin foto hace N días": eliminada. Desde el Bloque 2 la foto de

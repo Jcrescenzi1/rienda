@@ -57,7 +57,7 @@
 			<h2 class="aud-tit">Auditoría de importación — {modulo === 'finanzas' ? 'Finanzas' : 'Inversiones'}</h2>
 			<ul class="aud-lista">
 				{#each diagnosticos as d (d.hoja)}
-					<li class="aud-linea" class:err={d.estado === 'error'}>{lineaHoja(d)}</li>
+					<li class="aud-linea" class:err={d.estado === 'error'}>{lineaHoja(d)}{#if d.avisos?.length}<span class="aud-avisos">{#each d.avisos as a}<span class="aud-aviso">⚠ {a}</span>{/each}</span>{/if}</li>
 				{/each}
 			</ul>
 			<p class="aud-msg">{evaluado.mensaje}</p>
@@ -78,6 +78,8 @@
 	.aud-lista { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 8px; }
 	.aud-linea { font-size: 0.85rem; line-height: 1.5; white-space: pre-line; border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 8px 10px; }
 	.aud-linea.err { border-color: var(--neg); color: var(--neg); }
+	.aud-avisos { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+	.aud-aviso { color: var(--warn); font-size: 0.8rem; }
 	.aud-msg { font-size: 0.88rem; line-height: 1.5; margin: 0 0 14px; }
 	.aud-botones { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 </style>

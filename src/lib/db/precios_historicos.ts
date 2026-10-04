@@ -28,6 +28,13 @@ import { BASE, ajustarEscala } from './data912';
 // referencia en vivo. Se necesita acá porque backfillHistoricoActivo (abajo)
 // tiene que invalidar las fotos que dependían del histórico que acaba de traer.
 import { invalidarFotosDesde } from '../cartera';
+import { cargarDolarSerie, dolarDeFecha } from '../moneda';
+import { controlarEscala, ultimoPrecioConocido } from './escala';
+
+// Umbral del backfill de activos USD: si el último cierre de la serie bajada
+// supera en más de 200x al precio de referencia del activo, la serie viene en
+// pesos (data912 publica el histórico de las especies D en pesos, no en USD).
+const UMBRAL_SERIE_EN_PESOS = 200;
 
 // Tipo de activo -> slug del endpoint histórico de data912. ON y FCI no están:
 // ON no tiene endpoint histórico propio (se loguea desde el panel en vivo, ver
@@ -143,6 +150,9 @@ export async function upsertPrecioHistorico(
 	origen: 'data912' | 'panel_vivo' | 'transaccion' | 'manual'
 ): Promise<void> {
 	if (!Number.isFinite(precio) || precio <= 0) return;
+	// Control de escala (solo aviso): ANTES de escribir, para comparar contra el
+	// último precio conocido y no contra el que se está por guardar.
+	await controlarEscala(activoId, fecha, precio);
 	await query(sqlUpsertPrecioHistorico(origen), [activoId, fecha, precio, origen]);
 }
 
@@ -164,14 +174,39 @@ export async function registrarPrecioTransaccion(activoId: number, fecha: string
 // activo no tiene endpoint histórico (ON, FCI) o no hay símbolo configurado.
 export async function backfillHistoricoActivo(activoId: number): Promise<number | null> {
 	const rows = (await query(
-		'SELECT tipo, simbolo_cotizacion FROM activo WHERE id=? AND perfil_id=1',
+		'SELECT tipo, simbolo_cotizacion, moneda FROM activo WHERE id=? AND perfil_id=1',
 		[activoId]
 	)) as any[];
 	const a = rows[0];
 	if (!a || !a.simbolo_cotizacion || !tieneHistoricoData912(a.tipo)) return null;
 
-	const serie = await descargarHistoricoData912(a.simbolo_cotizacion, a.tipo);
+	let serie = await descargarHistoricoData912(a.simbolo_cotizacion, a.tipo);
 	if (serie.length === 0) return 0;
+
+	// Referencia para decidir la escala y para el control de salto (precio_actual,
+	// o el último cierre guardado si no hay). Sin referencia: se guarda sin
+	// convertir y no hay contra qué marcar.
+	const ref = await ultimoPrecioConocido(activoId);
+	const ultimo = serie.reduce((m, p) => (p.fecha > m.fecha ? p : m), serie[0]);
+
+	// Activo en USD con la serie en escala pesos: cada punto se divide por el MEP
+	// de su fecha (con arrastre). Los puntos anteriores al primer MEP cargado no
+	// se pueden convertir y se descartan: guardarlos sin convertir sería peor.
+	if (a.moneda === 'USD' && ref != null && ultimo.precio / ref > UMBRAL_SERIE_EN_PESOS) {
+		const dolares = await cargarDolarSerie();
+		const conv: { fecha: string; precio: number }[] = [];
+		for (const p of serie) {
+			const d = dolarDeFecha(dolares, p.fecha);
+			if (d != null && d > 0) conv.push({ fecha: p.fecha, precio: p.precio / d });
+		}
+		serie = conv;
+		if (serie.length === 0) return 0;
+	}
+
+	// Control de escala (solo aviso) sobre el último cierre, ya convertido si hizo
+	// falta. Antes de escribir, para comparar contra lo que había.
+	const ultimoFinal = serie.reduce((m, p) => (p.fecha > m.fecha ? p : m), serie[0]);
+	await controlarEscala(activoId, ultimoFinal.fecha, ultimoFinal.precio, ref);
 
 	const stmts = serie.map((p) => ({
 		sql: sqlUpsertPrecioHistorico('data912'),

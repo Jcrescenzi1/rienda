@@ -16,6 +16,7 @@ import { setMeta } from './meta';
 import { hoyISO } from '../format';
 import { BASE, ajustarEscala } from './data912';
 import { sqlUpsertPrecioHistorico } from './precios_historicos';
+import { controlarEscala } from './escala';
 import { calcularFoto, guardarSnapshot, completarFotosFaltantes } from '../cartera';
 import { actualizarDolar } from './cotizaciones';
 import { ErrorValidacion, ErrorRed } from '../errores';
@@ -170,6 +171,10 @@ export async function actualizarPrecios(): Promise<string> {
 		)) as any[];
 		for (const f of filas) yaGuardados.set(f.activo_id, f.precio);
 	}
+
+	// Control de escala (solo aviso) para los activos que loguean cierre diario,
+	// ANTES del batch: precio_actual todavía tiene el valor anterior.
+	for (const m of conHistorico) await controlarEscala(m.id, fechaCierre, m.precio);
 
 	const stmts: { sql: string; bind?: unknown[] }[] = [];
 	for (const m of matches) {
