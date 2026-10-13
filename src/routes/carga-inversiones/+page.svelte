@@ -10,6 +10,9 @@
 
 	let cuentas = $state<any[]>([]);
 	let activosList = $state<any[]>([]);
+	// Ids de activos con tenencia abierta hoy (neto de compras - ventas > 0). Para Venta y
+	// Renta/Amort. el combo solo ofrece estos; Compra ve todos.
+	let enTenencia = $state<Set<number>>(new Set());
 	// Dos libros: diario de activos (transaccion + renta_activo) y caja (mov_caja).
 	let activosLedger = $state<any[]>([]);
 	let cajaLedger = $state<any[]>([]);
@@ -44,6 +47,9 @@
 		return a ? a.moneda : 'USD';
 	});
 	let esTrade = $derived(fAccion === 'Compra' || fAccion === 'Venta');
+	const activosOperar = $derived(
+		fAccion === 'Venta' || fAccion === 'Renta' ? activosList.filter((a) => enTenencia.has(Number(a.id))) : activosList
+	);
 
 	// Nombre legible del activo elegido en el filtro (el combo guarda el id).
 	const nombreFiltroActivo = $derived.by(() => {
@@ -64,6 +70,9 @@
 		if (!fValorDolar) fValorDolar = formatNum(dolar, 2);
 		cuentas = (await query('SELECT id, nombre FROM cuenta_inversion WHERE perfil_id=1 AND activa=1 ORDER BY nombre')) as any[];
 		activosList = (await query('SELECT id, ticker, nombre, tipo, moneda FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY nombre')) as any[];
+		const ten = (await query(
+			"SELECT activo_id FROM transaccion WHERE perfil_id=1 GROUP BY activo_id HAVING SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END) > 1e-9")) as any[];
+		enTenencia = new Set(ten.map((r) => Number(r.activo_id)));
 	}
 
 	// Diario de activos: UNION de compras/ventas (transaccion) y renta/amort
@@ -122,6 +131,22 @@
 
 	function setAccion(ac: 'Compra' | 'Venta' | 'Renta' | 'Ingreso' | 'Retiro' | 'Convertir') {
 		fAccion = ac;
+		if (fActivo && (ac === 'Venta' || ac === 'Renta') && !enTenencia.has(Number(fActivo))) fActivo = '';
+	}
+
+	// "Vender todo": carga en Unidades el neto EXACTO de la base (compras - ventas),
+	// sin redondear, para cerrar la posición sin dejar residuo. Mismo cálculo que
+	// la validación de Venta en guardar().
+	async function venderTodo() {
+		if (!fActivo) return toast.error('Elegí activo');
+		const r = (await query(
+			"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
+			[Number(fActivo)])) as any[];
+		const n = Number(r[0]?.n ?? 0);
+		if (!(n > 0)) return toast.error('No tenés unidades de este activo');
+		let txt = String(n);
+		if (/e/i.test(txt)) txt = n.toFixed(12).replace(/0+$/, '');
+		fUnidades = txt.replace('.', ',');
 	}
 
 	async function guardar() {
@@ -261,10 +286,13 @@
 				<option value="nueva">+ Cuenta nueva…</option></select></label>
 		{#if fCuenta === 'nueva'}<label>Nombre cuenta<input bind:value={fCuentaNueva} /></label>{/if}
 		<label>Activo
-			<ComboActivo activos={activosList} bind:value={fActivo} />
+			<ComboActivo activos={activosOperar} bind:value={fActivo} />
 		</label>
 		<a class="link-crear" href="/config-tickers">¿No está? Crealo en Mercado →</a>
 		<label>Unidades<input type="text" inputmode="decimal" use:soloNum bind:value={fUnidades} /></label>
+		{#if fAccion === 'Venta'}
+			<button type="button" class="btn btn-secondary" disabled={!fActivo} onclick={venderTodo}>Vender todo</button>
+		{/if}
 		<label>{fAccion === 'Compra' ? 'Pagué' : 'Cobré'} en<select bind:value={fPago}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto {fAccion === 'Compra' ? 'pagado' : 'cobrado'} en {fPago}<input type="text" inputmode="decimal" use:calc bind:value={fMonto} placeholder="0,00" /></label>
 		{#if fPago !== monedaActivo || monedaActivo === 'ARS'}
@@ -284,7 +312,7 @@
 		{#if mN > 0 && vdN > 0}<p class="hint">Entran {money(fMoneda === 'ARS' ? mN / vdN : mN * vdN, fMoneda === 'ARS' ? 'USD' : 'ARS', 2)} a Líquido {fMoneda === 'ARS' ? 'USD' : 'ARS'}</p>{/if}
 	{:else if fAccion === 'Renta'}
 		<label>Activo
-			<ComboActivo activos={activosList} bind:value={fActivo} />
+			<ComboActivo activos={activosOperar} bind:value={fActivo} />
 		</label>
 		<label>Moneda (renta y amortización)<select bind:value={fMoneda}><option>ARS</option><option>USD</option></select></label>
 		<label>Monto renta (cupón)<input type="text" inputmode="decimal" use:calc bind:value={fRenta} placeholder="0,00" /></label>
