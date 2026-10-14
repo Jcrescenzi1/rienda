@@ -140,28 +140,23 @@
 		if (fActivo && (ac === 'Venta' || ac === 'Renta') && !enTenencia.has(Number(fActivo))) fActivo = '';
 	}
 
-	// "Vender todo": carga en Unidades lo que el FIFO tiene ABIERTO hoy para el activo
-	// (los lotes desde que abrió la posición actual; es el mismo número que muestra
-	// Tenencia), sin redondear salvo el ruido de coma flotante. Si no coincide con
-	// compras - ventas de la base, avisa: suele ser una venta con fecha anterior a
-	// alguna compra, que el FIFO no llega a cubrir.
+	// Unidades que el FIFO tiene abiertas de un activo a una fecha (solo movimientos
+	// hasta esa fecha). Las compras posteriores son lotes nuevos y no cuentan.
+	async function unidadesAbiertas(aid: number, fecha: string): Promise<number> {
+		const { lotes } = await calcularFIFO(fecha || undefined);
+		return (lotes[aid] ?? []).reduce((s: number, l: any) => s + l.u, 0);
+	}
+
+	// "Vender todo": carga en Unidades lo que el FIFO tiene abierto del activo a la
+	// fecha elegida, sin redondear salvo el ruido de coma flotante.
 	async function venderTodo() {
 		if (!fActivo) return toast.error('Elegí activo');
-		const aid = Number(fActivo);
-		const r = (await query(
-			"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
-			[aid])) as any[];
-		const neto = Number(r[0]?.n ?? 0);
-		const { lotes } = await calcularFIFO();
-		const abiertas = (lotes[aid] ?? []).reduce((s: number, l: any) => s + l.u, 0);
-		if (!(abiertas > 1e-9)) return toast.error('No tenés unidades abiertas de este activo');
+		const abiertas = await unidadesAbiertas(Number(fActivo), fFecha);
+		if (!(abiertas > 1e-9)) return toast.error('No tenés unidades abiertas de este activo a esa fecha');
 		// Redondeo a 10 decimales solo para sacar el ruido de la suma; el error (<1e-10)
 		// queda por debajo de la tolerancia del FIFO (1e-9), así que la posición cierra igual.
 		const txt = String(Number(abiertas.toFixed(10)));
 		fUnidades = /e/i.test(txt) ? abiertas.toFixed(10).replace(/0+$/, '').replace('.', ',') : txt.replace('.', ',');
-		if (Math.abs(abiertas - neto) > 1e-6) {
-			toast.error(`Ojo: compras − ventas da ${neto} pero el FIFO tiene ${abiertas} abiertas. Revisá que ninguna venta tenga fecha anterior a una compra.`);
-		}
 	}
 
 	async function guardar() {
@@ -206,10 +201,8 @@
 				const activoId = Number(fActivo);
 				const monA = monedaActivo;
 				if (fAccion === 'Venta') {
-					const neto = (await query(
-						"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
-						[activoId])) as any[];
-					if (neto[0].n + 1e-9 < u) return toast.error(`No podés vender ${u}; tenés ${neto[0].n.toFixed(2)}`);
+					const abiertas = await unidadesAbiertas(activoId, fFecha);
+					if (abiertas + 1e-9 < u) return toast.error(`No podés vender ${u}; a esa fecha tenés ${unidades(abiertas, 4)}`);
 				}
 				const montoPago = monto;
 				let montoActivo = monto;
