@@ -69,6 +69,12 @@
 		const dolar = await dolarActual();
 		if (!fValorDolar) fValorDolar = formatNum(dolar, 2);
 		cuentas = (await query('SELECT id, nombre FROM cuenta_inversion WHERE perfil_id=1 AND activa=1 ORDER BY nombre')) as any[];
+		// Cuenta por defecto: la de la última compra/venta. No pisa una elección ya hecha.
+		if (!fCuenta) {
+			const ult = (await query('SELECT cuenta_inversion_id AS id FROM transaccion WHERE perfil_id=1 ORDER BY fecha DESC, id DESC LIMIT 1')) as any[];
+			const uid = ult[0]?.id;
+			if (uid != null && cuentas.some((c: any) => c.id === uid)) fCuenta = String(uid);
+		}
 		activosList = (await query('SELECT id, ticker, nombre, tipo, moneda FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY nombre')) as any[];
 		const ten = (await query(
 			"SELECT activo_id FROM transaccion WHERE perfil_id=1 GROUP BY activo_id HAVING SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END) > 1e-9")) as any[];

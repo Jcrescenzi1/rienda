@@ -129,6 +129,13 @@
             if (d !== detalle.trim()) return; // el usuario siguió tipeando: respuesta vieja
             if (r.length) { subcatDerivada = r[0].nombre; detalleNuevo = false; }
             else { subcatDerivada = null; detalleNuevo = true; }
+            // Categoría sugerida: la del último gasto con ese mismo detalle (editable).
+            // No pisa nada al editar un gasto existente; con detalle nuevo no toca nada.
+            if (!editandoId) {
+                const g = (await query('SELECT categoria_id FROM gasto WHERE perfil_id=1 AND detalle=? ORDER BY fecha DESC, id DESC LIMIT 1', [d])) as any[];
+                if (d !== detalle.trim()) return;
+                if (g.length && categorias.some((c: any) => c.id === g[0].categoria_id)) categoriaId = g[0].categoria_id;
+            }
         }, 300);
         return () => clearTimeout(timer);
     });
@@ -266,7 +273,7 @@
     <Guia
 		clave="gastos"
 		para="Cargar tus gastos y que se clasifiquen solos."
-		uso="Elegí categoría y escribí un detalle (Pizza, Super): la primera vez le asignás subcategoría y después se clasifica solo. Si pagaste en cuotas, indicá tarjeta y cantidad y la app reparte los vencimientos. El gasto cuenta entero el día que lo hacés, también el de crédito."
+		uso="Escribí un detalle (Pizza, Super): la categoría se completa con la última que usaste y la primera vez le asignás subcategoría; después se clasifica solo. Si pagaste en cuotas, indicá tarjeta y cantidad y la app reparte los vencimientos. El gasto cuenta entero el día que lo hacés, también el de crédito."
 		verMas
 	/>
 </div>
@@ -284,12 +291,7 @@
     <label>Moneda
         <select bind:value={moneda}><option value="ARS">ARS</option><option value="USD">USD</option></select>
     </label>
-    <label>Categoría
-        <select bind:value={categoriaId}>
-            <option value={null} disabled>Elegir…</option>
-            {#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
-        </select>
-    </label>
+
     <label>Detalle
         <input list="detalles" bind:value={detalle} placeholder="Ej: Pizza, Auto, Kiosco…" />
         <datalist id="detalles">{#each detallesExistentes as d (d)}<option value={d}></option>{/each}</datalist>
@@ -316,7 +318,12 @@
             </div>
         {/if}
     {/if}
-
+    <label>Categoría
+        <select bind:value={categoriaId}>
+            <option value={null} disabled>Elegir…</option>
+            {#each categorias as c (c.id)}<option value={c.id}>{c.nombre}</option>{/each}
+        </select>
+    </label>
     <div class="medio">
         <button type="button" class:activo={medio === 'debito'} onclick={() => (medio = 'debito')}>Débito</button>
         <button type="button" class:activo={medio === 'credito'} onclick={() => (medio = 'credito')}>Crédito</button>
