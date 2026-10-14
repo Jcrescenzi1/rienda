@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { query } from '$lib/db/client';
 	import { fmtFecha, hoyISO, parseNum, formatNum, soloNum, calc, pesos, unidades } from '$lib/format';
-	import { dolarActual, invalidarFotosDesde } from '$lib/cartera';
+	import { dolarActual, invalidarFotosDesde, calcularFIFO } from '$lib/cartera';
 	import { registrarPrecioTransaccion } from '$lib/db/precios_historicos';
 	import Guia from '$lib/Guia.svelte';
 	import ComboActivo from '$lib/ComboActivo.svelte';
@@ -140,19 +140,28 @@
 		if (fActivo && (ac === 'Venta' || ac === 'Renta') && !enTenencia.has(Number(fActivo))) fActivo = '';
 	}
 
-	// "Vender todo": carga en Unidades el neto EXACTO de la base (compras - ventas),
-	// sin redondear, para cerrar la posición sin dejar residuo. Mismo cálculo que
-	// la validación de Venta en guardar().
+	// "Vender todo": carga en Unidades lo que el FIFO tiene ABIERTO hoy para el activo
+	// (los lotes desde que abrió la posición actual; es el mismo número que muestra
+	// Tenencia), sin redondear salvo el ruido de coma flotante. Si no coincide con
+	// compras - ventas de la base, avisa: suele ser una venta con fecha anterior a
+	// alguna compra, que el FIFO no llega a cubrir.
 	async function venderTodo() {
 		if (!fActivo) return toast.error('Elegí activo');
+		const aid = Number(fActivo);
 		const r = (await query(
 			"SELECT COALESCE(SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END),0) AS n FROM transaccion WHERE perfil_id=1 AND activo_id=?",
-			[Number(fActivo)])) as any[];
-		const n = Number(r[0]?.n ?? 0);
-		if (!(n > 0)) return toast.error('No tenés unidades de este activo');
-		let txt = String(n);
-		if (/e/i.test(txt)) txt = n.toFixed(12).replace(/0+$/, '');
-		fUnidades = txt.replace('.', ',');
+			[aid])) as any[];
+		const neto = Number(r[0]?.n ?? 0);
+		const { lotes } = await calcularFIFO();
+		const abiertas = (lotes[aid] ?? []).reduce((s: number, l: any) => s + l.u, 0);
+		if (!(abiertas > 1e-9)) return toast.error('No tenés unidades abiertas de este activo');
+		// Redondeo a 10 decimales solo para sacar el ruido de la suma; el error (<1e-10)
+		// queda por debajo de la tolerancia del FIFO (1e-9), así que la posición cierra igual.
+		const txt = String(Number(abiertas.toFixed(10)));
+		fUnidades = /e/i.test(txt) ? abiertas.toFixed(10).replace(/0+$/, '').replace('.', ',') : txt.replace('.', ',');
+		if (Math.abs(abiertas - neto) > 1e-6) {
+			toast.error(`Ojo: compras − ventas da ${neto} pero el FIFO tiene ${abiertas} abiertas. Revisá que ninguna venta tenga fecha anterior a una compra.`);
+		}
 	}
 
 	async function guardar() {
