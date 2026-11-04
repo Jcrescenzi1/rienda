@@ -464,15 +464,14 @@
 
     // ===== Aviso de copia de seguridad en Home (Blindaje iOS, Bloque 5) =====
     // Umbral propio para este aviso visual (distinto del de /datos, que es a 30
-    // días, y del badge de notificaciones, que dispara a los 7): amarillo a los
-    // 3 días sin copia, rojo a los 7. null (nunca exportó) se trata como rojo,
-    // mismo criterio que ya usa /datos para "copiaVieja".
+    // días, y del badge de notificaciones, que dispara a los 14): solo rojo, a los
+    // 30 días sin copia. null (nunca exportó) se trata como rojo, mismo criterio
+    // que ya usa /datos para "copiaVieja".
     let diasCopia = $state<number | null>(null);
     let compartiendoCopia = $state(false);
     const nivelAvisoCopia = $derived.by((): 'rojo' | 'amarillo' | null => {
         if (diasCopia === null) return 'rojo';
-        if (diasCopia >= 7) return 'rojo';
-        if (diasCopia >= 3) return 'amarillo';
+        if (diasCopia >= 30) return 'rojo';
         return null;
     });
 

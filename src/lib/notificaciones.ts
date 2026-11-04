@@ -62,12 +62,12 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 		reglas.push({ tipo: 'mep', clave: 'mep', texto: 'El tipo de cambio nunca se actualizó.', accion: 'cotiz' });
 	}
 
-	// Regla 2 — Copia: más de 7 días desde la última exportación (Blindaje iOS).
+	// Regla 2 — Copia: 14 días o más desde la última exportación (Blindaje iOS).
 	const m = await leerMeta();
 	const ultExp = m.ultima_exportacion;
 	if (ultExp) {
 		const d = diasEntre(ultExp, hoy);
-		if (d > 7) reglas.push({ tipo: 'copia', clave: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
+		if (d >= 14) reglas.push({ tipo: 'copia', clave: 'copia', texto: `Hace ${d} días que no hacés una copia de seguridad.`, href: '/datos' });
 	} else if (!enPrimeraSemana) {
 		reglas.push({ tipo: 'copia', clave: 'copia', texto: 'Todavía no hiciste una copia de seguridad.', href: '/datos' });
 	}
@@ -146,7 +146,11 @@ export async function cargarNotificaciones(): Promise<Notificaciones> {
 		arr.reduce((n, x) => n + (vistoSet.has(tipo + ':' + x.id) ? 0 : 1), 0);
 
 	// Badge: reglas rotas (persistentes) + recurrentes en ventana aún no vistos (por evento).
-	const badge = reglas.length + noVistos(pagos, 'pago') + noVistos(cobros, 'cobro');
+	// Solo cuentan los recurrentes que vencen HOY (dias === 0); los de 1-3 días quedan en la lista sin sumar.
+	const badge =
+		reglas.length +
+		noVistos(pagos.filter((x) => x.dias === 0), 'pago') +
+		noVistos(cobros.filter((x) => x.dias === 0), 'cobro');
 	return { pagos, cobros, reglas, badge };
 }
 
