@@ -10,6 +10,8 @@
 
 	let cuentas = $state<any[]>([]);
 	let activosList = $state<any[]>([]);
+	// Solo para el filtro de la libreta: activos con al menos una compra/venta/renta (incluye dados de baja).
+	let activosFiltro = $state<any[]>([]);
 	// Ids de activos con tenencia abierta hoy (neto de compras - ventas > 0). Para Venta y
 	// Renta/Amort. el combo solo ofrece estos; Compra ve todos.
 	let enTenencia = $state<Set<number>>(new Set());
@@ -53,7 +55,7 @@
 
 	// Nombre legible del activo elegido en el filtro (el combo guarda el id).
 	const nombreFiltroActivo = $derived.by(() => {
-		const a = activosList.find((x) => String(x.id) === filtroActivo);
+		const a = activosFiltro.find((x) => String(x.id) === filtroActivo);
 		return a ? a.ticker : '';
 	});
 
@@ -76,6 +78,11 @@
 			if (uid != null && cuentas.some((c: any) => c.id === uid)) fCuenta = String(uid);
 		}
 		activosList = (await query('SELECT id, ticker, nombre, tipo, moneda FROM activo WHERE perfil_id=1 AND activo=1 ORDER BY nombre')) as any[];
+		activosFiltro = (await query(
+			`SELECT id, ticker, nombre, tipo, moneda FROM activo WHERE perfil_id=1 AND (
+				id IN (SELECT activo_id FROM transaccion WHERE perfil_id=1)
+				OR id IN (SELECT activo_id FROM renta_activo WHERE perfil_id=1)
+			) ORDER BY nombre`)) as any[];
 		const ten = (await query(
 			"SELECT activo_id FROM transaccion WHERE perfil_id=1 GROUP BY activo_id HAVING SUM(CASE WHEN operacion='Compra' THEN unidades ELSE -unidades END) > 1e-9")) as any[];
 		enTenencia = new Set(ten.map((r) => Number(r.activo_id)));
@@ -345,7 +352,7 @@
 </div>
 <div class="filtro-activo">
 	<span class="filtro-lbl">Activo</span>
-	<ComboActivo activos={activosList} bind:value={filtroActivo} placeholder="Buscar por ticker o nombre…" />
+	<ComboActivo activos={activosFiltro} bind:value={filtroActivo} placeholder="Buscar por ticker o nombre…" />
 	{#if filtroActivo}
 		<button class="btn btn-secondary" onclick={() => (filtroActivo = '')}>Todos ({nombreFiltroActivo} ✕)</button>
 	{/if}
