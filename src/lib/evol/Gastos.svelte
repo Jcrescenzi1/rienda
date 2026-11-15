@@ -44,8 +44,10 @@
 
 	let cargando = $state(true);
 	let gastos = $state<Gasto[]>([]);
-	let categorias = $state<{ id: number; nombre: string }[]>([]);
-	let subcategorias = $state<{ id: number; nombre: string }[]>([]);
+	let categorias = $state<{ id: number; nombre: string; es_ahorro: number }[]>([]);
+	let subcategorias = $state<{ id: number; nombre: string; es_meta_ahorro: number }[]>([]);
+	// Presupuesto vigente (periodo 'default', ARS) por subcategoría. Solo lectura.
+	let presupPorSub = $state<Map<number, number>>(new Map());
 	let dolarSerie = $state<DolarSerie>([]);
 	let ipc = $state<IPC>({ indice: {}, ultimoPeriodo: null, factorAHoy: () => 1 });
 	let asignar = $state<(fecha: string) => string | null>(() => null);
@@ -64,20 +66,22 @@
 
 	onMount(async () => {
 		// Lecturas independientes en paralelo (una tanda al worker, no encadenadas).
-		const [, cortes, ds, ic, cat, sub, tc] = await Promise.all([
+		const [, cortes, ds, ic, cat, sub, tc, pr] = await Promise.all([
 			moneda.cargar(),
 			(async () => { modoPeriodo = await cargarModo(); return modoPeriodo === 'sueldo' ? await cargarCortes() : []; })(),
 			cargarDolarSerie(),
 			cargarIPC(),
-			query('SELECT id, nombre FROM categoria WHERE perfil_id=1 ORDER BY nombre'),
-			query('SELECT id, nombre FROM subcategoria WHERE perfil_id=1 ORDER BY nombre'),
+			query('SELECT id, nombre, es_ahorro FROM categoria WHERE perfil_id=1 ORDER BY nombre'),
+			query('SELECT id, nombre, es_meta_ahorro FROM subcategoria WHERE perfil_id=1 ORDER BY nombre'),
 			query("SELECT id, nombre FROM tarjeta WHERE perfil_id=1 AND tipo='credito' AND activa=1 ORDER BY nombre"),
+			query("SELECT subcategoria_id, monto FROM presupuesto WHERE perfil_id=1 AND periodo='default'"),
 			cargarGastos()
 		]);
 		asignar = crearAsignador(modoPeriodo, cortes as any);
 		cortePeriodos = (cortes as any[]).map((c) => c.periodo);
 		dolarSerie = ds; ipc = ic;
 		categorias = cat as any[]; subcategorias = sub as any[]; tarjetasCredito = tc as any[];
+		presupPorSub = new Map((pr as any[]).map((r) => [r.subcategoria_id as number, Number(r.monto)]));
 		selCat = new Set(categorias.map((c) => c.id)); // arranca "Todas"
 		// Pre-filtro por subcategoría desde "Análisis por categoría" (handshake por
 		// sessionStorage: el mover clickeado deja acá la subcat y salta a esta pestaña).
@@ -189,6 +193,27 @@
 
 	// mesCorto viene de $lib/format (helper único, Brief H / A2).
 
+	// Línea de presupuesto: valor vigente de hoy (sin historial), mismo en todos los
+	// períodos y en pesos reales/nominales sin convertir. No se muestra en USD ni con
+	// filtro de detalle (no hay presupuesto por detalle). Misma base que la serie:
+	// incluye Ahorro (la serie no excluye es_ahorro), igual que el total de Home.
+	let presupLinea = $derived.by(() => {
+		if (moneda.modo === 'usd' || filtroTexto.trim()) return null;
+		let v = 0;
+		if (subModo === 'parcial') {
+			for (const id of selSub) v += presupPorSub.get(id) ?? 0;
+		} else if (selCat.size >= categorias.length) {
+			for (const m of presupPorSub.values()) v += m; // sin filtro: todo el presupuesto
+		} else {
+			const ids = new Set(subUniverso);
+			// La subcat de meta de ahorro puede no tener gastos: entra con la categoría Ahorro (como en Home).
+			const meta = subcategorias.find((x) => x.es_meta_ahorro);
+			if (meta && categorias.some((c) => c.es_ahorro && selCat.has(c.id))) ids.add(meta.id);
+			for (const id of ids) v += presupPorSub.get(id) ?? 0;
+		}
+		return v > 0 ? v : null;
+	});
+
 	// ===== Gráfico de área =====
 	const W = 720, H = 300, P = { l: 56, r: 16, t: 16, b: 28 };
 	let chart = $derived.by(() => {
@@ -196,7 +221,7 @@
 		const vals = serie.map((s) => s.total);
 		const n = serie.length;
 		let minY = Math.min(0, ...vals);
-		let maxY = Math.max(...vals, 1);
+		let maxY = Math.max(...vals, presupLinea ?? 0, 1); // incluye el presupuesto para que la línea no quede cortada
 		const padY = (maxY - minY) * 0.1 || 1;
 		maxY += padY;
 		const px = (i: number) => P.l + (i / (n - 1)) * (W - P.l - P.r);
@@ -213,7 +238,8 @@
 			.map((s, i) => ({ i, p: s.periodo }))
 			.filter((_, i) => i % step === 0)
 			.map((o) => ({ x: px(o.i), label: mesCorto(o.p) }));
-		return { line, area, pts, yticks, xticks };
+		const yb = presupLinea != null ? py(presupLinea) : null;
+		return { line, area, pts, yticks, xticks, yb };
 	});
 
 	// Selección por tap/drag sobre el gráfico: mientras se mantiene el toque, la
@@ -394,6 +420,10 @@
 				<path d={chart.line} class="line-area" />
 				{#each chart.pts as p}<circle cx={p.x} cy={p.y} r="2.5" class="dot-area" />{/each}
 			</g>
+			{#if chart.yb != null}
+				<line x1={P.l} y1={chart.yb} x2={W - P.r} y2={chart.yb} class="presup" />
+				<text x={W - P.r - 4} y={chart.yb - 5} class="presup-lbl">{fmtNum(presupLinea ?? 0)}</text>
+			{/if}
 			{#if puntoTacto != null}
 				<line x1={chart.pts[puntoTacto].x} y1={P.t} x2={chart.pts[puntoTacto].x} y2={H - P.b} class="guia-tacto" />
 				<circle cx={chart.pts[puntoTacto].x} cy={chart.pts[puntoTacto].y} r="5" class="dot-tacto" />
@@ -401,7 +431,7 @@
 		</svg>
 		<NotaVisual objetivo="Cómo evolucionó tu gasto período a período" glosario="periodos">
 			{#snippet muestra()}El gasto total de cada período {modoPeriodo === 'sueldo' ? 'de sueldo' : 'calendario'}, con los filtros de abajo ya aplicados.{/snippet}
-			{#snippet leer()}Cada gasto se cuenta entero en su <strong>fecha de compra</strong>, también los de crédito: una compra en cuotas aparece completa el mes que la hiciste, no repartida. Los períodos sin gasto se dibujan en cero, así que bajan el promedio.{/snippet}
+			{#snippet leer()}Cada gasto se cuenta entero en su <strong>fecha de compra</strong>, también los de crédito: una compra en cuotas aparece completa el mes que la hiciste, no repartida. Los períodos sin gasto se dibujan en cero, así que bajan el promedio.{#if presupLinea != null} La línea punteada es tu presupuesto de hoy, igual en todos los períodos (no hay historial) y sin ajuste por inflación.{/if}{/snippet}
 			{#snippet usar()}Ver si tu nivel de gasto sube o baja de verdad; cambiá la moneda a pesos reales para que la inflación no te haga ver una suba que no existe.{/snippet}
 			{#snippet fuente()}{#if moneda.modo === 'real' && ipc.ultimoPeriodo}Expresado en pesos de {mesCorto(ipc.ultimoPeriodo)}, el último mes de inflación cargado.{:else}Montos nominales, tal como los cargaste.{/if}{/snippet}
 		</NotaVisual>
@@ -503,6 +533,8 @@
 	.xlbl { font-size: 10px; fill: var(--text-dim); text-anchor: middle; }
 	.line-area { fill: none; stroke: var(--accent); stroke-width: 2.5; }
 	.dot-area { fill: var(--accent); }
+	.presup { stroke: var(--warn); stroke-opacity: 0.75; stroke-width: 1.5; stroke-dasharray: 6 4; pointer-events: none; }
+	.presup-lbl { font-size: 12px; font-weight: 600; fill: var(--warn); fill-opacity: 0.9; text-anchor: end; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; pointer-events: none; }
 	.guia-tacto { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 2; pointer-events: none; }
 	.dot-tacto { fill: var(--accent); stroke: var(--surface); stroke-width: 2; pointer-events: none; }
 	.nota { font-size: 0.8rem; color: var(--text-dim); margin-top: 12px; }
