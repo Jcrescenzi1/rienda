@@ -104,7 +104,8 @@
     const labelPeriodo = mesCorto;
 
     function desvio(real: number, presup: number): string {
-        if (!presup) return '—';
+        // Gasto sin presupuesto asignado = gasto no previsto -> rojo (claseEstado).
+        if (!presup) return real > 0 ? 'Sin presupuesto' : '—';
         if (real <= presup) return 'En margen';
         if (real <= presup * 1.25) return 'Superado';
         return 'Muy superado';
@@ -525,7 +526,7 @@
         if (totales.presup > 0) return totales.real <= totales.presup ? 'ok' : 'bad';
         return semColor(totales.real);
     }
-    const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : e === 'Muy superado' ? 'bad' : 'none';
+    const claseEstado = (e: string) => e === 'En margen' ? 'ok' : e === 'Superado' ? 'warn' : (e === 'Muy superado' || e === 'Sin presupuesto') ? 'bad' : 'none';
 
     // Presupuesto de ahorro DERIVADO de la meta (fuente única = objetivo % editable en
     // Capacidad de ahorro, tabla meta `umbral_ahorro`): monto = umbral% × ingreso
