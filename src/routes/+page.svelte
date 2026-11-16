@@ -11,7 +11,6 @@
 
     let periodo = $state(mesActual());
     let grupos = $state<any[]>([]);
-    let consolidado = $state<any[]>([]);
     let totales = $state<any>({ n2: 0, n1: 0, presup: 0, real: 0 });
     // Split de "Gasto total del mes" (Ítem 1): consumo real vs. plata apartada en
     // la categoría de Ahorro. Ninguno de los dos resta de Ingreso disponible; son
@@ -21,6 +20,15 @@
     let gastoRealMes = $state(0);
     let ahorroMes = $state(0);
     let nombreAhorro = $state('Ahorro'); // nombre editable de la categoría de ahorro
+    // Categorías abiertas en la tabla de Consolidado. Vive acá, FUERA de cargar():
+    // cargar() desmonta/remonta las tablas (cargando=true), pero este Set sobrevive
+    // al editar un presupuesto o cambiar de período. Arranca todo colapsado.
+    let catsAbiertas = $state<Set<string>>(new Set());
+    function toggleCat(cat: string) {
+        const n = new Set(catsAbiertas);
+        if (n.has(cat)) n.delete(cat); else n.add(cat);
+        catsAbiertas = n;
+    }
     let gastoAbierto = $state(typeof localStorage !== 'undefined' && localStorage.getItem('gasto_detalle') === '1');
     $effect(() => { try { localStorage.setItem('gasto_detalle', gastoAbierto ? '1' : '0'); } catch { /* ignore */ } });
     // Reserva para tarjetas: suma de cuotas de crédito que vencen en el mes
@@ -351,7 +359,6 @@
         creditoMesUsd = cred[0]?.usd ?? 0;
 
         grupos = gr;
-        consolidado = gr.map((g: any) => ({ cat: g.cat, ...g.sub, esAhorro: g.esAhorro, estado: desvio(g.sub.real, g.sub.presup) }));
         totales = filas.reduce((t, r) => ({ n2: t.n2 + r.n2, n1: t.n1 + r.n1, presup: t.presup + r.presup, real: t.real + r.real }), { n2: 0, n1: 0, presup: 0, real: 0 });
 
         // Ingresos del período en ARS (USD recurrente al MEP del día de cobro,
@@ -682,65 +689,62 @@
     <table class="consol">
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
         <tbody>
-            {#each consolidado as c (c.cat)}
-                <tr class={c.esAhorro ? 'fila-ahorro' : 'fila-gasto'}>
-                    {#if c.esAhorro}
-                        <td><a class="consol-link" href="/evolucion-finanzas?tab=capacidad"><strong>{c.cat}</strong></a>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(c.real)}" aria-hidden="true"><i style="width:{Math.min(c.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}</td>
-                        <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
+            {#each grupos as g (g.cat)}
+                {@const abierta = catsAbiertas.has(g.cat)}
+                {@const est = desvio(g.sub.real, g.sub.presup)}
+                <tr class={g.esAhorro ? 'fila-ahorro' : 'fila-gasto'}>
+                    <td>
+                        <div class="catcel">
+                            <button type="button" class="chev" onclick={() => toggleCat(g.cat)} aria-expanded={abierta} aria-label="{abierta ? 'Contraer' : 'Expandir'} {g.cat}">{abierta ? '▾' : '▸'}</button>
+                            <span class="catnom">
+                                {#if g.esAhorro}
+                                    <a class="consol-link" href="/evolucion-finanzas?tab=capacidad"><strong>{g.cat}</strong></a>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(g.sub.real)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}
+                                {:else}
+                                    <strong>{g.cat}</strong>{#if g.sub.presup > 0}<span class="presubar {claseEstado(est)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / g.sub.presup, 1) * 100}%"></i></span>{/if}
+                                {/if}
+                            </span>
+                        </div>
+                    </td>
+                    {#if g.esAhorro}
+                        <td class="num">{pesoMil(g.sub.n2)}</td><td class="num">{pesoMil(g.sub.n1)}</td>
                         <td class="num">{metaAhorroMonto > 0 ? pesoMil(metaAhorroMonto) : '—'}</td>
-                        <td class="num real {claseAhorro(c.real)}" title={tituloAhorro(c.real)}>{pesoMil(c.real)}</td>
+                        <td class="num real {claseAhorro(g.sub.real)}" title={tituloAhorro(g.sub.real)}>{pesoMil(g.sub.real)}</td>
                     {:else}
-                        <td><strong>{c.cat}</strong>{#if c.presup > 0}<span class="presubar {claseEstado(c.estado)}" aria-hidden="true"><i style="width:{Math.min(c.real / c.presup, 1) * 100}%"></i></span>{/if}</td>
-                        <td class="num">{pesoMil(c.n2)}</td><td class="num">{pesoMil(c.n1)}</td>
-                        <td class="num">{pesoMil(c.presup)}</td>
-                        <td class="num real {claseEstado(c.estado)}" title={c.estado}>{pesoMil(c.real)}</td>
+                        <td class="num">{pesoMil(g.sub.n2)}</td><td class="num">{pesoMil(g.sub.n1)}</td>
+                        <td class="num">{pesoMil(g.sub.presup)}</td>
+                        <td class="num real {claseEstado(est)}" title={est}>{pesoMil(g.sub.real)}</td>
                     {/if}
                 </tr>
-            {/each}
-        </tbody>
-        <tfoot>
-            <tr><td><strong>Total general</strong></td>
-                <td class="num">{pesoMil(totales.n2)}</td><td class="num">{pesoMil(totales.n1)}</td>
-                <td class="num">{pesoMil(totales.presup)}</td><td class="num">{pesoMil(totales.real)}</td></tr>
-        </tfoot>
-    </table>
-    </div>
-
-    <h2>Detalle por subcategoría · en miles</h2>
-    <div class="tabla-scroll">
-    <table class="detalle">
-        <thead><tr><th>Subcategoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
-        <tbody>
-            {#each grupos as g (g.cat)}
-                <tr class="cat"><td colspan="5">{g.cat}</td></tr>
-                {#each g.rows as f (f.scid ?? 'null')}
-                    <tr>
-                        <td class="ind">
-                            {#if f.scid != null && f.autoPresup && f.esAhorro}
-                                <a class="sub-link" href="/evolucion-finanzas?tab=capacidad" title="Se edita en Capacidad de ahorro, no acá.">{f.nombre}</a>
-                            {:else if f.scid != null && f.autoPresup}
-                                <a class="sub-link" href="/suscripciones" title="Se edita en Gastos, tab Recurrente, no acá.">{f.nombre}</a>
-                            {:else}
-                                {f.nombre}
-                            {/if}
-                        </td>
-                        <td class="num">{pesoMil(f.n2)}</td>
-                        <td class="num">{pesoMil(f.n1)}</td>
-                        <td class="num">
-                            {#if f.scid == null}
-                                —
-                            {:else if f.autoPresup && f.esAhorro}
-                                <span class="auto-presup" title="Definido por tu meta de ahorro. Se edita en Capacidad de ahorro, no acá.">{formatNum(f.presup / 1000, 0)}</span>
-                            {:else if f.autoPresup}
-                                <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup / 1000, 0)}</span>
-                            {:else}
-                                <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup / 1000, 0) : ''} placeholder="—"
-                                    onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
-                            {/if}
-                        </td>
-                        <td class="num real {claseEstado(f.estado)}" title={f.estado}>{pesoMil(f.real)}</td>
-                    </tr>
-                {/each}
+                {#if abierta}
+                    {#each g.rows as f (f.scid ?? 'null')}
+                        <tr class="sub">
+                            <td class="ind">
+                                {#if f.scid != null && f.autoPresup && f.esAhorro}
+                                    <a class="sub-link" href="/evolucion-finanzas?tab=capacidad" title="Se edita en Capacidad de ahorro, no acá.">{f.nombre}</a>
+                                {:else if f.scid != null && f.autoPresup}
+                                    <a class="sub-link" href="/suscripciones" title="Se edita en Gastos, tab Recurrente, no acá.">{f.nombre}</a>
+                                {:else}
+                                    {f.nombre}
+                                {/if}
+                            </td>
+                            <td class="num">{pesoMil(f.n2)}</td>
+                            <td class="num">{pesoMil(f.n1)}</td>
+                            <td class="num">
+                                {#if f.scid == null}
+                                    —
+                                {:else if f.autoPresup && f.esAhorro}
+                                    <span class="auto-presup" title="Definido por tu meta de ahorro. Se edita en Capacidad de ahorro, no acá.">{formatNum(f.presup / 1000, 0)}</span>
+                                {:else if f.autoPresup}
+                                    <span class="auto-presup" title="Definido por tus gastos recurrentes. Se edita en Gastos, tab Recurrente, no acá.">{formatNum(f.presup / 1000, 0)}</span>
+                                {:else}
+                                    <input class="presup" type="text" inputmode="decimal" use:soloNum value={f.presup ? formatNum(f.presup / 1000, 0) : ''} placeholder="—"
+                                        onchange={(e) => guardarPresup(f.scid, e.currentTarget.value)} />
+                                {/if}
+                            </td>
+                            <td class="num real {f.esAhorro ? claseAhorro(f.real) : claseEstado(f.estado)}" title={f.esAhorro ? tituloAhorro(f.real) : f.estado}>{pesoMil(f.real)}</td>
+                        </tr>
+                    {/each}
+                {/if}
             {/each}
         </tbody>
         <tfoot>
@@ -816,10 +820,11 @@
        para legibilidad general de todas sus filas (no solo la de ahorro). */
     table.consol { font-size: 0.98rem; }
     table.consol th, table.consol td { padding: 7px 6px; }
-    /* Detalle por subcategoría: un poco menor que el consolidado (tiene una
-       columna más densa: badge "recurrente" + input editable), pero bien por
-       encima del tamaño base de tabla para que se lea igual de cómodo. */
-    table.detalle { font-size: 0.94rem; }
+    /* Subfilas (ex Detalle por subcategoría): un poco menores que la fila de categoría. */
+    tr.sub td { font-size: 0.94rem; }
+    .catcel { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
+    .catnom { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    button.chev { flex-shrink: 0; width: 16px; padding: 6px 0; margin: -6px 0; background: none; border: none; color: var(--text-dim); font-size: 0.8rem; text-align: center; cursor: pointer; }
     tr.fila-gasto { background: var(--surface-2); }
     tr.fila-ahorro { background: var(--surface-3); }
     /* Azul + subrayado permanente (no solo hover): que se note a simple vista
@@ -840,8 +845,7 @@
         width: 19%;
         text-align: right; white-space: nowrap;
     }
-    td.ind { padding-left: 20px; }
-    tr.cat td { background: none; font-family: var(--font-display); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); padding-top: 14px; white-space: normal; overflow: visible; }
+    td.ind { padding-left: 26px; } /* alinea con el nombre de categoría (después del chevron) */
     /* Mini-barra de presupuesto por categoria (solo visual: real / presupuesto) */
     .presubar { display: block; height: 3px; background: var(--surface-2); border-radius: 2px; margin-top: 5px; max-width: 140px; }
     .presubar i { display: block; height: 100%; border-radius: 2px; background: var(--text-dim); }
