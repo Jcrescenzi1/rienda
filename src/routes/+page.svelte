@@ -685,6 +685,7 @@
     <div class="consol-head">
         <h2>Consolidado por categoría · en miles</h2>
     </div>
+    <p class="consol-sub">Tocá una categoría para ver sus subcategorías. El presupuesto se arma desde las subcategorías.</p>
     <div class="tabla-scroll">
     <table class="consol">
         <thead><tr><th>Categoría</th><th>{labN2}</th><th>{labN1}</th><th>Presup.</th><th>{labN}</th></tr></thead>
@@ -692,18 +693,12 @@
             {#each grupos as g (g.cat)}
                 {@const abierta = catsAbiertas.has(g.cat)}
                 {@const est = desvio(g.sub.real, g.sub.presup)}
-                <tr class={g.esAhorro ? 'fila-ahorro' : 'fila-gasto'}>
+                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+                <tr class={g.esAhorro ? 'fila-ahorro' : 'fila-gasto'} onclick={() => toggleCat(g.cat)}>
                     <td>
-                        <div class="catcel">
-                            <button type="button" class="chev" onclick={() => toggleCat(g.cat)} aria-expanded={abierta} aria-label="{abierta ? 'Contraer' : 'Expandir'} {g.cat}">{abierta ? '▾' : '▸'}</button>
-                            <span class="catnom">
-                                {#if g.esAhorro}
-                                    <a class="consol-link" href="/evolucion-finanzas?tab=capacidad"><strong>{g.cat}</strong></a>{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(g.sub.real)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}
-                                {:else}
-                                    <strong>{g.cat}</strong>{#if g.sub.presup > 0}<span class="presubar {claseEstado(est)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / g.sub.presup, 1) * 100}%"></i></span>{/if}
-                                {/if}
-                            </span>
-                        </div>
+                        <button type="button" class="catbtn" aria-expanded={abierta}>
+                            <strong>{g.cat}</strong>{#if g.esAhorro}{#if metaAhorroMonto > 0}<span class="presubar {claseAhorro(g.sub.real)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / metaAhorroMonto, 1) * 100}%"></i></span>{/if}{:else if g.sub.presup > 0}<span class="presubar {claseEstado(est)}" aria-hidden="true"><i style="width:{Math.min(g.sub.real / g.sub.presup, 1) * 100}%"></i></span>{/if}
+                        </button>
                     </td>
                     {#if g.esAhorro}
                         <td class="num">{pesoMil(g.sub.n2)}</td><td class="num">{pesoMil(g.sub.n1)}</td>
@@ -821,18 +816,16 @@
     table.consol { font-size: 0.98rem; }
     table.consol th, table.consol td { padding: 7px 6px; }
     /* Subfilas (ex Detalle por subcategoría): un poco menores que la fila de categoría. */
+    .consol-sub { font-size: 0.8rem; color: var(--text-dim); margin: 4px 0 8px; }
+    tr.fila-gasto, tr.fila-ahorro { cursor: pointer; }
+    button.catbtn { display: block; width: 100%; padding: 0; margin: 0; background: none; border: none; font: inherit; color: inherit; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     tr.sub td { font-size: 0.94rem; }
-    .catcel { display: flex; align-items: baseline; gap: 4px; min-width: 0; }
-    .catnom { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    button.chev { flex-shrink: 0; width: 16px; padding: 6px 0; margin: -6px 0; background: none; border: none; color: var(--text-dim); font-size: 0.8rem; text-align: center; cursor: pointer; }
     tr.fila-gasto { background: var(--surface-2); }
     tr.fila-ahorro { background: var(--surface-3); }
     /* Azul + subrayado permanente (no solo hover): que se note a simple vista
        que el nombre de categoría es un link a su configuración (ej. Ahorro ->
        Capacidad de ahorro), sin afectar categorías sin vínculo (esas quedan
        en <strong> plano, fuera de esta clase). */
-    .consol-link { text-decoration: underline; color: #6f93c4; }
-    .consol-link:hover strong { color: #6f93c4; }
     .sub-link { text-decoration: underline; color: #6f93c4; }
     th, td { padding: 5px 6px; text-align: left; overflow: hidden; }
     /* Columna de nombre: corta con … si no entra */
@@ -845,7 +838,7 @@
         width: 19%;
         text-align: right; white-space: nowrap;
     }
-    td.ind { padding-left: 26px; } /* alinea con el nombre de categoría (después del chevron) */
+    td.ind { padding-left: 20px; }
     /* Mini-barra de presupuesto por categoria (solo visual: real / presupuesto) */
     .presubar { display: block; height: 3px; background: var(--surface-2); border-radius: 2px; margin-top: 5px; max-width: 140px; }
     .presubar i { display: block; height: 100%; border-radius: 2px; background: var(--text-dim); }
